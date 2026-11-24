@@ -300,6 +300,24 @@ class OmpRpcBridge {
     this.spawn();
   }
 
+  private holdSpriteActive() {
+    if (!fs.existsSync("/.sprite/api.sock")) return;
+    fetch("http://sprite/v1/tasks/lma-agent-turn", {
+      unix: "/.sprite/api.sock",
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expire: "10m" }),
+    }).catch(() => {});
+  }
+
+  private releaseSpriteHold() {
+    if (!fs.existsSync("/.sprite/api.sock")) return;
+    fetch("http://sprite/v1/tasks/lma-agent-turn", {
+      unix: "/.sprite/api.sock",
+      method: "DELETE",
+    }).catch(() => {});
+  }
+
   private spawn() {
     this.ready = false;
     this.proc = Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
@@ -317,6 +335,7 @@ class OmpRpcBridge {
       console.error(`[lma-web] omp rpc exited with code ${code}; restarting in 1s...`);
       this.ready = false;
       this.busy = false;
+      this.releaseSpriteHold();
       for (const [, p] of this.pending) {
         p.reject(new Error(`omp rpc exited (${code})`));
       }
@@ -393,6 +412,7 @@ class OmpRpcBridge {
     if (ev.type === "agent_start") {
       this.busy = true;
       this.activity = "Thinking...";
+      this.holdSpriteActive();
       broadcast({ type: "activity", label: this.activity });
       return;
     }
@@ -435,6 +455,7 @@ class OmpRpcBridge {
     if (ev.type === "agent_end" || ev.type === "session_settled") {
       this.busy = false;
       this.activity = "Thinking...";
+      this.releaseSpriteHold();
       broadcast({ type: "done" });
       return;
     }
@@ -549,12 +570,14 @@ class OmpRpcBridge {
     }
     this.busy = true;
     this.activity = "Thinking...";
+    this.holdSpriteActive();
     broadcast({ type: "user_message", text: message });
     broadcast({ type: "activity", label: this.activity });
     try {
       await this.sendCommand("prompt", { message });
     } catch (err) {
       this.busy = false;
+      this.releaseSpriteHold();
       throw err;
     }
   }
@@ -562,6 +585,7 @@ class OmpRpcBridge {
   async abort() {
     await this.sendCommand("abort").catch(() => {});
     this.busy = false;
+    this.releaseSpriteHold();
     broadcast({ type: "done" });
   }
 
