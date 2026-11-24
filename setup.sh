@@ -63,7 +63,12 @@ EOF
   fi
 fi
 
-# 5. Register durable Sprite HTTP service for Web Chat UI (port 8080)
+# 5. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)
+if [ -f "${REPO_DIR}/web/package.json" ]; then
+  echo "==> Building lma-web frontend..."
+  (cd "${REPO_DIR}/web" && /.sprite/bin/bun install --frozen-lockfile 2>/dev/null || /.sprite/bin/bun install)
+  (cd "${REPO_DIR}/web" && /.sprite/bin/bun run build)
+fi
 if command -v sprite-env >/dev/null 2>&1 && [ -f "${REPO_DIR}/web/server.ts" ]; then
   echo "==> Registering lma-web service on port 8080..."
   sprite-env services delete lma-web >/dev/null 2>&1 || true

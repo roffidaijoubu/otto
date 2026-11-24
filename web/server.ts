@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const PORT = Number(process.env.PORT || 8080);
-const WEB_DIR = import.meta.dir;
+const DIST_DIR = path.join(import.meta.dir, "dist");
 const WORK_DIR = process.env.LMA_WORKDIR || process.env.HOME || "/home/sprite";
 const OMP_BIN = process.env.OMP_BIN || "omp";
 
@@ -68,6 +68,15 @@ function extractTextContent(content: unknown): string {
     .join("");
 }
 
+function extractThinkingContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((p): p is { type: string; thinking?: string } => Boolean(p && typeof p === "object"))
+    .filter((p) => p.type === "thinking" && typeof p.thinking === "string")
+    .map((p) => p.thinking!)
+    .join("\n\n");
+}
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -113,7 +122,6 @@ function summarizeSessionFile(filePath: string, activePath: string | null): Sess
     }
 
     const active = activePath !== null && path.resolve(filePath) === path.resolve(activePath);
-    // Hide completely empty historical sessions unless it's the currently active session
     if (messageCount === 0 && !active) return null;
 
     return {
@@ -242,7 +250,12 @@ class OmpRpcBridge {
     if (ev.type === "tool_execution_start") {
       this.busy = true;
       this.activity = friendlyToolLabel(String(ev.toolName || ""));
-      broadcast({ type: "activity", label: this.activity });
+      broadcast({ type: "tool_start", label: this.activity });
+      return;
+    }
+
+    if (ev.type === "tool_execution_end") {
+      broadcast({ type: "tool_end" });
       return;
     }
 
@@ -253,7 +266,9 @@ class OmpRpcBridge {
 
     if (ev.type === "message_update") {
       const ame = ev.assistantMessageEvent;
-      if (ame?.type === "text_delta" && typeof ame.delta === "string") {
+      if (ame?.type === "thinking_delta" && typeof ame.delta === "string") {
+        broadcast({ type: "thinking_delta", delta: ame.delta });
+      } else if (ame?.type === "text_delta" && typeof ame.delta === "string") {
         broadcast({ type: "text_delta", delta: ame.delta });
       }
       return;
@@ -356,20 +371,24 @@ class OmpRpcBridge {
     broadcast({ type: "session_changed" });
   }
 
-  async getMessages(): Promise<Array<{ role: "user" | "assistant"; text: string }>> {
+  async getMessages(): Promise<
+    Array<{ role: "user" | "assistant"; text: string; thinking?: string }>
+  > {
     const data = await this.sendCommand("get_messages");
     const raw =
       data && typeof data === "object" && "messages" in data && Array.isArray(data.messages)
         ? data.messages
         : [];
-    const out: Array<{ role: "user" | "assistant"; text: string }> = [];
+    const out: Array<{ role: "user" | "assistant"; text: string; thinking?: string }> = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") continue;
       const role = "role" in item ? item.role : undefined;
       if (role !== "user" && role !== "assistant") continue;
-      const text = extractTextContent("content" in item ? item.content : undefined).trim();
+      const content = "content" in item ? item.content : undefined;
+      const text = extractTextContent(content).trim();
       if (!text) continue;
-      out.push({ role, text });
+      const thinking = role === "assistant" ? extractThinkingContent(content).trim() : "";
+      out.push(thinking ? { role, text, thinking } : { role, text });
     }
     return out;
   }
@@ -415,18 +434,6 @@ Bun.serve({
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       return Response.json({ ok: true, busy: rpc.busy });
-    }
-
-    if (req.method === "GET" && url.pathname === "/") {
-      return new Response(Bun.file(path.join(WEB_DIR, "index.html")), {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-
-    if (req.method === "GET" && url.pathname === "/tokens.css") {
-      return new Response(Bun.file(path.join(WEB_DIR, "tokens.css")), {
-        headers: { "Content-Type": "text/css; charset=utf-8" },
-      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/events") {
@@ -517,6 +524,26 @@ Bun.serve({
       } catch (err: unknown) {
         return Response.json({ error: errorMessage(err) }, { status: 500 });
       }
+    }
+
+    if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
+      const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+      const resolvedDist = path.resolve(DIST_DIR);
+      const candidate = path.resolve(resolvedDist, rel);
+      if (
+        candidate.startsWith(resolvedDist + path.sep) &&
+        fs.existsSync(candidate) &&
+        fs.statSync(candidate).isFile()
+      ) {
+        return new Response(Bun.file(candidate));
+      }
+      const fallback = path.join(resolvedDist, "index.html");
+      if (fs.existsSync(fallback)) {
+        return new Response(Bun.file(fallback), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      return new Response("Frontend not built yet. Run: cd web && bun run build", { status: 503 });
     }
 
     return new Response("Not Found", { status: 404 });

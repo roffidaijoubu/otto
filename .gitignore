@@ -7,3 +7,4 @@ agent/models.yml
 agent/MEMORY.md
 AGENTS.md
 .tests/
+web/dist/
