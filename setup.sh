@@ -63,4 +63,15 @@ EOF
   fi
 fi
 
-echo "==> Done! Launch your personal agent with: omp"
+# 5. Register durable Sprite HTTP service for Web Chat UI (port 8080)
+if command -v sprite-env >/dev/null 2>&1 && [ -f "${REPO_DIR}/web/server.ts" ]; then
+  echo "==> Registering lma-web service on port 8080..."
+  sprite-env services delete lma-web >/dev/null 2>&1 || true
+  sprite-env services create lma-web \
+    --cmd /.sprite/bin/bun \
+    --args "run,${REPO_DIR}/web/server.ts" \
+    --http-port 8080 \
+    --dir "${HOME}"
+fi
+
+echo "==> Done! Open your Sprite HTTPS URL for Web Chat UI, or run: omp"
