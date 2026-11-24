@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/runtime-Fly.io_Sprites-7B3FE4?style=flat-square" alt="Fly.io Sprites">
-  <img src="https://img.shields.io/badge/connectors-Gemini_%7C_Exa_%7C_Firecrawl-0F766E?style=flat-square" alt="Sprites Connectors">
+  <img src="https://img.shields.io/badge/connectors-Gemini_%7C_Exa_%7C_Firecrawl_%7C_YouTube-0F766E?style=flat-square" alt="Sprites Connectors">
   <img src="https://img.shields.io/badge/local_api_keys-0-16A34A?style=flat-square" alt="Zero Local API Keys">
   <img src="https://img.shields.io/badge/AI_art_%26_video-disabled-DC2626?style=flat-square" alt="AI Art and Video Disabled">
 </p>
@@ -53,7 +53,7 @@ flowchart LR
     U["Streamer (sprite console / omp)"] --> S["Fly.io Sprite: lma<br/>APPEND_SYSTEM.md + MEMORY.md + Mnemopi"]
     S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
     G --> M["Google Gemini<br/>(Brain)"]
-    G --> E["Exa & Firecrawl<br/>(Research Tools)"]
+    G --> E["Exa, Firecrawl &amp; YouTube<br/>(Research &amp; Channel Ops)"]
 ```
 
 - **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw material for human artists and clippers — never replaces them.
@@ -113,6 +113,7 @@ omp
 | **Google Gemini** | LLM brain (`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-3.5-flash-lite`) | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
 | **Exa** | First-class `exa_search` & `exa_get_contents` research tools | Auto-discovered at runtime via `agent/extensions/exa-gateway.ts` |
 | **Firecrawl** | First-class `firecrawl_scrape` clean Markdown scraper | Auto-discovered at runtime via `agent/extensions/firecrawl-gateway.ts` |
+| **YouTube (Composio v3)** | Channel stats, recent videos, captions &amp; packaging ops (`youtube_tool`) | Auto-discovered Custom API connector ([setup guide](docs/composio-youtube-setup.md)) |
 
 > All extensions query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box.
 
@@ -129,7 +130,7 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `agent/APPEND_SYSTEM.md` | Professor L persona, 4-lecture playbook, non-negotiable rules, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
 | `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
-| `agent/extensions/*.ts` | Auto-discovering `omp` tool extensions for Exa and Firecrawl Sprites Connectors |
+| `agent/extensions/*.ts` | Auto-discovering `omp` tool extensions for Exa, Firecrawl, and Composio YouTube Connectors |
 | `setup.sh` | Idempotent bootstrap script: installs `omp`, links config/extensions, configures Gemini connector |
 
 <br>
@@ -141,7 +142,7 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 Built actively during **Fly.io Hacksgiving 2026**:
 
 - ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier)
-- ✅ Zero-key Sprites Connector integration for Google Gemini, Exa, and Firecrawl
+- ✅ Zero-key Sprites Connector integration for Google Gemini, Exa, Firecrawl, and YouTube (Composio v3)
 - ✅ Professor L persona & strict no-AI-art/video guardrails enforced in prompt + tool config
 - ⚠️ Dedicated streamer ops skills (`onboarding`, `stream-planner`, `trend-radar`, `raw-clip-finder`) — in progress
 
@@ -150,7 +151,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ---
 
 <p align="center">
-  <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a> · <a href="https://docs.fly.io/sprites/concepts/connectors.md">Sprites Connectors Docs</a> · <a href="setup.sh">Setup Script</a>
+  <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a> · <a href="docs/composio-youtube-setup.md">YouTube / Composio Setup</a> · <a href="https://docs.fly.io/sprites/concepts/connectors.md">Sprites Connectors Docs</a> · <a href="setup.sh">Setup Script</a>
 </p>
 
 <p align="center">

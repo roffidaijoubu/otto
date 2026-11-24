@@ -14,6 +14,19 @@ if ! command -v omp >/dev/null 2>&1; then
   ln -sf "$(npm prefix -g)/bin/omp" "${HOME}/.local/bin/omp"
 fi
 
+# 1b. Install ffmpeg and yt-dlp for VOD/clip/transcript workflows
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "==> Installing ffmpeg..."
+  sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+fi
+
+if ! command -v yt-dlp >/dev/null 2>&1; then
+  echo "==> Installing latest yt-dlp..."
+  mkdir -p "${HOME}/.local/bin"
+  curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "${HOME}/.local/bin/yt-dlp"
+  chmod +x "${HOME}/.local/bin/yt-dlp"
+fi
+
 # 2. Symlink agent persona, config, and extensions
 mkdir -p "${OMP_AGENT_DIR}/extensions"
 ln -sf "${REPO_DIR}/agent/APPEND_SYSTEM.md" "${OMP_AGENT_DIR}/APPEND_SYSTEM.md"
@@ -21,6 +34,12 @@ ln -sf "${REPO_DIR}/agent/config.yml" "${OMP_AGENT_DIR}/config.yml"
 for ext in "${REPO_DIR}"/agent/extensions/*.ts; do
   [ -e "$ext" ] && ln -sf "$ext" "${OMP_AGENT_DIR}/extensions/$(basename "$ext")"
 done
+if [ -d "${REPO_DIR}/agent/skills" ]; then
+  mkdir -p "${OMP_AGENT_DIR}/skills"
+  for skill in "${REPO_DIR}"/agent/skills/*; do
+    [ -e "$skill" ] && ln -sf "$skill" "${OMP_AGENT_DIR}/skills/$(basename "$skill")"
+  done
+fi
 
 # 3. Initialize persistent MEMORY.md if absent
 if [ ! -f "${OMP_AGENT_DIR}/MEMORY.md" ]; then
