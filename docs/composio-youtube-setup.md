@@ -1,30 +1,39 @@
-# Connecting YouTube via Composio v3 + Fly.io Custom API Connector
+# Agent Setup Guide: YouTube via Composio v3 + Sprites Custom API Connector
 
-`lma` accesses your YouTube channel (channel stats, recent uploads, video metadata, captions, and human-approved packaging updates) through a **Fly.io Sprites Custom API Connector** pointing at Composio v3 — with **zero API keys or OAuth tokens stored inside the Sprite**.
+> **Audience:** AI coding agent setting up `lma` for a user. Execute the CLI steps directly; only interrupt the human for the OAuth click and Project API Key (`ak_...`).
 
-> **Why Custom API instead of the built-in Sprites Composio connector?**
-> As of late 2026, Sprites' built-in Composio connector validator rejects Composio's latest v3.1 tool catalog schema (`"Composio returned an unexpected tool catalog"`). Using a Sprites **Custom API Connector** routes through the exact same encrypted Sprites Gateway with zero local credentials and works immediately against Composio v3.
+`lma` accesses YouTube (channel stats, recent videos, metadata, captions, and human-approved packaging updates) through a **Fly.io Sprites Custom API Connector** pointing at Composio v3 — with **zero API keys or OAuth tokens stored inside the Sprite**.
 
----
-
-## Step 1: Connect YouTube in Composio
-
-1. Sign in to [dashboard.composio.dev](https://dashboard.composio.dev) and select your **Project** (not Organization settings).
-2. Open **Auth Configs** in the left sidebar → create an Auth Config for **YouTube** (Composio Managed OAuth2).
-3. Click **+ Connect Account** and authorize your YouTube channel. Confirm its status shows **Active**.
-4. Open **API Keys** (inside the same Project) → click **+ Create API Key** to generate a **Project API Key** (`ak_...`).
-   - Do **not** use an Organization/User key (`uak_...`).
+> **Why Custom API instead of Sprites' built-in Composio connector?**
+> Sprites' built-in Composio validator currently rejects Composio's v3.1 tool catalog response (`"Composio returned an unexpected tool catalog"`). Using a Sprites **Custom API Connector** routes through the same encrypted Sprites Gateway and works immediately against Composio v3.
 
 ---
 
-## Step 2: Add a Custom API Connector in Fly.io Sprites
+## 1. Check if Already Connected
 
-### Option A: One Command via `sprite api` (Fastest — Agent-Friendly)
-
-Set `COMPOSIO_API_KEY` in your local shell (your `ak_...` Project API Key) and run:
+Run inside the Sprite first — skip setup if a `composio` connector already exists:
 
 ```bash
-sprite api /v1/oauth/connections/custom_api -X POST \
+sprite exec -- bash -c 'curl -s https://api.sprites.dev/v1/gateway/list | jq ".connections[] | select(.provider==\"custom_api\" and (.display_name | test(\"composio\"; \"i\"))) | .gateway_base_url"'
+```
+
+---
+
+## 2. Collect Prerequisites From the Human (Only if Missing)
+
+Ask the human to do **only** these two things if they haven't already:
+1. In [dashboard.composio.dev](https://dashboard.composio.dev), select their **Project** (not Organization settings) → **Auth Configs** → create a **YouTube** Managed OAuth2 Auth Config → click **+ Connect Account** and authorize their YouTube channel (status must be **Active**).
+2. In the same Project → **API Keys** → create a **Project API Key** (`ak_...`, **not** an org/user key `uak_...`) and set it as `COMPOSIO_API_KEY` in the local shell (or `.env`).
+
+---
+
+## 3. Provision the Connector via `sprite api` (Primary Method)
+
+Run from a directory **without** a `.sprite` file (e.g. `/tmp` on Linux/macOS, `/c/Windows/Temp` on Windows) so `sprite api` targets the org-level `/v1/` endpoint instead of `/v1/sprites/<name>/`:
+
+```bash
+cd /tmp
+sprite api /oauth/connections/custom_api -- -sS -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Composio v3",
@@ -37,30 +46,24 @@ sprite api /v1/oauth/connections/custom_api -X POST \
   }'
 ```
 
-### Option B: Via the Fly.io Sprites Dashboard (Web UI)
+### Fallback (Only if `sprite api` fails)
 
-1. Open your [Fly.io Sprites Dashboard](https://sprites.dev) → **Connectors → Add connector → Custom API**.
-2. Fill in the form:
+If the command above fails, tell the human to add it manually in the [Fly.io Sprites Dashboard](https://sprites.dev) (**Connectors → Add connector → Custom API**) with these exact fields and grant access to the `lma` Sprite:
 
 | Field | Value |
 | :--- | :--- |
 | **Base API URL** | `https://backend.composio.dev` |
-| **Connection name** | `Composio v3` *(must include `composio` for auto-discovery)* |
-| **Access token** | Your Composio Project API Key (`ak_...`) |
-| **Authentication method** | `Custom header` |
-| **Custom header name** | `x-api-key` |
-| **Test URL** *(optional)* | `https://backend.composio.dev/api/v3/connected_accounts?limit=1` |
+| **Connection name** | `Composio v3` *(must contain `composio` for auto-discovery)* |
+| **Access token** | Their `ak_...` Composio Project API Key |
+| **Authentication method** | `Custom header` → Header name: `x-api-key` |
+| **Test URL** | `https://backend.composio.dev/api/v3/connected_accounts?limit=1` |
 
-3. Click **Test connection** (should return `HTTP 200 — Connection OK`), then click **Add connector**.
-4. Grant your `lma` Sprite access to the `Composio v3` connector.
 ---
 
-## Step 3: Verify Inside the Sprite
+## 4. Verify End-to-End Inside the Sprite
 
-`agent/extensions/composio-youtube.ts` automatically discovers both the `Composio v3` gateway URL (from `GET /v1/gateway/list`) and your active YouTube `connected_account_id` + `user_id` (from `GET /api/v3/connected_accounts`). No hardcoded IDs or `.env` files are needed.
-
-Run a quick read-only test inside your Sprite:
+`agent/extensions/composio-youtube.ts` auto-discovers the gateway URL, active YouTube `connected_account_id`, and `user_id` at runtime. Verify with a read-only call:
 
 ```bash
-sprite exec -- omp -p "Use youtube_tool to check my channel statistics and list my last 3 videos" --no-session
+sprite exec -- omp -e /home/sprite/.omp/agent/extensions/composio-youtube.ts --tools youtube_list_tools -p "Use youtube_list_tools and list available YouTube tool slugs." --no-session
 ```
