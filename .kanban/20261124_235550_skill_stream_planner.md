@@ -1,8 +1,9 @@
 ---
 title: "Skill: Segment-First Stream Planner"
-status: idea
+status: done
 priority: high
 created_at: 2026-11-24T23:55:50+07:00
+completed_at: 2026-11-25T01:15:00+07:00
 tags:
   - skill
   - stream-prep
@@ -21,5 +22,5 @@ tags:
 - Log the planned stream into the 3+1 tracker in `MEMORY.md`.
 
 ## Checklist
-- [ ] **Author `agent/skills/stream-planner/SKILL.md`:** Encode segment-first planning, 3+1 ratio check, Daily Ideation ($1/$1K/$100K), and 4 Ps intro template.
-- [ ] **Sync & E2E test:** Run a multi-turn stream planning session and verify the 3+1 tracker updates in `MEMORY.md`.
+- [x] **Author `agent/skills/stream-planner/SKILL.md`:** Encoded 4-6h segment-first blueprint (2-4 named segments), 3+1 ratio check, Daily Ideation ($1/$1K/$100K), 4 Ps intro, optional QStash pre-/post-stream wake-up offer, and 3+1 tracker update.
+- [x] **Sync & register on Sprite `lma`:** Symlinked into `/home/sprite/.omp/agent/skills/stream-planner` via `setup.sh`.

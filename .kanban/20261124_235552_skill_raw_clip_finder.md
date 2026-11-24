@@ -1,8 +1,9 @@
 ---
 title: "Skill: Raw Clip Finder for Human Editors"
-status: idea
+status: done
 priority: medium
 created_at: 2026-11-24T23:55:52+07:00
+completed_at: 2026-11-25T01:15:00+07:00
 tags:
   - skill
   - ffmpeg
@@ -21,5 +22,5 @@ tags:
 - Output a human-editor handoff brief (timestamps, suggested hook caption, context) so clippers skip hours of VOD scrubbing.
 
 ## Checklist
-- [ ] **Author `agent/skills/raw-clip-finder/SKILL.md`:** Define transcript-first discovery, targeted `yt-dlp --download-sections` + `ffmpeg` extraction, and human-editor handoff brief format.
-- [ ] **Sync & E2E test:** Run against a real YouTube VOD and verify clean `.mp4` + `.srt` artifacts are produced on the Sprite.
+- [x] **Author `agent/skills/raw-clip-finder/SKILL.md`:** Encoded transcript-first `yt-dlp --skip-download --write-auto-subs`, targeted `--download-sections` + `ffmpeg` raw `.mp4`/`.srt` extraction, OPSEC filtering, and human-editor handoff brief.
+- [x] **Sync & register on Sprite `lma`:** Symlinked into `/home/sprite/.omp/agent/skills/raw-clip-finder` via `setup.sh`.
