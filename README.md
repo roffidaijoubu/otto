@@ -141,6 +141,8 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `web/` | Vue 3 + Vite Web Chat UI (`ThoughtTrace`, session switcher, passcode gate, `/api/wakeup`) |
 | `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, builds `web/`, registers `lma-web` |
 
+> **For judges &amp; engineers:** Read the [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how **Upstash QStash + `/.sprite/api.sock` Tasks API** enables proactive self-scheduling on a $0-idle sleeping Sprite, and how we use **Checkpoint Time-Travel** for stateful E2E testing.
+
 <br>
 
 ---
@@ -159,7 +161,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ---
 
 <p align="center">
-  <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a> · <a href="docs/composio-youtube-setup.md">YouTube Setup</a> · <a href="docs/buffer-setup.md">Buffer Setup</a> · <a href="docs/qstash-scheduler-setup.md">QStash Setup</a>
+  <a href="docs/architecture.md">Architecture Deep Dive</a> · <a href="docs/composio-youtube-setup.md">YouTube Setup</a> · <a href="docs/buffer-setup.md">Buffer Setup</a> · <a href="docs/qstash-scheduler-setup.md">QStash Setup</a> · <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a>
 </p>
 
 <p align="center">
