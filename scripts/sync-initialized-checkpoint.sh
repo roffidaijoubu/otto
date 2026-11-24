@@ -24,9 +24,8 @@ MSG="$(git log -1 --pretty=%s 2>/dev/null || echo 'manual sync')"
 COMMENT="initialized: ${SHA} — ${MSG}"
 
 echo "[lma-checkpoint] Syncing repo (${SHA}) to Sprite and resetting clean initialized state..."
-
 # 1. Record existing 'initialized:' checkpoints so we only clean up old initialized baselines (never prod checkpoints)
-OLD_INIT_IDS="$(sprite checkpoint list 2>/dev/null | awk '$3 ~ /^initialized:/ { print $1 }' || true)"
+OLD_INIT_IDS="$(sprite checkpoint list 2>/dev/null | awk '$4 ~ /^initialized:/ { print $1 }' || true)"
 
 # 2. Sync tracked files (excluding node_modules, dist, .git, .docs, .tests, live MEMORY.md)
 tar \
