@@ -1,0 +1,158 @@
+<h1 align="center">lma</h1>
+
+<p align="center">
+  <b>Professor L, a persistent personal Talent Manager &amp; Ops Agent for indie livestreamers &amp; VTubers on Fly.io Sprites — zero stored API keys, strictly zero AI-generated art or video.</b>
+  <br>
+  Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a> on <a href="https://sprites.dev">Sprites</a>, <a href="https://github.com/can1357/oh-my-pi">omp</a>, and Sprites Connectors.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/runtime-Fly.io_Sprites-7B3FE4?style=flat-square" alt="Fly.io Sprites">
+  <img src="https://img.shields.io/badge/connectors-Gemini_%7C_Exa_%7C_Firecrawl-0F766E?style=flat-square" alt="Sprites Connectors">
+  <img src="https://img.shields.io/badge/local_api_keys-0-16A34A?style=flat-square" alt="Zero Local API Keys">
+  <img src="https://img.shields.io/badge/AI_art_%26_video-disabled-DC2626?style=flat-square" alt="AI Art and Video Disabled">
+</p>
+
+<br>
+
+---
+
+```text
+╭─ sprite: lma · google/gemini-4-neon:auto · mnemopi ───────────────────────────╮
+│                                                                               │
+│  you › I want to use AI thumbnails to save money, and my goal this year is    │
+│        just to "be more confident". Thoughts?                                 │
+│                                                                               │
+│  lma › Hard no on AI thumbnails. You'll save $30 and get zero clicks — your   │
+│        audience smells it immediately. Spend that energy briefing a human     │
+│        artist with a thumbnail that passes the Squint Test.                   │
+│                                                                               │
+│        Also, "be more confident" isn't a goal. Before we plan a single        │
+│        stream, finish Homework #1 in MEMORY.md:                               │
+│          1. Three concrete, measurable goals for the year                     │
+│          2. Your ideal 4–6 hr schedule (with mandatory days off)              │
+│          3. Three GOATs — and specifically WHY each one works                 │
+│                                                                               │
+╰───────────────────────────────────────────────────────────────────────────────╯
+```
+
+<br>
+
+---
+
+## The Solo Streamer Burnout Trap
+
+You boot up OBS, stream for seven hours straight because you have the time, and close the broadcast exhausted. There is no YouTube video waiting to be cut, no clear segment structure, and no one holding you accountable when your packaging slips or your schedule bleeds into burnout.
+
+Meanwhile, most "AI creator tools" try to replace the exact craft your community actually loves — churning out uncanny AI thumbnails, slop overlays, and synthetic clips that alienate viewers and undercut the human artists, riggers, clippers, and editors who keep streaming alive.
+
+**`lma` puts a tough-love talent manager inside a persistent Fly.io Sprite — automating research, prep, and long-term accountability while keeping 100% of your art and video human-made.**
+
+```mermaid
+flowchart LR
+    U["Streamer (sprite console / omp)"] --> S["Fly.io Sprite: lma<br/>APPEND_SYSTEM.md + MEMORY.md + Mnemopi"]
+    S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
+    G --> M["Google Gemini<br/>(Brain)"]
+    G --> E["Exa & Firecrawl<br/>(Research Tools)"]
+```
+
+- **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw material for human artists and clippers — never replaces them.
+- **Zero API keys inside the VM:** Every call to Google Gemini, Exa, and Firecrawl routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md). Even if you inspect the Sprite's disk or environment, no credentials exist to leak.
+- **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining a structured `MEMORY.md` talent dossier (3 Goals, Ideal Schedule, 3 GOATs, 3+1 tracker) with built-in **Mnemopi** SQLite memory across sessions.
+- **Professor L coaching playbook:** Grounded in Ludwig's *Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
+
+<br>
+
+---
+
+## Replicate This Setup With Your Coding Agent
+
+Already using Claude Code, `omp`, Pi, or Codex? Hand it this prompt to spin up your own `lma` Sprite in under a minute — no manual config editing required:
+
+```text
+Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprites:
+1. Follow https://fly.io/sprites/agent-ready.md to verify the Sprite CLI and auth.
+2. Create a Sprite named "lma" and set it as active (`sprite create --skip-console lma && sprite use lma`).
+3. Inside the Sprite, clone this repo into ~/lma and run `bash ~/lma/setup.sh`.
+4. Verify that `omp` is on PATH and check `https://api.sprites.dev/v1/gateway/list` to confirm my Google Gemini, Exa, and Firecrawl Sprites Connectors are authorized.
+5. Run a quick smoke test (`omp -p "reply with just: OK" --no-session`) and tell me how to start chatting with Professor L.
+```
+
+> **Prerequisite:** Authorize your **Google Gemini**, **Exa**, and **Firecrawl** Connectors once in the [Fly.io Sprites Dashboard](https://sprites.dev) and allow your `lma` Sprite to use them. `setup.sh` and the tool extensions auto-discover your connector URLs at runtime.
+
+<br>
+
+---
+
+## Manual Setup (3 Commands)
+
+Prefer to run it directly from your terminal?
+
+```bash
+# 1. Create and select your persistent Sprite
+sprite create --skip-console lma && sprite use lma
+
+# 2. Clone the repo inside the Sprite and run the idempotent installer
+sprite exec -- bash -c "git clone <this-repo-url> ~/lma && bash ~/lma/setup.sh"
+
+# 3. Open an interactive session with Professor L
+sprite console
+omp
+```
+
+<br>
+
+---
+
+## How Sprites Connectors Power `lma`
+
+`lma` never stores `GEMINI_API_KEY`, `EXA_API_KEY`, or `FIRECRAWL_API_KEY` inside the Sprite. Each capability connects through the organization-level Sprites Gateway:
+
+| Connector | Role in `lma` | Discovery Mechanism |
+| :--- | :--- | :--- |
+| **Google Gemini** | LLM brain (`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-3.5-flash-lite`) | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
+| **Exa** | First-class `exa_search` & `exa_get_contents` research tools | Auto-discovered at runtime via `agent/extensions/exa-gateway.ts` |
+| **Firecrawl** | First-class `firecrawl_scrape` clean Markdown scraper | Auto-discovered at runtime via `agent/extensions/firecrawl-gateway.ts` |
+
+> All extensions query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box.
+
+<br>
+
+---
+
+## Architecture & Key Files
+
+Rather than turning `~/.omp/` into a messy git repo full of session logs and SQLite caches, `lma` keeps a clean source repository and symlinks only the agent definition into `~/.omp/agent/`:
+
+| Path | Purpose |
+| :--- | :--- |
+| `agent/APPEND_SYSTEM.md` | Professor L persona, 4-lecture playbook, non-negotiable rules, and memory protocol |
+| `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
+| `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
+| `agent/extensions/*.ts` | Auto-discovering `omp` tool extensions for Exa and Firecrawl Sprites Connectors |
+| `setup.sh` | Idempotent bootstrap script: installs `omp`, links config/extensions, configures Gemini connector |
+
+<br>
+
+---
+
+## Project Status
+
+Built actively during **Fly.io Hacksgiving 2026**:
+
+- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier)
+- ✅ Zero-key Sprites Connector integration for Google Gemini, Exa, and Firecrawl
+- ✅ Professor L persona & strict no-AI-art/video guardrails enforced in prompt + tool config
+- ⚠️ Dedicated streamer ops skills (`onboarding`, `stream-planner`, `trend-radar`, `raw-clip-finder`) — in progress
+
+<br>
+
+---
+
+<p align="center">
+  <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a> · <a href="https://docs.fly.io/sprites/concepts/connectors.md">Sprites Connectors Docs</a> · <a href="setup.sh">Setup Script</a>
+</p>
+
+<p align="center">
+  <sub>MIT License</sub>
+</p>

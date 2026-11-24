@@ -1,0 +1,8 @@
+.sprite
+.docs/
+.env
+*.log
+node_modules/
+agent/models.yml
+agent/MEMORY.md
+AGENTS.md

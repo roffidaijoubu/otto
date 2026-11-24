@@ -1,0 +1,124 @@
+symbolPreset: unicode
+colorBlindMode: true
+setupVersion: 3
+
+modelRoles:
+  default: google/gemini-4-neon:auto
+  slow: google/gemini-4-neon:high
+  plan: google/gemini-4-neon:high
+  advisor: google/gemini-4-neon:high
+  designer: google/gemini-4-hydrogen:high
+  task: google/gemini-4-hydrogen:auto
+  vision: google/gemini-4-hydrogen:high
+  audio: google/gemini-4-hydrogen:auto
+  video: google/gemini-4-hydrogen:auto
+  smol: google/gemini-3.5-flash-lite:low
+  autorename: google/gemini-3.5-flash-lite:low
+  tiny: google/gemini-3.5-flash-lite:auto
+  memory: google/gemini-3.5-flash-lite:auto
+  commit: google/gemini-3.5-flash-lite:low
+  widget: google/gemini-3.5-flash-lite:low
+
+defaultThinkingLevel: auto
+
+display:
+  shimmer: classic
+  showTokenUsage: true
+
+statusLine:
+  preset: default
+  sessionAccent: true
+  transparent: true
+  showHookStatus: true
+  separator: pipe
+  segmentOptions:
+    model:
+      showProvider: true
+  leftSegments:
+    - mode
+    - model
+    - path
+    - git
+  rightSegments:
+    - context
+    - subagents
+    - cost
+    - time
+  compactThinkingLevel: true
+
+theme:
+  light: light
+  dark: mahogany
+
+hideThinkingBlock: false
+
+memory:
+  backend: mnemopi
+
+mnemopi:
+  scoping: per-project-tagged
+  autoRecall: true
+  autoRetain: true
+  retainEveryNTurns: 4
+  recallLimit: 8
+  llmMode: smol
+  noEmbeddings: true
+
+autoResume: true
+steeringMode: one-at-a-time
+interruptMode: immediate
+
+compaction:
+  methodOrder:
+    - snapcompact
+    - shake
+    - soft
+  thresholdPercent: 45
+
+personality: none
+features:
+  unexpectedStopDetection: smart
+
+tools:
+  approval:
+    generate_image: deny
+  format: auto
+  approvalMode: yolo
+
+generate_image:
+  enabled: false
+
+plan:
+  enabled: false
+
+read:
+  defaultLimit: 5000
+  summarize:
+    prose: true
+
+tui:
+  textSizing: true
+  hyperlinks: always
+  tight: true
+  imeSafeCursor: false
+
+bash:
+  autoBackground:
+    enabled: true
+
+snapcompact:
+  shape: auto
+
+magicKeywords:
+  enabled: true
+  ultrathink: true
+
+startup:
+  quiet: true
+  changelogMode: expanded
+
+inlineToolDescriptors: auto
+includeModelInPrompt: true
+
+composer:
+  shape: box
