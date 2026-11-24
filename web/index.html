@@ -22,18 +22,116 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    .app {
+    [v-cloak] { display: none; }
+
+    .shell {
+      display: flex;
+      height: 100dvh;
+      width: 100%;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    /* Sidebar (Session History) */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
       display: flex;
       flex-direction: column;
-      height: 100dvh;
-      max-width: var(--max-width);
-      margin: 0 auto;
-      border-left: 1px solid var(--border);
-      border-right: 1px solid var(--border);
+      border-right: 1px solid var(--border-strong);
+      background: var(--surface);
+    }
+
+    .sidebar-header {
+      height: var(--header-height);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border-strong);
       background: var(--bg);
     }
 
-    /* Header */
+    .sidebar-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .session-item {
+      width: 100%;
+      text-align: left;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--fg);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .session-item:hover:not(:disabled) {
+      border-color: var(--border-strong);
+      background: var(--surface-alt);
+    }
+    .session-item.active {
+      border-color: var(--border-strong);
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    .session-item:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .session-item-title {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-item-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .session-item.active .session-item-meta {
+      color: var(--accent-fg);
+      opacity: 0.8;
+    }
+
+    .session-empty {
+      padding: 12px 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+
+    /* Main Chat Area */
+    .main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      background: var(--bg);
+    }
+
     .header {
       height: var(--header-height);
       flex-shrink: 0;
@@ -43,6 +141,12 @@
       padding: 0 16px;
       border-bottom: 1px solid var(--border-strong);
       background: var(--bg);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
     .brand {
@@ -135,10 +239,16 @@
     }
 
     /* Messages */
-    .messages {
+    .messages-wrap {
       flex: 1;
       overflow-y: auto;
       padding: 20px 16px;
+    }
+
+    .messages {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      min-height: 100%;
       display: flex;
       flex-direction: column;
       gap: 16px;
@@ -146,7 +256,7 @@
 
     .empty-state {
       margin: auto;
-      max-width: 440px;
+      max-width: 460px;
       padding: 24px;
       border: 1px dashed var(--border-strong);
       border-radius: var(--radius);
@@ -273,9 +383,9 @@
       margin: 12px 0;
     }
 
-    /* Activity Banner */
+    /* Activity & Error Bars */
     .activity {
-      display: none;
+      display: flex;
       align-items: center;
       gap: 8px;
       padding: 8px 16px;
@@ -285,7 +395,6 @@
       font-size: 12px;
       color: var(--fg-muted);
     }
-    .activity.visible { display: flex; }
     .activity-dot {
       width: 7px;
       height: 7px;
@@ -294,7 +403,6 @@
     }
 
     .error-banner {
-      display: none;
       padding: 8px 16px;
       border-top: 1px solid var(--error);
       background: var(--bg);
@@ -302,16 +410,20 @@
       font-family: var(--font-mono);
       font-size: 12px;
     }
-    .error-banner.visible { display: block; }
 
     /* Composer */
-    .composer {
+    .composer-wrap {
       flex-shrink: 0;
-      display: flex;
-      gap: 8px;
-      padding: 12px 16px;
       border-top: 1px solid var(--border-strong);
       background: var(--bg);
+      padding: 12px 16px;
+    }
+
+    .composer {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      display: flex;
+      gap: 8px;
       align-items: flex-end;
     }
 
@@ -334,68 +446,143 @@
       background: var(--surface);
     }
 
-    @media (max-width: 640px) {
-      .app { border-left: none; border-right: none; }
+    .backdrop {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 20;
+        box-shadow: none;
+      }
+      .backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 15;
+      }
       .msg { max-width: 96%; }
       .brand-sub { display: none; }
     }
   </style>
 </head>
 <body>
-  <div class="app">
-    <header class="header">
-      <div class="brand">
-        <div class="avatar">L</div>
-        <div>
-          <div class="brand-title">Professor L</div>
-          <div class="brand-sub">Talent Manager</div>
+  <div id="app" class="shell" v-cloak>
+    <div v-if="sidebarOpen" class="backdrop" @click="sidebarOpen = false"></div>
+
+    <aside v-if="sidebarOpen" class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Chats</span>
+        <button class="btn" type="button" :disabled="busy" @click="newChat">+ New</button>
+      </div>
+      <div class="session-list">
+        <div v-if="sessions.length === 0" class="session-empty">
+          No previous chats yet.
         </div>
+        <button
+          v-for="s in sessions"
+          :key="s.path"
+          type="button"
+          class="session-item"
+          :class="{ active: s.active }"
+          :disabled="busy || s.active"
+          @click="switchChat(s)"
+        >
+          <span class="session-item-title">{{ s.title }}</span>
+          <span class="session-item-meta">{{ formatTime(s.updatedAt) }} · {{ s.messageCount }} msgs</span>
+        </button>
       </div>
-      <div class="header-actions">
-        <span class="status" id="statusWrap">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">connecting</span>
-        </span>
-        <button class="btn" id="newBtn" type="button">New Chat</button>
+    </aside>
+
+    <div class="main">
+      <header class="header">
+        <div class="header-left">
+          <button class="btn" type="button" @click="sidebarOpen = !sidebarOpen">
+            {{ sidebarOpen ? "Hide" : "Chats" }}
+          </button>
+          <div class="brand">
+            <div class="avatar">L</div>
+            <div>
+              <div class="brand-title">Professor L</div>
+              <div class="brand-sub">Talent Manager</div>
+            </div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <span class="status">
+            <span class="status-dot" :class="statusState"></span>
+            <span>{{ statusLabel }}</span>
+          </span>
+          <button class="btn" type="button" :disabled="busy" @click="newChat">New Chat</button>
+        </div>
+      </header>
+
+      <main class="messages-wrap" ref="messagesWrapRef">
+        <div class="messages">
+          <div v-if="messages.length === 0 && !streamingText" class="empty-state">
+            <h2>Professor L is in the room.</h2>
+            <p>No fluff, no yes-man answers, zero AI slop. Tell me who you are or what stream/video we are working on today.</p>
+            <div class="starters">
+              <button
+                v-for="prompt in starters"
+                :key="prompt"
+                class="starter-btn"
+                type="button"
+                @click="useStarter(prompt)"
+              >
+                {{ prompt }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-for="(m, idx) in messages"
+            :key="idx"
+            class="msg"
+            :class="m.role"
+          >
+            <div class="msg-meta">{{ m.role === "user" ? "You" : "Professor L" }}</div>
+            <div class="msg-body" v-html="renderMarkdown(m.text)"></div>
+          </div>
+
+          <div v-if="streamingText" class="msg assistant">
+            <div class="msg-meta">Professor L</div>
+            <div class="msg-body" v-html="renderMarkdown(streamingText)"></div>
+          </div>
+        </div>
+      </main>
+
+      <div v-if="busy" class="activity">
+        <span class="activity-dot"></span>
+        <span>{{ activity }}</span>
       </div>
-    </header>
 
-    <main class="messages" id="messages"></main>
+      <div v-if="error" class="error-banner">{{ error }}</div>
 
-    <div class="activity" id="activity">
-      <span class="activity-dot"></span>
-      <span id="activityText">Thinking...</span>
+      <div class="composer-wrap">
+        <form class="composer" @submit.prevent="sendMessage">
+          <textarea
+            ref="inputRef"
+            v-model="draft"
+            rows="1"
+            placeholder="Talk to Professor L... (Enter to send, Shift+Enter for newline)"
+            @input="autoResize"
+            @keydown="onKeydown"
+          ></textarea>
+          <button v-if="busy" class="btn btn-danger" type="button" @click="stopReply">Stop</button>
+          <button class="btn btn-primary" type="submit" :disabled="busy || !draft.trim()">Send</button>
+        </form>
+      </div>
     </div>
-
-    <div class="error-banner" id="errorBanner"></div>
-
-    <form class="composer" id="composer">
-      <textarea
-        id="input"
-        rows="1"
-        placeholder="Talk to Professor L... (Enter to send, Shift+Enter for newline)"
-      ></textarea>
-      <button class="btn btn-danger" id="stopBtn" type="button" style="display:none">Stop</button>
-      <button class="btn btn-primary" id="sendBtn" type="submit">Send</button>
-    </form>
   </div>
 
-  <script>
-    const messagesEl = document.getElementById("messages");
-    const composerEl = document.getElementById("composer");
-    const inputEl = document.getElementById("input");
-    const sendBtn = document.getElementById("sendBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const newBtn = document.getElementById("newBtn");
-    const statusDot = document.getElementById("statusDot");
-    const statusText = document.getElementById("statusText");
-    const activityEl = document.getElementById("activity");
-    const activityText = document.getElementById("activityText");
-    const errorBanner = document.getElementById("errorBanner");
-
-    let isBusy = false;
-    let streamingEl = null;
-    let streamingText = "";
+  <script type="module">
+    import { createApp, ref, computed, nextTick, onMounted } from "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js";
 
     function escapeHtml(str) {
       return str
@@ -406,10 +593,9 @@
         .replace(/'/g, "&#39;");
     }
 
-    // Minimal safe Markdown renderer (escaped first, no raw HTML injection)
     function renderMarkdown(md) {
       const codeBlocks = [];
-      let text = String(md || "").replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, _lang, code) => {
+      const text = String(md || "").replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, _lang, code) => {
         const idx = codeBlocks.length;
         codeBlocks.push(`<pre><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
         return `@@CODEBLOCK_${idx}@@`;
@@ -484,216 +670,245 @@
       return out.join("\n");
     }
 
-    function setStatus(state, label) {
-      statusDot.className = "status-dot " + state;
-      statusText.textContent = label;
-    }
+    createApp({
+      setup() {
+        const messages = ref([]);
+        const sessions = ref([]);
+        const streamingText = ref("");
+        const draft = ref("");
+        const busy = ref(false);
+        const activity = ref("Thinking...");
+        const connectionState = ref("connecting");
+        const error = ref("");
+        const sidebarOpen = ref(window.innerWidth > 768);
+        const messagesWrapRef = ref(null);
+        const inputRef = ref(null);
 
-    function setBusy(busy, label) {
-      isBusy = busy;
-      sendBtn.disabled = busy;
-      newBtn.disabled = busy;
-      stopBtn.style.display = busy ? "inline-block" : "none";
-      if (busy) {
-        setStatus("busy", "working");
-        activityText.textContent = label || "Thinking...";
-        activityEl.classList.add("visible");
-      } else {
-        setStatus("ready", "online");
-        activityEl.classList.remove("visible");
-      }
-    }
+        const starters = [
+          "Let's get started — do your homework on my channel.",
+          "Audit my latest YouTube uploads and roast my titles.",
+          "Help me plan a 4-hour segment-first stream for tonight.",
+        ];
 
-    function showError(msg) {
-      if (!msg) {
-        errorBanner.textContent = "";
-        errorBanner.classList.remove("visible");
-        return;
-      }
-      errorBanner.textContent = msg;
-      errorBanner.classList.add("visible");
-    }
-
-    function scrollToBottom() {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    function renderEmptyState() {
-      messagesEl.innerHTML = "";
-      const box = document.createElement("div");
-      box.className = "empty-state";
-      box.innerHTML = `
-        <h2>Professor L is in the room.</h2>
-        <p>No fluff, no yes-man answers, zero AI slop. Tell me who you are or what stream/video we are working on today.</p>
-        <div class="starters">
-          <button class="starter-btn" type="button">Let's get started — do your homework on my channel.</button>
-          <button class="starter-btn" type="button">Audit my latest YouTube uploads and roast my titles.</button>
-          <button class="starter-btn" type="button">Help me plan a 4-hour segment-first stream for tonight.</button>
-        </div>
-      `;
-      box.querySelectorAll(".starter-btn").forEach((b) => {
-        b.addEventListener("click", () => {
-          inputEl.value = b.textContent;
-          submitMessage();
+        const statusState = computed(() => {
+          if (connectionState.value === "error") return "error";
+          if (busy.value) return "busy";
+          if (connectionState.value === "ready") return "ready";
+          return "busy";
         });
-      });
-      messagesEl.appendChild(box);
-    }
 
-    function appendMessage(role, text) {
-      const empty = messagesEl.querySelector(".empty-state");
-      if (empty) empty.remove();
+        const statusLabel = computed(() => {
+          if (connectionState.value === "error") return "reconnecting";
+          if (busy.value) return "working";
+          if (connectionState.value === "ready") return "online";
+          return "connecting";
+        });
 
-      const wrap = document.createElement("div");
-      wrap.className = "msg " + role;
+        function scrollToBottom() {
+          nextTick(() => {
+            const el = messagesWrapRef.value;
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        }
 
-      const meta = document.createElement("div");
-      meta.className = "msg-meta";
-      meta.textContent = role === "user" ? "You" : "Professor L";
+        function autoResize() {
+          const el = inputRef.value;
+          if (!el) return;
+          el.style.height = "auto";
+          el.style.height = Math.min(el.scrollHeight, 160) + "px";
+        }
 
-      const body = document.createElement("div");
-      body.className = "msg-body";
-      body.innerHTML = role === "user" ? renderMarkdown(text) : renderMarkdown(text);
-
-      wrap.appendChild(meta);
-      wrap.appendChild(body);
-      messagesEl.appendChild(wrap);
-      scrollToBottom();
-      return body;
-    }
-
-    async function loadMessages() {
-      try {
-        const res = await fetch("/api/messages");
-        const data = await res.json();
-        messagesEl.innerHTML = "";
-        const list = data.messages || [];
-        if (list.length === 0) {
-          renderEmptyState();
-        } else {
-          for (const m of list) {
-            appendMessage(m.role, m.text);
+        function formatTime(iso) {
+          try {
+            const d = new Date(iso);
+            return d.toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch {
+            return "";
           }
         }
-        setBusy(Boolean(data.busy), data.activity);
-      } catch (err) {
-        setStatus("error", "offline");
-        showError("Could not load conversation history: " + err.message);
-      }
-    }
 
-    function connectEvents() {
-      const es = new EventSource("/api/events");
-      es.onopen = () => {
-        showError("");
-        if (!isBusy) setStatus("ready", "online");
-      };
-      es.onerror = () => {
-        setStatus("error", "reconnecting");
-      };
-      es.onmessage = (ev) => {
-        let msg;
-        try { msg = JSON.parse(ev.data); } catch { return; }
-
-        if (msg.type === "status") {
-          setBusy(Boolean(msg.busy), msg.activity);
-        } else if (msg.type === "activity") {
-          setBusy(true, msg.label);
-        } else if (msg.type === "user_message") {
-          appendMessage("user", msg.text);
-        } else if (msg.type === "assistant_start") {
-          // Create bubble lazily on first real text_delta so tool-only turns never leave an empty "..." box
-          streamingText = "";
-          streamingEl = null;
-        } else if (msg.type === "text_delta") {
-          if (!msg.delta) return;
-          if (!streamingEl) {
-            streamingText = "";
-            streamingEl = appendMessage("assistant", "");
+        async function loadSessions() {
+          try {
+            const res = await fetch("/api/sessions");
+            const data = await res.json();
+            sessions.value = data.sessions || [];
+          } catch {
+            // keep existing list
           }
-          streamingText += msg.delta;
-          streamingEl.innerHTML = renderMarkdown(streamingText);
-          scrollToBottom();
-        } else if (msg.type === "assistant_end") {
-          if (msg.text) {
-            if (!streamingEl) {
-              streamingEl = appendMessage("assistant", msg.text);
-            } else {
-              streamingEl.innerHTML = renderMarkdown(msg.text);
+        }
+
+        async function loadMessages() {
+          try {
+            const res = await fetch("/api/messages");
+            const data = await res.json();
+            messages.value = data.messages || [];
+            streamingText.value = "";
+            busy.value = Boolean(data.busy);
+            if (data.activity) activity.value = data.activity;
+            scrollToBottom();
+          } catch (err) {
+            connectionState.value = "error";
+            error.value = "Could not load conversation history: " + err.message;
+          }
+        }
+
+        function connectEvents() {
+          const es = new EventSource("/api/events");
+          es.onopen = () => {
+            error.value = "";
+            connectionState.value = "ready";
+          };
+          es.onerror = () => {
+            connectionState.value = "error";
+          };
+          es.onmessage = (ev) => {
+            let msg;
+            try { msg = JSON.parse(ev.data); } catch { return; }
+
+            if (msg.type === "status") {
+              busy.value = Boolean(msg.busy);
+              if (msg.activity) activity.value = msg.activity;
+            } else if (msg.type === "activity") {
+              busy.value = true;
+              activity.value = msg.label || "Thinking...";
+            } else if (msg.type === "user_message") {
+              messages.value.push({ role: "user", text: msg.text });
+              scrollToBottom();
+            } else if (msg.type === "assistant_start") {
+              streamingText.value = "";
+            } else if (msg.type === "text_delta") {
+              if (!msg.delta) return;
+              streamingText.value += msg.delta;
+              scrollToBottom();
+            } else if (msg.type === "assistant_end") {
+              if (msg.text && msg.text.trim()) {
+                messages.value.push({ role: "assistant", text: msg.text });
+              }
+              streamingText.value = "";
+              scrollToBottom();
+            } else if (msg.type === "done") {
+              if (streamingText.value.trim()) {
+                messages.value.push({ role: "assistant", text: streamingText.value });
+              }
+              streamingText.value = "";
+              busy.value = false;
+              loadSessions();
+            } else if (msg.type === "session_changed") {
+              streamingText.value = "";
+              busy.value = false;
+              loadMessages();
+              loadSessions();
+            } else if (msg.type === "error") {
+              error.value = msg.message || "Unexpected error";
+              busy.value = false;
             }
+          };
+        }
+
+        async function sendMessage() {
+          const text = draft.value.trim();
+          if (!text || busy.value) return;
+          error.value = "";
+          draft.value = "";
+          nextTick(autoResize);
+          busy.value = true;
+          activity.value = "Thinking...";
+          try {
+            const res = await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: text }),
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({ error: res.statusText }));
+              error.value = err.error || "Failed to send message";
+              busy.value = false;
+            }
+          } catch (err) {
+            error.value = "Network error: " + err.message;
+            busy.value = false;
           }
-          streamingEl = null;
-          streamingText = "";
-          scrollToBottom();
-        } else if (msg.type === "done") {
-          streamingEl = null;
-          streamingText = "";
-          setBusy(false);
-        } else if (msg.type === "reset") {
-          streamingEl = null;
-          streamingText = "";
-          setBusy(false);
-          renderEmptyState();
-        } else if (msg.type === "error") {
-          showError(msg.message || "Unexpected error");
-          setBusy(false);
         }
-      };
-    }
 
-    async function submitMessage() {
-      const text = inputEl.value.trim();
-      if (!text || isBusy) return;
-      showError("");
-      inputEl.value = "";
-      autoResize();
-      setBusy(true, "Thinking...");
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
+        function useStarter(prompt) {
+          draft.value = prompt;
+          sendMessage();
+        }
+
+        function onKeydown(e) {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        }
+
+        async function stopReply() {
+          await fetch("/api/abort", { method: "POST" }).catch(() => {});
+        }
+
+        async function newChat() {
+          if (busy.value) return;
+          error.value = "";
+          await fetch("/api/new", { method: "POST" }).catch(() => {});
+          if (window.innerWidth <= 768) sidebarOpen.value = false;
+        }
+
+        async function switchChat(session) {
+          if (busy.value || session.active) return;
+          error.value = "";
+          try {
+            const res = await fetch("/api/sessions/switch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: session.path }),
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({ error: res.statusText }));
+              error.value = err.error || "Failed to switch chat";
+            } else if (window.innerWidth <= 768) {
+              sidebarOpen.value = false;
+            }
+          } catch (err) {
+            error.value = "Network error: " + err.message;
+          }
+        }
+
+        onMounted(async () => {
+          await Promise.all([loadMessages(), loadSessions()]);
+          connectEvents();
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: res.statusText }));
-          showError(err.error || "Failed to send message");
-          setBusy(false);
-        }
-      } catch (err) {
-        showError("Network error: " + err.message);
-        setBusy(false);
-      }
-    }
 
-    function autoResize() {
-      inputEl.style.height = "auto";
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
-    }
-
-    inputEl.addEventListener("input", autoResize);
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        submitMessage();
-      }
-    });
-
-    composerEl.addEventListener("submit", (e) => {
-      e.preventDefault();
-      submitMessage();
-    });
-
-    stopBtn.addEventListener("click", async () => {
-      await fetch("/api/abort", { method: "POST" }).catch(() => {});
-    });
-
-    newBtn.addEventListener("click", async () => {
-      if (isBusy) return;
-      showError("");
-      await fetch("/api/new", { method: "POST" }).catch(() => {});
-    });
-
-    loadMessages().then(connectEvents);
+        return {
+          messages,
+          sessions,
+          streamingText,
+          draft,
+          busy,
+          activity,
+          error,
+          sidebarOpen,
+          starters,
+          statusState,
+          statusLabel,
+          messagesWrapRef,
+          inputRef,
+          renderMarkdown,
+          formatTime,
+          autoResize,
+          onKeydown,
+          sendMessage,
+          useStarter,
+          stopReply,
+          newChat,
+          switchChat,
+        };
+      },
+    }).mount("#app");
   </script>
 </body>
 </html>

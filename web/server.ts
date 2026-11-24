@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 const PORT = Number(process.env.PORT || 8080);
@@ -22,6 +23,15 @@ interface RpcEvent {
 interface PendingRequest {
   resolve: (val: unknown) => void;
   reject: (err: Error) => void;
+}
+
+interface SessionSummary {
+  id: string;
+  path: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+  active: boolean;
 }
 
 const encoder = new TextEncoder();
@@ -60,6 +70,63 @@ function extractTextContent(content: unknown): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function summarizeSessionFile(filePath: string, activePath: string | null): SessionSummary | null {
+  try {
+    const stat = fs.statSync(filePath);
+    const raw = fs.readFileSync(filePath, "utf8");
+    let title = "";
+    let messageCount = 0;
+    let id = path.basename(filePath, ".jsonl");
+
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let entry: unknown;
+      try {
+        entry = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      if (!entry || typeof entry !== "object") continue;
+      const obj = entry as Record<string, unknown>;
+      if (obj.type === "session" && typeof obj.id === "string") {
+        id = obj.id;
+        if (typeof obj.title === "string" && obj.title.trim()) {
+          title = obj.title.trim();
+        }
+      } else if (obj.type === "session_info" && typeof obj.name === "string" && obj.name.trim()) {
+        title = obj.name.trim();
+      } else if (obj.type === "message" && obj.message && typeof obj.message === "object") {
+        const msg = obj.message as { role?: string; content?: unknown };
+        if (msg.role === "user" || msg.role === "assistant") {
+          const text = extractTextContent(msg.content).trim();
+          if (text) {
+            messageCount++;
+            if (!title && msg.role === "user") {
+              title = text.replace(/\s+/g, " ").slice(0, 64);
+            }
+          }
+        }
+      }
+    }
+
+    const active = activePath !== null && path.resolve(filePath) === path.resolve(activePath);
+    // Hide completely empty historical sessions unless it's the currently active session
+    if (messageCount === 0 && !active) return null;
+
+    return {
+      id,
+      path: filePath,
+      title: title || "New conversation",
+      updatedAt: stat.mtime.toISOString(),
+      messageCount,
+      active,
+    };
+  } catch {
+    return null;
+  }
 }
 
 class OmpRpcBridge {
@@ -232,6 +299,63 @@ class OmpRpcBridge {
     return promise;
   }
 
+  async getState(): Promise<{ sessionFile: string | null; sessionId: string | null }> {
+    const data = await this.sendCommand("get_state");
+    if (!data || typeof data !== "object") {
+      return { sessionFile: null, sessionId: null };
+    }
+    const obj = data as Record<string, unknown>;
+    return {
+      sessionFile: typeof obj.sessionFile === "string" ? obj.sessionFile : null,
+      sessionId: typeof obj.sessionId === "string" ? obj.sessionId : null,
+    };
+  }
+
+  async getSessionsDir(): Promise<{ sessionsDir: string; activeFile: string | null }> {
+    const state = await this.getState();
+    if (state.sessionFile) {
+      return { sessionsDir: path.dirname(state.sessionFile), activeFile: state.sessionFile };
+    }
+    const home = process.env.HOME || "/home/sprite";
+    const slug = WORK_DIR.replace(/[\\/]/g, "-");
+    return {
+      sessionsDir: path.join(home, ".omp", "agent", "sessions", slug),
+      activeFile: null,
+    };
+  }
+
+  async listSessions(): Promise<SessionSummary[]> {
+    const { sessionsDir, activeFile } = await this.getSessionsDir();
+    if (!fs.existsSync(sessionsDir)) return [];
+    const entries = fs.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
+    const list: SessionSummary[] = [];
+    for (const file of entries) {
+      const fullPath = path.join(sessionsDir, file);
+      const summary = summarizeSessionFile(fullPath, activeFile);
+      if (summary) list.push(summary);
+    }
+    list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return list;
+  }
+
+  async switchSession(sessionPath: string) {
+    if (this.busy) {
+      throw new Error("Wait for the current reply to finish or click Stop before switching chats.");
+    }
+    const { sessionsDir } = await this.getSessionsDir();
+    const resolvedDir = path.resolve(sessionsDir);
+    const resolvedTarget = path.resolve(sessionPath);
+    if (
+      !resolvedTarget.startsWith(resolvedDir + path.sep) ||
+      !resolvedTarget.endsWith(".jsonl") ||
+      !fs.existsSync(resolvedTarget)
+    ) {
+      throw new Error("Invalid session path.");
+    }
+    await this.sendCommand("switch_session", { sessionPath: resolvedTarget });
+    broadcast({ type: "session_changed" });
+  }
+
   async getMessages(): Promise<Array<{ role: "user" | "assistant"; text: string }>> {
     const data = await this.sendCommand("get_messages");
     const raw =
@@ -277,7 +401,7 @@ class OmpRpcBridge {
       await this.abort();
     }
     await this.sendCommand("new_session");
-    broadcast({ type: "reset" });
+    broadcast({ type: "session_changed" });
   }
 }
 
@@ -336,6 +460,32 @@ Bun.serve({
         return Response.json({ messages, busy: rpc.busy, activity: rpc.activity });
       } catch (err: unknown) {
         return Response.json({ error: errorMessage(err) }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/sessions") {
+      try {
+        const sessions = await rpc.listSessions();
+        return Response.json({ sessions });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 500 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/sessions/switch") {
+      try {
+        const body: unknown = await req.json();
+        const sessionPath =
+          body && typeof body === "object" && "path" in body && typeof body.path === "string"
+            ? body.path
+            : "";
+        if (!sessionPath) {
+          return Response.json({ error: "Session path is required" }, { status: 400 });
+        }
+        await rpc.switchSession(sessionPath);
+        return Response.json({ ok: true });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
       }
     }
 
