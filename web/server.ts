@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -5,6 +6,154 @@ const PORT = Number(process.env.PORT || 8080);
 const DIST_DIR = path.join(import.meta.dir, "dist");
 const WORK_DIR = process.env.LMA_WORKDIR || process.env.HOME || "/home/sprite";
 const OMP_BIN = process.env.OMP_BIN || "omp";
+
+// Load optional private runtime config (~/.config/lma/web.env, chmod 600, outside git)
+function loadPrivateEnv() {
+  const home = process.env.HOME || "/home/sprite";
+  const envFile = path.join(home, ".config", "lma", "web.env");
+  if (!fs.existsSync(envFile)) return;
+  for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) {
+      process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, "").trim();
+    }
+  }
+}
+loadPrivateEnv();
+
+const WEB_PASSWORD = process.env.LMA_WEB_PASSWORD || "";
+const AUTH_COOKIE_NAME = "lma_session";
+
+function computeSessionToken(password: string): string {
+  return crypto.createHmac("sha256", password).update("lma-web-session-v1").digest("base64url");
+}
+
+function timingSafeStrEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+function isAuthenticated(req: Request): boolean {
+  if (!WEB_PASSWORD) return true;
+  const cookieHeader = req.headers.get("cookie") || "";
+  for (const part of cookieHeader.split(";")) {
+    const [rawK, ...rest] = part.trim().split("=");
+    if (rawK === AUTH_COOKIE_NAME) {
+      const val = rest.join("=");
+      return timingSafeStrEqual(val, computeSessionToken(WEB_PASSWORD));
+    }
+  }
+  return false;
+}
+
+function base64UrlDecode(str: string): Buffer {
+  const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
+  return Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
+}
+
+function verifyQStashJwtWithKey(token: string, rawBody: string, key: string): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  const [headerB64, payloadB64, sigB64] = parts;
+  const expectedSig = crypto
+    .createHmac("sha256", key)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest("base64url");
+  if (!timingSafeStrEqual(sigB64, expectedSig)) return false;
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(base64UrlDecode(payloadB64).toString("utf8")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.iss !== "Upstash") return false;
+  if (typeof payload.exp === "number" && now > payload.exp + 30) return false;
+  if (typeof payload.nbf === "number" && now < payload.nbf - 30) return false;
+
+  if (typeof payload.body === "string") {
+    const actualHashB64Url = crypto.createHash("sha256").update(rawBody).digest("base64url");
+    const actualHashB64 = crypto.createHash("sha256").update(rawBody).digest("base64");
+    const claimed = payload.body.replace(/=+$/, "");
+    if (
+      !timingSafeStrEqual(claimed, actualHashB64Url) &&
+      !timingSafeStrEqual(payload.body, actualHashB64)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function verifyUpstashSignature(req: Request, rawBody: string): boolean {
+  const sig = req.headers.get("upstash-signature") || "";
+  if (!sig) return false;
+  const keys = [
+    process.env.QSTASH_CURRENT_SIGNING_KEY,
+    process.env.QSTASH_NEXT_SIGNING_KEY,
+  ].filter((k): k is string => Boolean(k));
+  if (keys.length === 0) return false;
+  return keys.some((k) => verifyQStashJwtWithKey(sig, rawBody, k));
+}
+
+const LOGIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Professor L — Sign In</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; background: #ffffff; color: #111111;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      display: grid; place-items: center;
+    }
+    .card {
+      width: min(92vw, 360px); border: 1px solid #111111; padding: 24px; background: #f7f7f7;
+    }
+    h1 { margin: 0 0 6px 0; font-size: 16px; }
+    p { margin: 0 0 16px 0; font-size: 13px; color: #595959; }
+    input {
+      width: 100%; padding: 10px 12px; border: 1px solid #111111; background: #ffffff;
+      font-size: 14px; margin-bottom: 10px; outline: none;
+    }
+    button {
+      width: 100%; padding: 10px 12px; border: 1px solid #111111; background: #111111;
+      color: #ffffff; font-family: ui-monospace, monospace; font-size: 13px;
+      font-weight: 700; cursor: pointer;
+    }
+    .err { color: #b91c1c; font-family: ui-monospace, monospace; font-size: 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <form class="card" id="f">
+    <h1>Professor L — Talent Manager</h1>
+    <p>Enter your passcode to open this private Sprite.</p>
+    <input type="password" id="pw" placeholder="Passcode" autocomplete="current-password" autofocus required />
+    <button type="submit">Unlock</button>
+    <div class="err" id="err"></div>
+  </form>
+  <script>
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("err");
+      err.textContent = "";
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: document.getElementById("pw").value }),
+      });
+      if (res.ok) location.reload();
+      else err.textContent = "Invalid passcode.";
+    });
+  </script>
+</body>
+</html>`;
 
 type SSEClient = ReadableStreamDefaultController<Uint8Array>;
 
@@ -51,6 +200,7 @@ function broadcast(payload: Record<string, unknown>) {
 function friendlyToolLabel(toolName: string): string {
   if (/youtube/i.test(toolName)) return "Checking YouTube...";
   if (/buffer/i.test(toolName)) return "Checking social channels...";
+  if (/wakeup|schedule/i.test(toolName)) return "Managing schedule...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating your notes...";
   if (/read/i.test(toolName)) return "Reviewing dossier...";
@@ -432,8 +582,65 @@ Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
 
+    // Public health check
     if (req.method === "GET" && url.pathname === "/api/health") {
       return Response.json({ ok: true, busy: rpc.busy });
+    }
+
+    // Passcode login endpoint
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      if (!WEB_PASSWORD) return Response.json({ ok: true });
+      const body: unknown = await req.json().catch(() => ({}));
+      const pw =
+        body && typeof body === "object" && "password" in body && typeof body.password === "string"
+          ? body.password
+          : "";
+      if (!timingSafeStrEqual(pw, WEB_PASSWORD)) {
+        return Response.json({ error: "Invalid passcode" }, { status: 401 });
+      }
+      const token = computeSessionToken(WEB_PASSWORD);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`,
+        },
+      });
+    }
+
+    // Cryptographically signed Upstash QStash wake-up webhook
+    if (req.method === "POST" && url.pathname === "/api/wakeup") {
+      const rawBody = await req.text();
+      if (!verifyUpstashSignature(req, rawBody)) {
+        return Response.json({ error: "Invalid Upstash-Signature" }, { status: 401 });
+      }
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(rawBody) as Record<string, unknown>;
+      } catch {
+        return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+      const label = typeof payload.label === "string" ? payload.label : "Scheduled Wake-Up";
+      const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+      if (!prompt) {
+        return Response.json({ error: "Missing prompt" }, { status: 400 });
+      }
+      const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
+      // Trigger asynchronously so QStash receives immediate 200 ACK
+      rpc.prompt(wakeupMsg).catch((err) => {
+        console.error("[lma-web] wakeup prompt error:", errorMessage(err));
+      });
+      return Response.json({ ok: true, label });
+    }
+
+    // Everything below requires valid passcode session when LMA_WEB_PASSWORD is set
+    if (!isAuthenticated(req)) {
+      if (url.pathname.startsWith("/api/")) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      return new Response(LOGIN_HTML, {
+        status: 401,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/events") {
