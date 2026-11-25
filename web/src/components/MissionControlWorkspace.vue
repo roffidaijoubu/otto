@@ -306,13 +306,14 @@ function formatHookOffset(hook: CalendarWakeupHook): string {
   return hook.triggerAt ? formatTime(hook.triggerAt) : "Armed";
 }
 
-function submitQuickAdd() {
+function submitQuickAdd(useSelectedDay = false) {
   const text = quickAddText.value.trim();
   if (!text) return;
   quickAddText.value = "";
+  const datePart = useSelectedDay && selectedDayKey.value ? ` on ${selectedDayKey.value}` : "";
   const hiddenDirective =
     '<hidden>Use the todo tool to track missing details needed to finalize this schedule (and copy-paste YouTube Studio waiting room pack if it is a stream/collab). Prefix non-blocking items with "(Optional)". Once all required items are clear, immediately create the calendar event and mark required tasks done.</hidden>';
-  emit("askPrompt", `I want to add this to calendar: ${text}\n${hiddenDirective}`);
+  emit("askPrompt", `I want to add this to calendar${datePart}: ${text}\n${hiddenDirective}`);
 }
 
 async function cancelEvent(eventId: string) {
@@ -575,7 +576,7 @@ defineExpose({ fetchAll });
           </div>
 
           <div class="otto-card-body">
-            <form class="cal-quick-add" @submit.prevent="submitQuickAdd">
+            <form class="cal-quick-add" @submit.prevent="submitQuickAdd(false)">
               <input
                 v-model="quickAddText"
                 type="text"
@@ -919,12 +920,12 @@ defineExpose({ fetchAll });
           </div>
 
           <div class="otto-card-body">
-            <form class="cal-quick-add" @submit.prevent="submitQuickAdd">
+            <form class="cal-quick-add" @submit.prevent="submitQuickAdd(true)">
               <input
                 v-model="quickAddText"
                 type="text"
                 class="pill-input"
-                placeholder="Add stream, collab, or reminder..."
+                :placeholder="selectedDayKey ? `Add event on ${selectedDayKey}...` : 'Add stream, collab, or reminder...'"
               />
               <Button
                 type="submit"
