@@ -95,7 +95,7 @@ Prefer to run it directly from your terminal?
 sprite create --skip-console lma && sprite use lma
 
 # 2. Clone the repo inside the Sprite and run the idempotent installer
-sprite exec -- bash -c "git clone <this-repo-url> ~/lma && bash ~/lma/setup.sh"
+sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma && bash ~/lma/setup.sh"
 
 # 3. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
 #    (or chat directly from your terminal via: sprite console && omp)
@@ -161,9 +161,10 @@ Built actively during **Fly.io Hacksgiving 2026**:
 
 ---
 
-## Built By
+## Built By &amp; Acknowledgements
 
-**Roffi Daijoubu** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu) · [YouTube](https://www.youtube.com/@roffi_daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
+- **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
+- **Coaching Framework Acknowledgement:** The **Professor L** coaching persona and creator playbook in `lma` (Homework #1, segment-first recording sessions, 60% YouTube packaging &amp; Michael Reeves' Squint Test, the 4 Ps intro, 3+1 experiment rule, zero-friction collabs, and anti-burnout guardrails) are inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
 
