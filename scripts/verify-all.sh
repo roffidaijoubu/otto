@@ -69,6 +69,12 @@ echo "CHECK_CONNECTORS:${CONN_INFO}"
 CLIPS_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/clips | jq -r ".clips | type")
 echo "CHECK_CLIPS:${CLIPS_TYPE}"
 
+CAL_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/calendar | jq -r ".events | type")
+echo "CHECK_CALENDAR:${CAL_TYPE}"
+
+CAL_ICS=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/calendar/export.ics | head -n 1 | tr -d "\r\n")
+echo "CHECK_CALENDAR_ICS:${CAL_ICS}"
+
 SESS_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/sessions | jq -r ".sessions | type")
 echo "CHECK_SESSIONS:${SESS_TYPE}"
 
@@ -101,6 +107,8 @@ check_grep "Unsigned spoofed /api/wakeup blocked (401)" "CHECK_SPOOF_WAKEUP:401"
 check_grep "Authenticated /api/dossier readable" "CHECK_DOSSIER:true"
 check_grep "Authenticated /api/connectors live (zeroLocalKeys=true, aiMediaDisabled=true)" "CHECK_CONNECTORS:[1-9][0-9]*:true:true"
 check_grep "Authenticated /api/clips returns array" "CHECK_CLIPS:array"
+check_grep "Authenticated /api/calendar returns array" "CHECK_CALENDAR:array"
+check_grep "Authenticated /api/calendar/export.ics returns VCALENDAR" "^CHECK_CALENDAR_ICS:BEGIN:VCALENDAR$"
 check_grep "Authenticated /api/sessions returns array" "CHECK_SESSIONS:array"
 check_grep "Session switch path traversal blocked (400)" "CHECK_TRAV_SESS:400"
 check_grep "Clip file path traversal blocked (400/404)" "CHECK_TRAV_CLIP:(400|404)"

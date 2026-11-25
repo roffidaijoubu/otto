@@ -53,7 +53,7 @@ tar \
     rm -rf /home/sprite/lma/web /home/sprite/lma/agent/extensions /home/sprite/lma/agent/skills
     mkdir -p /home/sprite/lma
     tar xzf - -C /home/sprite/lma
-    rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/*
+    rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/* /home/sprite/.omp/agent/calendar.json
     cp /home/sprite/lma/agent/MEMORY.md.example /home/sprite/.omp/agent/MEMORY.md
     bash /home/sprite/lma/setup.sh
     sleep 1

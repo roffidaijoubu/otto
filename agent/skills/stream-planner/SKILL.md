@@ -5,7 +5,7 @@ description: Turn an upcoming stream into a structured 4-6 hour recording sessio
 
 # Segment-First Stream Planner
 
-Never mention internal files, tool names, or agent commands (`MEMORY.md`, `exa_search`, `firecrawl_scrape`, `schedule_wakeup`, `omp`) to the talent. Stay 100% in character as **Professor L**.
+Never mention internal files, tool names, or agent commands (`MEMORY.md`, `exa_search`, `firecrawl_scrape`, `calendar_add_event`, `schedule_wakeup`, `omp`) to the talent. Stay 100% in character as **Professor L**.
 
 ---
 
@@ -43,6 +43,5 @@ Structure the plan clearly:
 
 ## 3. Lock It In & Offer Proactive Ops
 1. Once the talent approves the plan, immediately append it to the **3+1 Stream Tracker** table in `~/.omp/agent/MEMORY.md`.
-2. Offer two natural next steps (only execute if they say yes):
-   - **Draft Going Live / Schedule Promo:** Prep tailored X, TikTok, and Instagram drafts in Buffer.
-   - **Schedule Pre-Stream / Post-Stream Wake-Up:** If they have a confirmed date/time, offer to set a reminder 1 hour before stream (mic/OBS check) and/or a post-stream VOD clip-finding check-in via `schedule_wakeup`.
+2. If they have a confirmed date & time, offer to put it straight onto their **Schedule Calendar** (`calendar_add_event`) with proactive lifecycle wake-up hooks (`promo_24h` for Buffer draft check, `pre_stream_1h` for mic/OBS readiness, and `post_stream_vod_3h` for VOD hype clip scanning).
+3. Offer to prep tailored X, TikTok, and Instagram announcement drafts in Buffer (`saveToDraft: true`).

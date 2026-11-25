@@ -739,6 +739,141 @@ class OmpRpcBridge {
 }
 
 const rpc = new OmpRpcBridge();
+interface ServerCalendarWakeupHook {
+  qstashId: string;
+  kind: "one_shot" | "recurring_cron";
+  label: string;
+  triggerAt: string | null;
+  cron: string | null;
+  offsetMinutes: number | null;
+  prompt: string;
+  status: "armed" | "cancelled";
+}
+
+interface ServerCalendarEvent {
+  id: string;
+  title: string;
+  type: "stream" | "collab" | "upload" | "reminder" | "deadline";
+  startAt: string;
+  endAt: string | null;
+  cron: string | null;
+  notes: string;
+  status: "planned" | "done" | "cancelled";
+  wakeups: ServerCalendarWakeupHook[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+function getCalendarFilePath(): string {
+  const home = process.env.HOME || "/home/sprite";
+  return path.join(home, ".omp", "agent", "calendar.json");
+}
+
+function readCalendarEvents(): ServerCalendarEvent[] {
+  const filePath = getCalendarFilePath();
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      events?: ServerCalendarEvent[];
+    };
+    return Array.isArray(parsed.events) ? parsed.events : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCalendarEvents(events: ServerCalendarEvent[]): void {
+  const filePath = getCalendarFilePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify({ version: 1, events }, null, 2) + "\n", "utf8");
+  fs.renameSync(tmpPath, filePath);
+}
+
+async function resolveQStashGatewayForServer(): Promise<string | null> {
+  const fromEnv = process.env.SPRITES_QSTASH_GATEWAY_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  try {
+    const res = await fetch("https://api.sprites.dev/v1/gateway/list", {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      connections?: Array<{ provider?: string; display_name?: string; gateway_base_url?: string }>;
+    };
+    const conn = data.connections?.find(
+      (c) =>
+        c.provider === "qstash" ||
+        (c.provider === "custom_api" && /qstash/i.test(c.display_name ?? ""))
+    );
+    return conn?.gateway_base_url ? conn.gateway_base_url.replace(/\/$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatIcsUtc(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+  );
+}
+
+function escapeIcsText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function buildCalendarIcs(events: ServerCalendarEvent[]): string {
+  const lines: string[] = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//LMA Professor L//Stream Ops Schedule//EN",
+    "CALSCALE:GREGORIAN",
+    "X-WR-CALNAME:Professor L Stream Schedule",
+  ];
+  const dtStamp = formatIcsUtc(new Date().toISOString()) || "20260101T000000Z";
+  for (const evt of events) {
+    if (evt.status === "cancelled") continue;
+    const dtStart = formatIcsUtc(evt.startAt);
+    if (!dtStart) continue;
+    const endIso =
+      evt.endAt ||
+      new Date(Date.parse(evt.startAt) + 60 * 60 * 1000).toISOString();
+    const dtEnd = formatIcsUtc(endIso) || dtStart;
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${evt.id}@lma.sprites.app`);
+    lines.push(`DTSTAMP:${dtStamp}`);
+    lines.push(`DTSTART:${dtStart}`);
+    lines.push(`DTEND:${dtEnd}`);
+    lines.push(`SUMMARY:${escapeIcsText(`[${evt.type.toUpperCase()}] ${evt.title}`)}`);
+    if (evt.notes) {
+      lines.push(`DESCRIPTION:${escapeIcsText(evt.notes)}`);
+    }
+    for (const w of evt.wakeups || []) {
+      if (w.status !== "armed" || typeof w.offsetMinutes !== "number" || w.offsetMinutes > 0) {
+        continue;
+      }
+      const mins = Math.max(0, Math.abs(Math.round(w.offsetMinutes)));
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push(`DESCRIPTION:${escapeIcsText(w.label)}`);
+      lines.push(`TRIGGER:-PT${mins}M`);
+      lines.push("END:VALARM");
+    }
+    lines.push("END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n") + "\r\n";
+}
+
 
 Bun.serve({
   port: PORT,
@@ -953,6 +1088,57 @@ Bun.serve({
         updatedAt: stat.mtime.toISOString(),
         content,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/calendar") {
+      const events = readCalendarEvents().sort(
+        (a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)
+      );
+      return Response.json({ events });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/calendar/export.ics") {
+      const events = readCalendarEvents().sort(
+        (a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)
+      );
+      const ics = buildCalendarIcs(events);
+      return new Response(ics, {
+        headers: {
+          "Content-Type": "text/calendar; charset=utf-8",
+          "Content-Disposition": 'attachment; filename="lma-schedule.ics"',
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/calendar/")) {
+      const eventId = decodeURIComponent(url.pathname.slice("/api/calendar/".length)).trim();
+      if (!/^[A-Za-z0-9_-]{4,64}$/.test(eventId)) {
+        return Response.json({ error: "Invalid event ID" }, { status: 400 });
+      }
+      const events = readCalendarEvents();
+      const evt = events.find((e) => e.id === eventId);
+      if (!evt) {
+        return Response.json({ error: "Calendar event not found" }, { status: 404 });
+      }
+      const gw = await resolveQStashGatewayForServer();
+      const revoked: string[] = [];
+      for (const w of evt.wakeups || []) {
+        if (w.status !== "armed") continue;
+        if (gw) {
+          const seg = w.kind === "recurring_cron" ? "schedules" : "messages";
+          await fetch(`${gw}/v2/${seg}/${encodeURIComponent(w.qstashId)}`, {
+            method: "DELETE",
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => {});
+        }
+        w.status = "cancelled";
+        revoked.push(w.qstashId);
+      }
+      evt.status = "cancelled";
+      evt.updatedAt = new Date().toISOString();
+      writeCalendarEvents(events);
+      return Response.json({ ok: true, event: evt, revokedQStashIds: revoked });
     }
 
     if (req.method === "GET" && url.pathname === "/api/connectors") {
