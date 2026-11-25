@@ -73,6 +73,7 @@ const calendarEvents = ref<CalendarEventItem[]>([]);
 const cancellingEventId = ref<string | null>(null);
 const syncingGoogle = ref(false);
 const googleSyncNote = ref("");
+const quickAddText = ref("");
 const nowDate = new Date();
 const viewYear = ref(nowDate.getFullYear());
 const viewMonth = ref(nowDate.getMonth());
@@ -220,6 +221,13 @@ async function cancelEvent(eventId: string) {
   } finally {
     cancellingEventId.value = null;
   }
+}
+
+function submitQuickAdd() {
+  const text = quickAddText.value.trim();
+  if (!text) return;
+  quickAddText.value = "";
+  emit("askPrompt", `I want to add this to calendar: ${text}`);
 }
 
 async function syncGoogleCalendar() {
@@ -425,6 +433,24 @@ watch(
           </div>
         </div>
 
+        <form class="cal-quick-add" @submit.prevent="submitQuickAdd">
+          <input
+            v-model="quickAddText"
+            type="text"
+            class="cal-quick-input"
+            placeholder="Add stream, collab, or reminder..."
+          />
+          <button
+            type="submit"
+            class="btn btn-sm btn-cafe-primary cal-quick-btn"
+            :disabled="!quickAddText.trim()"
+            aria-label="Add to calendar"
+            title="Add to calendar"
+          >
+            +
+          </button>
+        </form>
+
         <div v-if="selectedDayKey" class="flex items-center justify-between text-xs font-mono opacity-80 px-1">
           <span>Filtered: {{ selectedDayKey }}</span>
           <button type="button" class="underline cursor-pointer" @click="selectedDayKey = null">
@@ -432,17 +458,10 @@ watch(
           </button>
         </div>
 
-        <div v-if="visibleAgendaEvents.length === 0" class="cafe-card space-y-3">
+        <div v-if="visibleAgendaEvents.length === 0" class="cafe-card">
           <div class="text-xs font-mono opacity-75">
-            {{ selectedDayKey ? "No events scheduled on this day." : "No streams, collabs, or reminders scheduled yet." }}
+            {{ selectedDayKey ? "No events scheduled on this day." : "No events scheduled yet. Type above and hit + to add one." }}
           </div>
-          <button
-            class="btn btn-sm btn-cafe-primary w-full"
-            type="button"
-            @click="emit('askPrompt', 'Help me schedule my next stream on the calendar with an automatic pre-stream check-in and post-stream clip reminder.')"
-          >
-            Plan My Next Stream
-          </button>
         </div>
 
         <div v-else class="space-y-3">
@@ -825,5 +844,40 @@ watch(
   font-family: var(--font-mono);
   font-size: 10.5px;
   border: 1px solid var(--border);
+}
+.cal-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-quick-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  box-shadow: var(--shadow-inset-sm, inset 0 1px 2px rgba(62, 39, 35, 0.06));
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.cal-quick-input:focus {
+  border-color: var(--accent);
+}
+.cal-quick-input::placeholder {
+  color: var(--fg-muted);
+  opacity: 0.75;
+}
+.cal-quick-btn {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 </style>
