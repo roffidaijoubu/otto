@@ -229,6 +229,22 @@ function initSchema(db: Database): void {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS learned_skills (
+      slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      source TEXT NOT NULL DEFAULT 'nightly',
+      confidence TEXT NOT NULL DEFAULT 'medium',
+      trigger_hint TEXT NOT NULL DEFAULT '',
+      evidence_summary TEXT NOT NULL DEFAULT '',
+      body_markdown TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_learned_skills_status ON learned_skills(status);
   `);
 }
 
@@ -1036,4 +1052,9 @@ export function setStudioMeta(key: string, value: string): void {
       value = excluded.value,
       updated_at = excluded.updated_at
   `).run(key, value, nowIso);
+}
+
+export function deleteStudioMeta(key: string): void {
+  const db = getStudioDb();
+  db.prepare("DELETE FROM studio_meta WHERE key = ?").run(key);
 }

@@ -56,6 +56,7 @@ if [ -d "${REPO_DIR}/agent/skills" ]; then
     [ -e "$skill" ] && ln -sf "$skill" "${OMP_AGENT_DIR}/skills/$(basename "$skill")"
   done
 fi
+mkdir -p "${OMP_AGENT_DIR}/learned-skills"
 
 # 2b. Ensure Unified Studio Workspace folders exist (and migrate legacy ~/clips once)
 mkdir -p "${HOME}/workspace/clips" "${HOME}/workspace/thumbnails" "${HOME}/workspace/scripts" \

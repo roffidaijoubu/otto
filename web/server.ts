@@ -31,6 +31,22 @@ import {
   type PipelineStatus,
 } from "../agent/lib/studio-db.ts";
 import {
+  deleteLearnedSkill,
+  ensureLearnedSkillsRoot,
+  getLearnedSkill,
+  listLearnedSkills,
+  saveLearnedSkill,
+  updateLearnedSkillStatus,
+  type LearnedSkillConfidence,
+  type LearnedSkillSource,
+  type LearnedSkillStatus,
+} from "../agent/lib/learned-skills.ts";
+import {
+  getNightlyLearningConfig,
+  NIGHTLY_REFLECTION_PROMPT,
+  syncNightlyReflectionSchedule,
+} from "../agent/lib/qstash-cron.ts";
+import {
   classifyFile,
   createWorkspaceZip,
   ensureWorkspaceScaffold,
@@ -715,14 +731,20 @@ class OmpRpcBridge {
     }).catch(() => {});
   }
 
+  public backgroundBusy = false;
+
+  public isAnyBusy(): boolean {
+    return this.busy || this.backgroundBusy;
+  }
+
   public async holdSpriteActive(): Promise<void> {
     if (!this.holdStartedAt) this.holdStartedAt = Date.now();
     await this.putSpriteHold();
     if (!this.holdHeartbeat && fs.existsSync("/.sprite/api.sock")) {
-      // Refresh 10m TTL every 5 minutes during long multi-tool / ffmpeg turns,
+      // Refresh 10m TTL every 5 minutes during long multi-tool / ffmpeg / reflection turns,
       // capped at MAX_HOLD_MS (30m) so a hung turn can never renew indefinitely.
       this.holdHeartbeat = setInterval(() => {
-        if (!this.busy) return;
+        if (!this.isAnyBusy()) return;
         if (Date.now() - this.holdStartedAt >= OmpRpcBridge.MAX_HOLD_MS) {
           console.warn("[lma-web] Tasks API hold reached 30m ceiling; stopping renewals.");
           if (this.holdHeartbeat) {
@@ -736,7 +758,8 @@ class OmpRpcBridge {
     }
   }
 
-  private releaseSpriteHold() {
+  public releaseSpriteHold() {
+    if (this.isAnyBusy()) return;
     this.holdStartedAt = 0;
     if (this.holdHeartbeat) {
       clearInterval(this.holdHeartbeat);
@@ -748,7 +771,6 @@ class OmpRpcBridge {
       method: "DELETE",
     }).catch(() => {});
   }
-
   private spawn() {
     this.ready = false;
     // Never inherit inbound UI passcode or QStash webhook signing keys into the agent subprocess
@@ -868,7 +890,7 @@ class OmpRpcBridge {
       if (/^(write|edit|bash|vod_cut_clip|vod_prep_clip|vod_scan_hype)$/i.test(tName)) {
         broadcast({ type: "workspace_changed" });
       }
-      if (/^(studio_|calendar_|schedule_wakeup|cancel_wakeup)/i.test(tName)) {
+      if (/^(studio_|calendar_|schedule_wakeup|cancel_wakeup|learned_skill)/i.test(tName)) {
         broadcast({ type: "db_changed" });
       }
       broadcast({ type: "tool_end" });
@@ -1227,6 +1249,73 @@ async function execServerGCalTool(
   return (await res.json()) as Record<string, unknown>;
 }
 
+// ---------- Silent Isolated Background Reflection Runner (Hermes Self-Learning) ----------
+
+function startSilentBackgroundJob(opts: {
+  label: string;
+  prompt: string;
+  jobType: string;
+}): void {
+  const startedIso = new Date().toISOString();
+  setStudioMeta("nightly_last_run_at", startedIso);
+  setStudioMeta("nightly_last_status", "running");
+  broadcast({ type: "db_changed" });
+
+  // Fire-and-forget isolated `omp --no-session -p` turn while Tasks API hold stays active.
+  void (async () => {
+    let statusText = "ok";
+    try {
+      ensureLearnedSkillsRoot();
+      const childEnv: Record<string, string | undefined> = { ...process.env };
+      delete childEnv.LMA_WEB_PASSWORD;
+      delete childEnv.QSTASH_CURRENT_SIGNING_KEY;
+      delete childEnv.QSTASH_NEXT_SIGNING_KEY;
+
+      const proc = Bun.spawn([OMP_BIN, "--no-session", "-p", opts.prompt], {
+        cwd: WORK_DIR,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: childEnv,
+      });
+
+      const timeoutMs = 4 * 60 * 1000;
+      const timer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+
+      const [exitCode, stdoutText, stderrText] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text().catch(() => ""),
+        new Response(proc.stderr).text().catch(() => ""),
+      ]);
+      clearTimeout(timer);
+
+      if (exitCode !== 0) {
+        statusText = `error (exit ${exitCode}): ${stderrText.trim().slice(0, 140)}`;
+        console.error(`[lma-web] background job "${opts.label}" failed:`, statusText);
+      } else if (/NIGHTLY_REFLECTION_NOOP/i.test(stdoutText)) {
+        statusText = "ok (no new playbooks)";
+      } else {
+        statusText = "ok";
+      }
+    } catch (err: unknown) {
+      statusText = `error: ${errorMessage(err).slice(0, 140)}`;
+      console.error(`[lma-web] background job "${opts.label}" threw:`, err);
+    } finally {
+      setStudioMeta("nightly_last_run_at", new Date().toISOString());
+      setStudioMeta("nightly_last_status", statusText);
+      rpc.backgroundBusy = false;
+      rpc.releaseSpriteHold();
+      broadcast({ type: "db_changed" });
+    }
+  })();
+}
+
 
 
 Bun.serve({
@@ -1290,12 +1379,29 @@ Bun.serve({
       if (!prompt) {
         return Response.json({ error: "Missing prompt" }, { status: 400 });
       }
-      if (rpc.busy) {
+      const isSilent = payload.silent === true || payload.mode === "background";
+      const jobType =
+        typeof payload.jobType === "string"
+          ? payload.jobType
+          : isSilent
+            ? "nightly_reflection"
+            : "wakeup";
+
+      if (rpc.isAnyBusy()) {
         return Response.json(
           { error: "Agent busy; retry shortly" },
           { status: 503, headers: { "Retry-After": "15" } }
         );
       }
+
+      if (isSilent) {
+        // Claim backgroundBusy synchronously before awaiting Tasks API hold so concurrent calls cannot race
+        rpc.backgroundBusy = true;
+        await rpc.holdSpriteActive();
+        startSilentBackgroundJob({ label, prompt, jobType });
+        return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
+      }
+
       // Claim busy synchronously before awaiting Tasks API hold so concurrent calls cannot race
       rpc.busy = true;
       await rpc.holdSpriteActive();
@@ -1305,12 +1411,13 @@ Bun.serve({
         await rpc.prompt(wakeupMsg);
       } catch (err) {
         console.error("[lma-web] wakeup prompt error:", errorMessage(err));
+        rpc.releaseSpriteHold();
         return Response.json(
           { error: "Failed to dispatch wake-up; retry shortly" },
           { status: 503, headers: { "Retry-After": "15" } }
         );
       }
-      return Response.json({ ok: true, label });
+      return Response.json({ ok: true, mode: "chat", label });
     }
 
     // Everything below requires valid passcode session when LMA_WEB_PASSWORD is set
@@ -1462,11 +1569,24 @@ Bun.serve({
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         let passwordChanged = false;
 
+        let nightlySync: { armed: boolean; cron: string | null; note?: string } | null = null;
+
         if (!body.skip) {
           const creatorName = typeof body.creatorName === "string" ? body.creatorName.trim() : "";
           const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
           if (creatorName || timezone) {
             writeIdentityToMemoryMd(creatorName, timezone);
+          }
+          if (timezone) {
+            try {
+              const syncRes = await syncNightlyReflectionSchedule({
+                enabled: true,
+                timezone,
+              });
+              nightlySync = { armed: syncRes.armed, cron: syncRes.cron, note: syncRes.note };
+            } catch {
+              // Non-fatal: never block onboarding if QStash connector is not yet configured
+            }
           }
           const newPw = typeof body.newPassword === "string" ? body.newPassword.trim() : "";
           if (newPw) {
@@ -1491,11 +1611,135 @@ Bun.serve({
         setStudioMeta("setup_completed", "1");
         broadcast({ type: "db_changed" });
         return new Response(
-          JSON.stringify({ ok: true, completed: true, passwordChanged }),
+          JSON.stringify({ ok: true, completed: true, passwordChanged, nightlySync }),
           { headers }
         );
       } catch (err: unknown) {
         return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    // ---------- Hermes-Style Nightly Self-Learning & Learned Playbooks API ----------
+
+    if (req.method === "GET" && url.pathname === "/api/learning") {
+      const identity = readSetupIdentity();
+      const config = getNightlyLearningConfig(identity.timezone || "UTC");
+      const skills = listLearnedSkills("all");
+      return Response.json({
+        config: { ...config, running: rpc.backgroundBusy },
+        skills,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/learning/config") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as {
+          enabled?: boolean;
+          timezone?: string;
+        };
+        const identity = readSetupIdentity();
+        const current = getNightlyLearningConfig(identity.timezone || "UTC");
+        const enabled = typeof body.enabled === "boolean" ? body.enabled : current.enabled;
+        const timezone =
+          typeof body.timezone === "string" && body.timezone.trim()
+            ? body.timezone.trim()
+            : current.timezone || identity.timezone || "UTC";
+        const result = await syncNightlyReflectionSchedule({ enabled, timezone });
+        broadcast({ type: "db_changed" });
+        return Response.json({
+          ...result,
+          config: { ...getNightlyLearningConfig(timezone), running: rpc.backgroundBusy },
+        });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/learning/run") {
+      if (rpc.isAnyBusy()) {
+        return Response.json(
+          { error: "Otto is currently busy; try reflecting in a moment." },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
+      }
+      rpc.backgroundBusy = true;
+      await rpc.holdSpriteActive();
+      startSilentBackgroundJob({
+        label: "Manual Self-Learning Reflection",
+        prompt: NIGHTLY_REFLECTION_PROMPT,
+        jobType: "nightly_reflection",
+      });
+      return Response.json({ ok: true, mode: "background", running: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/learning/skills") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as {
+          slug?: string;
+          title?: string;
+          description?: string;
+          bodyMarkdown?: string;
+          status?: LearnedSkillStatus;
+          source?: LearnedSkillSource;
+          confidence?: LearnedSkillConfidence;
+          triggerHint?: string;
+          evidenceSummary?: string;
+        };
+        const saved = saveLearnedSkill({
+          slug: String(body.slug || body.title || ""),
+          title: String(body.title || ""),
+          description: String(body.description || ""),
+          bodyMarkdown: String(body.bodyMarkdown || ""),
+          status: body.status,
+          source: body.source ?? "manual",
+          confidence: body.confidence,
+          triggerHint: body.triggerHint,
+          evidenceSummary: body.evidenceSummary,
+        });
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, skill: saved }, { status: 201 });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (url.pathname.startsWith("/api/learning/skills/")) {
+      const slug = decodeURIComponent(url.pathname.slice("/api/learning/skills/".length));
+      if (req.method === "GET") {
+        try {
+          const skill = getLearnedSkill(slug);
+          if (!skill) return Response.json({ error: "Not found" }, { status: 404 });
+          return Response.json({ skill });
+        } catch (err: unknown) {
+          return Response.json({ error: errorMessage(err) }, { status: 400 });
+        }
+      }
+      if (req.method === "PATCH") {
+        try {
+          const body = (await req.json().catch(() => ({}))) as {
+            status?: LearnedSkillStatus;
+            title?: string;
+            description?: string;
+            bodyMarkdown?: string;
+            triggerHint?: string;
+          };
+          const updated = updateLearnedSkillStatus(slug, body);
+          if (!updated) return Response.json({ error: "Not found" }, { status: 404 });
+          broadcast({ type: "db_changed" });
+          return Response.json({ ok: true, skill: updated });
+        } catch (err: unknown) {
+          return Response.json({ error: errorMessage(err) }, { status: 400 });
+        }
+      }
+      if (req.method === "DELETE") {
+        try {
+          const deleted = deleteLearnedSkill(slug);
+          if (!deleted) return Response.json({ error: "Not found" }, { status: 404 });
+          broadcast({ type: "db_changed" });
+          return Response.json({ ok: true, deleted: true });
+        } catch (err: unknown) {
+          return Response.json({ error: errorMessage(err) }, { status: 400 });
+        }
       }
     }
 

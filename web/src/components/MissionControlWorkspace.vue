@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { renderMarkdown } from "../lib/markdown";
 import type { StudioTab } from "./ChatHeader.vue";
+import LearnedPlaybooksCard from "./LearnedPlaybooksCard.vue";
 import OttoMascot from "./OttoMascot.vue";
 import StudioDatabaseView from "./StudioDatabaseView.vue";
 import WorkspaceFileManager, {
@@ -955,6 +956,8 @@ defineExpose({ fetchAll });
           </div>
         </div>
       </div>
+
+      <LearnedPlaybooksCard :refresh-tick="props.dbRefreshTick + props.refreshTick" />
     </div>
 
     <!-- VIEW 6: SPRITES CONNECTORS -->

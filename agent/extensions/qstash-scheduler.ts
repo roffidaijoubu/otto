@@ -7,6 +7,7 @@ import {
   type CalendarEventType,
   type CalendarWakeupHook,
 } from "../lib/studio-db.ts";
+import { normalizeQStashCron } from "../lib/qstash-cron.ts";
 
 export type { CalendarEvent, CalendarEventType, CalendarWakeupHook };
 export type LifecycleHookPreset = "promo_24h" | "pre_stream_1h" | "post_stream_vod_3h" | "at_start";
@@ -246,7 +247,9 @@ async function publishQStashWakeup(opts: {
   delaySeconds?: number;
   cron?: string;
   eventId?: string;
-}): Promise<{ qstashId: string; kind: "one_shot" | "recurring_cron"; raw: unknown }> {
+  silent?: boolean;
+  jobType?: string;
+}): Promise<{ qstashId: string; kind: "one_shot" | "recurring_cron"; cron?: string; raw: unknown }> {
   const gw = await getQStashGatewayUrl();
   const targetUrl = getWakeupTargetUrl();
   const headers: Record<string, string> = {
@@ -256,9 +259,11 @@ async function publishQStashWakeup(opts: {
 
   let endpoint: string;
   let kind: "one_shot" | "recurring_cron";
+  let normalizedCron: string | undefined;
   if (opts.cron) {
+    normalizedCron = normalizeQStashCron(opts.cron);
     endpoint = `${gw}/v2/schedules/${encodeURIComponent(targetUrl)}`;
-    headers["Upstash-Cron"] = opts.cron;
+    headers["Upstash-Cron"] = normalizedCron;
     kind = "recurring_cron";
   } else {
     endpoint = `${gw}/v2/publish/${encodeURIComponent(targetUrl)}`;
@@ -279,6 +284,9 @@ async function publishQStashWakeup(opts: {
       label: opts.label,
       prompt: opts.prompt,
       eventId: opts.eventId ?? null,
+      silent: Boolean(opts.silent),
+      mode: opts.silent ? "background" : "chat",
+      jobType: opts.jobType ?? (opts.silent ? "background_job" : "wakeup"),
       scheduledAt: new Date().toISOString(),
     }),
   });
@@ -291,7 +299,7 @@ async function publishQStashWakeup(opts: {
   if (!qstashId) {
     throw new Error(`QStash response missing messageId/scheduleId: ${JSON.stringify(raw)}`);
   }
-  return { qstashId, kind, raw };
+  return { qstashId, kind, cron: normalizedCron, raw };
 }
 
 async function cancelQStashJob(id: string, kind: "one_shot" | "recurring_cron"): Promise<boolean> {
@@ -383,7 +391,12 @@ export default function (pi: ExtensionAPI) {
         cron: {
           type: "string",
           description:
-            "Optional 5-field UTC cron expression for recurring wake-ups (e.g. '0 2 * * 1' = Mondays 09:00 WIB). Omit for one-shot.",
+            "Optional 5-field cron expression for recurring wake-ups, with optional IANA timezone prefix (e.g. 'CRON_TZ=Asia/Jakarta 0 0 * * *' for midnight WIB, or '0 2 * * 1' in UTC). Omit for one-shot.",
+        },
+        silent: {
+          type: "boolean",
+          description:
+            "When true, executes in an isolated silent background pass without injecting messages into the main Web Chat UI.",
         },
       },
       required: ["label", "prompt"],
@@ -396,6 +409,7 @@ export default function (pi: ExtensionAPI) {
         runAt?: string;
         delaySeconds?: number;
         cron?: string;
+        silent?: boolean;
       }
     ) {
       let runAtMs: number | undefined;
@@ -421,8 +435,8 @@ export default function (pi: ExtensionAPI) {
         delaySeconds: params.delaySeconds,
         cron: params.cron,
         eventId,
+        silent: params.silent,
       });
-
       const nowIso = new Date().toISOString();
       const store = loadCalendar();
       const evt: CalendarEvent = {
@@ -431,7 +445,7 @@ export default function (pi: ExtensionAPI) {
         type: "reminder",
         startAt: startAtIso,
         endAt: null,
-        cron: params.cron ?? null,
+        cron: published.cron ?? params.cron ?? null,
         notes: params.prompt,
         status: "planned",
         wakeups: [
@@ -440,7 +454,7 @@ export default function (pi: ExtensionAPI) {
             kind: published.kind,
             label: params.label,
             triggerAt: published.kind === "one_shot" ? startAtIso : null,
-            cron: params.cron ?? null,
+            cron: published.cron ?? params.cron ?? null,
             offsetMinutes: 0,
             prompt: params.prompt,
             status: "armed",
@@ -464,7 +478,7 @@ export default function (pi: ExtensionAPI) {
                 label: params.label,
                 runAt: params.runAt ?? (published.kind === "one_shot" ? startAtIso : null),
                 delaySeconds: params.delaySeconds ?? null,
-                cron: params.cron ?? null,
+                cron: published.cron ?? params.cron ?? null,
                 qstash: published.raw,
               },
               null,
