@@ -93,7 +93,7 @@ async function handleCancel() {
 
 <template>
   <Dialog :open="isOpen" @update:open="(val) => { if (!val) handleCancel(); }">
-    <DialogContent class="max-w-5xl w-[95vw] p-4 gap-3">
+    <DialogContent class="w-[95vw] max-w-[95vw] sm:max-w-[95vw] p-4 gap-3">
       <DialogHeader>
         <div class="flex items-center justify-between gap-2 pr-6">
           <div class="flex items-center gap-2">
