@@ -23,8 +23,6 @@ const error = ref("");
 const sidebarOpen = ref(false);
 const mobilePane = ref<"dashboard" | "chat">("dashboard");
 const activeTab = ref<StudioTab>("overview");
-const zeroLocalKeys = ref<boolean | null>(null);
-const aiMediaDisabled = ref<boolean | null>(null);
 const navCounts = ref({ schedule: 0, files: 0, database: 0, connectors: 0 });
 const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
@@ -280,13 +278,6 @@ function handleMissionPrompt(prompt: string) {
   useStarter(prompt);
 }
 
-function handleGuardrailsUpdated(payload: {
-  zeroLocalKeys: boolean | null;
-  aiMediaDisabled: boolean | null;
-}) {
-  zeroLocalKeys.value = payload.zeroLocalKeys;
-  aiMediaDisabled.value = payload.aiMediaDisabled;
-}
 
 async function stopReply() {
   await fetch("/api/abort", { method: "POST" }).catch(() => {});
@@ -395,8 +386,6 @@ onMounted(async () => {
     <ChatHeader
       :status-state="statusState"
       :status-label="statusLabel"
-      :zero-local-keys="zeroLocalKeys"
-      :ai-media-disabled="aiMediaDisabled"
       :mobile-pane="mobilePane"
       :active-tab="activeTab"
       :mascot-color="mascotColor"
@@ -421,7 +410,6 @@ onMounted(async () => {
           @select-mascot-color="setMascotColor"
           @counts-updated="navCounts = $event"
           @ask-prompt="handleMissionPrompt"
-          @guardrails-updated="handleGuardrailsUpdated"
           @open-setup="reopenSetup"
         />
       </div>

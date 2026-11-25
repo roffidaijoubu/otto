@@ -61,7 +61,6 @@ const emit = defineEmits<{
   selectMascotColor: [color: string];
   countsUpdated: [counts: { schedule: number; files: number; database: number; connectors: number }];
   askPrompt: [prompt: string];
-  guardrailsUpdated: [payload: { zeroLocalKeys: boolean | null; aiMediaDisabled: boolean | null }];
   openSetup: [];
 }>();
 const workspaceInitialPath = ref("");
@@ -70,8 +69,6 @@ const loading = ref(false);
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
 const connectors = ref<ConnectorInfo[]>([]);
-const zeroLocalKeys = ref<boolean | null>(null);
-const aiMediaDisabled = ref<boolean | null>(null);
 const workspaceStats = ref<WorkspaceStats>({ totalBytes: 0, fileCount: 0, clipCount: 0 });
 const recentFiles = ref<WorkspaceEntry[]>([]);
 const dbSummary = ref({
@@ -405,16 +402,9 @@ async function fetchAll() {
     }
     if (cRes && typeof cRes === "object") {
       connectors.value = Array.isArray(cRes.connectors) ? cRes.connectors : [];
-      zeroLocalKeys.value = typeof cRes.zeroLocalKeys === "boolean" ? cRes.zeroLocalKeys : null;
-      aiMediaDisabled.value = typeof cRes.aiMediaDisabled === "boolean" ? cRes.aiMediaDisabled : null;
     } else {
-      zeroLocalKeys.value = null;
-      aiMediaDisabled.value = null;
+      connectors.value = [];
     }
-    emit("guardrailsUpdated", {
-      zeroLocalKeys: zeroLocalKeys.value,
-      aiMediaDisabled: aiMediaDisabled.value,
-    });
     if (wsRes && typeof wsRes === "object") {
       if (wsRes.stats) workspaceStats.value = wsRes.stats;
       if (Array.isArray(wsRes.recentFiles)) recentFiles.value = wsRes.recentFiles;
@@ -508,10 +498,8 @@ defineExpose({ fetchAll });
             <div class="sprite-sun" :class="{ busy: statusState === 'busy' }"></div>
           </div>
           <div class="sprite-foot">
-            <div class="sprite-foot-main">{{ connectors.length }} live · {{ armedWakeups.length }} armed</div>
-            <div class="sprite-foot-sub">
-              {{ zeroLocalKeys === true ? "0 keys in VM · $0 idle" : "Sprites Gateway" }}
-            </div>
+            <div class="sky-val">{{ connectors.length }} live</div>
+            <div class="sky-sub">Fly.io Sprite · $0 idle</div>
           </div>
         </button>
 
@@ -776,21 +764,6 @@ defineExpose({ fetchAll });
           </div>
 
           <div class="otto-card-body">
-            <div class="flex flex-wrap gap-2">
-              <span
-                class="otto-chip"
-                :class="zeroLocalKeys === true ? 'otto-chip-success' : zeroLocalKeys === false ? 'otto-chip-error' : 'otto-chip-yellow'"
-              >
-                {{ zeroLocalKeys === true ? "✓ 0 outbound keys in VM" : zeroLocalKeys === false ? "check env" : "checking..." }}
-              </span>
-              <span
-                class="otto-chip"
-                :class="aiMediaDisabled === true ? 'otto-chip-error' : 'otto-chip-yellow'"
-              >
-                {{ aiMediaDisabled === true ? "✕ AI art & video: off" : "unverified" }}
-              </span>
-            </div>
-
             <div class="connector-chips">
               <div v-for="c in connectors" :key="`${c.provider}-${c.displayName}`" class="connector-chip">
                 <span class="conn-dot"></span>
@@ -984,11 +957,11 @@ defineExpose({ fetchAll });
       </div>
     </div>
 
-    <!-- VIEW 6: ZERO-KEY CONNECTORS & GUARDRAILS -->
+    <!-- VIEW 6: SPRITES CONNECTORS -->
     <div v-else class="detail-stack">
       <div class="otto-card">
         <div class="otto-card-head">
-          <span>(Y)our guardrails &amp; connectors.</span>
+          <span>(Y)our connectors.</span>
           <div class="otto-card-head-right">
             <button type="button" class="head-link" @click="emit('openSetup')">
               re-run setup
@@ -996,28 +969,6 @@ defineExpose({ fetchAll });
           </div>
         </div>
         <div class="otto-card-body">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="sub-item-card">
-              <div class="text-[11px] font-mono text-[var(--fg-muted)]">OUTBOUND API KEYS</div>
-              <div class="mt-2">
-                <span
-                  class="otto-chip"
-                  :class="zeroLocalKeys === true ? 'otto-chip-success' : zeroLocalKeys === false ? 'otto-chip-error' : 'otto-chip-yellow'"
-                >
-                  {{ zeroLocalKeys === true ? "0 Keys in VM (Sprites Gateway)" : zeroLocalKeys === false ? "Check Env" : "Unverified" }}
-                </span>
-              </div>
-            </div>
-            <div class="sub-item-card">
-              <div class="text-[11px] font-mono text-[var(--fg-muted)]">AI ART &amp; VIDEO</div>
-              <div class="mt-2">
-                <span class="otto-chip" :class="aiMediaDisabled === true ? 'otto-chip-error' : 'otto-chip-yellow'">
-                  {{ aiMediaDisabled === true ? "Disabled (Human Craft Only)" : "Unverified" }}
-                </span>
-              </div>
-            </div>
-          </div>
-
           <div class="connectors-grid">
             <div v-for="c in connectors" :key="`${c.provider}-${c.displayName}`" class="sub-item-card">
               <div class="flex items-center justify-between gap-2">

@@ -6,8 +6,6 @@ export type StudioTab = "overview" | "schedule" | "files" | "database" | "dossie
 defineProps<{
   statusState: "ready" | "busy" | "error";
   statusLabel: string;
-  zeroLocalKeys: boolean | null;
-  aiMediaDisabled: boolean | null;
   mobilePane: "dashboard" | "chat";
   activeTab: StudioTab;
   mascotColor: string;
@@ -83,12 +81,6 @@ const tabs: Array<{ id: StudioTab; label: string; countKey?: "schedule" | "files
     </div>
 
     <div class="header-right">
-      <span v-if="zeroLocalKeys === true" class="status-float-pill pill-ok">
-        0 Keys in VM
-      </span>
-      <span v-if="aiMediaDisabled === true" class="status-float-pill pill-noai">
-        No AI Art
-      </span>
       <span class="status-float-pill" :class="`st-${statusState}`">
         <span class="st-dot"></span>
         <span>{{ statusLabel }}</span>

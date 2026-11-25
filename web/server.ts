@@ -408,12 +408,47 @@ const LOGIN_HTML = `<!DOCTYPE html>
   <form class="card" id="f">
     <div class="head">(Y)our studio.</div>
     <div class="body">
-      <svg class="mascot" width="56" height="56" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Otto mascot">
-        <circle cx="24" cy="24" r="21.5" fill="#303030" />
-        <ellipse cx="17.8" cy="22.8" rx="4.4" ry="6" fill="#FFFFFF" />
-        <ellipse cx="30.2" cy="22.8" rx="4.4" ry="6" fill="#FFFFFF" />
-        <circle cx="18.4" cy="23" r="2.15" fill="#141414" />
-        <circle cx="30.8" cy="23" r="2.15" fill="#141414" />
+      <svg class="mascot" id="otto-login" width="60" height="60" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Otto mascot">
+        <defs>
+          <clipPath id="lg-clip"><circle cx="24" cy="23.5" r="20.6" /></clipPath>
+          <radialGradient id="lg-shadow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#000" stop-opacity="0.28" />
+            <stop offset="65%" stop-color="#000" stop-opacity="0.10" />
+            <stop offset="100%" stop-color="#000" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="lg-shade" cx="66%" cy="72%" r="74%" fx="33%" fy="27%">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.44" />
+            <stop offset="42%" stop-color="#fff" stop-opacity="0" />
+            <stop offset="76%" stop-color="#000" stop-opacity="0.22" />
+            <stop offset="100%" stop-color="#000" stop-opacity="0.48" />
+          </radialGradient>
+          <radialGradient id="lg-spec" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.56" />
+            <stop offset="55%" stop-color="#fff" stop-opacity="0.14" />
+            <stop offset="100%" stop-color="#fff" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="lg-rim" cx="76%" cy="82%" r="48%">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.22" />
+            <stop offset="100%" stop-color="#fff" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        <ellipse cx="24" cy="44.8" rx="14.5" ry="2.6" fill="url(#lg-shadow)" />
+        <circle cx="24" cy="23.5" r="20.6" fill="#303030" />
+        <circle cx="24" cy="23.5" r="20.6" fill="url(#lg-shade)" />
+        <circle cx="24" cy="23.5" r="20.6" fill="url(#lg-rim)" />
+        <ellipse id="lg-glint" cx="16.4" cy="14.2" rx="6.2" ry="3.9" transform="rotate(-28 16.4 14.2)" fill="url(#lg-spec)" />
+        <g clip-path="url(#lg-clip)">
+          <g id="lg-face">
+            <ellipse cx="18.2" cy="24.2" rx="4.6" ry="5.6" fill="rgba(0,0,0,0.14)" />
+            <ellipse cx="29.8" cy="24.2" rx="4.6" ry="5.6" fill="rgba(0,0,0,0.14)" />
+            <ellipse cx="18.2" cy="23.2" rx="4.5" ry="5.7" fill="#FFFFFF" />
+            <ellipse cx="29.8" cy="23.2" rx="4.5" ry="5.7" fill="#FFFFFF" />
+            <circle id="lg-pl" cx="18.2" cy="23.2" r="2.35" fill="#1F1F1F" />
+            <circle id="lg-pr" cx="29.8" cy="23.2" r="2.35" fill="#1F1F1F" />
+            <circle id="lg-cl" cx="17.4" cy="22.1" r="0.82" fill="#FFFFFF" />
+            <circle id="lg-cr" cx="29.0" cy="22.1" r="0.82" fill="#FFFFFF" />
+          </g>
+        </g>
       </svg>
       <h1>Otto is <span class="mark">(y)</span>our stream manager.</h1>
       <p>Enter your passcode to unlock this private Sprite studio.</p>
@@ -423,6 +458,45 @@ const LOGIN_HTML = `<!DOCTYPE html>
     </div>
   </form>
   <script>
+    (function () {
+      const svg = document.getElementById("otto-login");
+      const face = document.getElementById("lg-face");
+      const shade = document.getElementById("lg-shade");
+      const glint = document.getElementById("lg-glint");
+      const pl = document.getElementById("lg-pl");
+      const pr = document.getElementById("lg-pr");
+      const cl = document.getElementById("lg-cl");
+      const cr = document.getElementById("lg-cr");
+      let lx = 0.12, ly = 0.06, tx = 0.12, ty = 0.06, raf = null;
+      function draw() {
+        raf = null;
+        const dx = tx - lx, dy = ty - ly;
+        if (Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) { lx = tx; ly = ty; }
+        else { lx += dx * 0.16; ly += dy * 0.16; raf = requestAnimationFrame(draw); }
+        const mx = lx * 6.4, my = ly * 5.6;
+        const sx = 1 - Math.abs(lx) * 0.16, sy = 1 - Math.abs(ly) * 0.13, rot = lx * ly * -6;
+        face.setAttribute("transform", "translate(" + mx.toFixed(2) + "," + my.toFixed(2) + ") translate(24,23.2) rotate(" + rot.toFixed(2) + ") scale(" + sx.toFixed(3) + "," + sy.toFixed(3) + ") translate(-24,-23.2)");
+        shade.setAttribute("fx", (33 - lx * 6.5).toFixed(1) + "%");
+        shade.setAttribute("fy", (27 - ly * 6.5).toFixed(1) + "%");
+        const gx = (16.4 - lx * 1.6).toFixed(1), gy = (14.2 - ly * 1.4).toFixed(1);
+        glint.setAttribute("cx", gx); glint.setAttribute("cy", gy);
+        glint.setAttribute("transform", "rotate(-28 " + gx + " " + gy + ")");
+        const px = lx * 1.45, py = ly * 1.25;
+        pl.setAttribute("cx", (18.2 + px).toFixed(2)); pl.setAttribute("cy", (23.2 + py).toFixed(2));
+        pr.setAttribute("cx", (29.8 + px).toFixed(2)); pr.setAttribute("cy", (23.2 + py).toFixed(2));
+        cl.setAttribute("cx", (17.4 + px).toFixed(2)); cl.setAttribute("cy", (22.1 + py).toFixed(2));
+        cr.setAttribute("cx", (29.0 + px).toFixed(2)); cr.setAttribute("cy", (22.1 + py).toFixed(2));
+      }
+      window.addEventListener("pointermove", (e) => {
+        const r = svg.getBoundingClientRect();
+        const vx = e.clientX - (r.left + r.width / 2), vy = e.clientY - (r.top + r.height / 2);
+        const d = Math.hypot(vx, vy);
+        const mag = Math.tanh(d / 200);
+        tx = d > 0.5 ? (vx / d) * mag : 0;
+        ty = d > 0.5 ? (vy / d) * mag : 0;
+        if (!raf) raf = requestAnimationFrame(draw);
+      }, { passive: true });
+    })();
     document.getElementById("f").addEventListener("submit", async (e) => {
       e.preventDefault();
       const err = document.getElementById("err");

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { TIMEZONE_OPTIONS } from "../lib/timezones";
 import OttoMascot from "./OttoMascot.vue";
-
 interface ConnectorInfo {
   provider: string;
   displayName: string;
@@ -39,10 +39,15 @@ const saving = ref(false);
 const errorMsg = ref("");
 
 const connectors = ref<ConnectorInfo[]>([]);
-const zeroLocalKeys = ref<boolean | null>(null);
-const aiMediaDisabled = ref<boolean | null>(null);
 const loadingConnectors = ref(false);
 
+const timezoneOptions = computed(() => {
+  const current = timezone.value.trim();
+  if (current && !TIMEZONE_OPTIONS.some((o) => o.value === current)) {
+    return [{ value: current, label: current }, ...TIMEZONE_OPTIONS];
+  }
+  return TIMEZONE_OPTIONS;
+});
 const expectedServices = [
   { key: "gemini", label: "Google Gemini", role: "Brain + Multimodal Review", required: true, match: /gemini/i },
   { key: "composio", label: "Composio v3", role: "YouTube & Google Calendar", required: false, match: /composio/i },
@@ -76,14 +81,9 @@ async function fetchConnectors() {
     const res = await fetch("/api/connectors");
     const data = (await res.json()) as {
       connectors?: ConnectorInfo[];
-      zeroLocalKeys?: boolean;
-      aiMediaDisabled?: boolean;
     };
     connectors.value = Array.isArray(data.connectors) ? data.connectors : [];
-    zeroLocalKeys.value = typeof data.zeroLocalKeys === "boolean" ? data.zeroLocalKeys : null;
-    aiMediaDisabled.value = typeof data.aiMediaDisabled === "boolean" ? data.aiMediaDisabled : null;
   } catch {
-    // keep current list
   } finally {
     loadingConnectors.value = false;
   }
@@ -236,14 +236,15 @@ onMounted(() => {
                 auto: {{ browserTz }}
               </button>
             </div>
-            <input
+            <select
               id="wiz-tz"
               v-model="timezone"
-              type="text"
-              class="wiz-input"
-              placeholder="e.g. Asia/Jakarta"
-              @keydown.enter="goStep2"
-            />
+              class="wiz-input wiz-select"
+            >
+              <option v-for="opt in timezoneOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
           </div>
 
           <div v-if="errorMsg" class="wiz-err">{{ errorMsg }}</div>
@@ -308,21 +309,14 @@ onMounted(() => {
           <div class="wizard-hero">
             <OttoMascot :size="48" :color="mascotColor" :state="loadingConnectors ? 'busy' : 'ready'" />
             <h1>Check <span class="mark-y">(y)</span>our Sprite connections.</h1>
-            <p>All external APIs route through Fly.io's Zero-Key Gateway — zero API keys inside this VM.</p>
+            <p>Connected services available inside your Fly.io Sprite.</p>
           </div>
 
-          <div class="flex flex-wrap justify-center gap-2">
-            <span class="otto-chip" :class="zeroLocalKeys === true ? 'otto-chip-success' : 'otto-chip-yellow'">
-              {{ zeroLocalKeys === true ? "✓ 0 outbound API keys in VM" : "Checking VM env..." }}
-            </span>
-            <span class="otto-chip" :class="aiMediaDisabled === true ? 'otto-chip-error' : 'otto-chip-yellow'">
-              {{ aiMediaDisabled === true ? "✕ AI art & video: disabled" : "Checking guardrails..." }}
-            </span>
+          <div class="flex justify-end">
             <button type="button" class="otto-chip otto-chip-neutral cursor-pointer border-0" :disabled="loadingConnectors" @click="fetchConnectors">
               {{ loadingConnectors ? "refreshing..." : "↻ refresh" }}
             </button>
           </div>
-
           <div class="conn-list">
             <div v-for="svc in serviceChecklist" :key="svc.key" class="conn-row">
               <div class="min-w-0">
@@ -501,6 +495,15 @@ onMounted(() => {
 }
 .wiz-input:focus {
   box-shadow: var(--shadow-focus);
+}
+.wiz-select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.25L6 7.75L9.5 4.25' fill='none' stroke='%23303030' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
 }
 .wiz-err {
   padding: 8px 12px;
