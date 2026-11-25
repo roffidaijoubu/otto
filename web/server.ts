@@ -4,8 +4,15 @@ import path from "node:path";
 
 const PORT = Number(process.env.PORT || 8080);
 const DIST_DIR = path.join(import.meta.dir, "dist");
-const WORK_DIR = process.env.LMA_WORKDIR || process.env.HOME || "/home/sprite";
-const OMP_BIN = process.env.OMP_BIN || "omp";
+const HOME_DIR = process.env.HOME || "/home/sprite";
+const LOCAL_BIN = path.join(HOME_DIR, ".local", "bin");
+if (!String(process.env.PATH || "").includes(LOCAL_BIN)) {
+  process.env.PATH = `${LOCAL_BIN}:${process.env.PATH || ""}`;
+}
+const WORK_DIR = process.env.LMA_WORKDIR || HOME_DIR;
+const OMP_BIN =
+  process.env.OMP_BIN ||
+  (fs.existsSync(path.join(LOCAL_BIN, "omp")) ? path.join(LOCAL_BIN, "omp") : "omp");
 
 // Load optional private runtime config (~/.config/lma/web.env, chmod 600, outside git)
 function loadPrivateEnv() {
@@ -36,7 +43,8 @@ function timingSafeStrEqual(a: string, b: string): boolean {
 }
 
 function isAuthenticated(req: Request): boolean {
-  if (!WEB_PASSWORD) return true;
+  // Fail-closed: never expose the agent without LMA_WEB_PASSWORD configured in ~/.config/lma/web.env
+  if (!WEB_PASSWORD) return false;
   const cookieHeader = req.headers.get("cookie") || "";
   for (const part of cookieHeader.split(";")) {
     const [rawK, ...rest] = part.trim().split("=");
@@ -697,7 +705,12 @@ Bun.serve({
 
     // Passcode login endpoint
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
-      if (!WEB_PASSWORD) return Response.json({ ok: true });
+      if (!WEB_PASSWORD) {
+        return Response.json(
+          { error: "LMA_WEB_PASSWORD is not configured. Run bash ~/lma/setup.sh first." },
+          { status: 503 }
+        );
+      }
       const clientKey = getClientKey(req);
       if (isLoginRateLimited(clientKey)) {
         return Response.json(

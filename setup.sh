@@ -3,31 +3,32 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OMP_AGENT_DIR="${HOME}/.omp/agent"
+OMP_PKG_VERSION="19.1.1"
 
 echo "==> Setting up lma (Professor L Livestreamer Manager Agent) on Sprite..."
 
-# 1. Install omp if not present
-if ! command -v omp >/dev/null 2>&1; then
-  echo "==> Installing @oh-my-pi/pi-coding-agent..."
-  npm install -g @oh-my-pi/pi-coding-agent
+# 1. Install pinned omp if not present
+if ! command -v omp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/omp" ]; then
+  echo "==> Installing @oh-my-pi/pi-coding-agent@${OMP_PKG_VERSION}..."
+  npm install -g "@oh-my-pi/pi-coding-agent@${OMP_PKG_VERSION}"
   mkdir -p "${HOME}/.local/bin"
   ln -sf "$(npm prefix -g)/bin/omp" "${HOME}/.local/bin/omp"
 fi
 
-# 1b. Install ffmpeg and yt-dlp for VOD/clip/transcript workflows
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "==> Installing ffmpeg..."
-  sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+# 1b. Install jq, ffmpeg, and yt-dlp for gateway discovery & VOD/clip workflows
+if ! command -v jq >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "==> Installing jq and ffmpeg..."
+  sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends jq ffmpeg
 fi
 
-if ! command -v yt-dlp >/dev/null 2>&1; then
-  echo "==> Installing latest yt-dlp..."
+if ! command -v yt-dlp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/yt-dlp" ]; then
+  echo "==> Installing yt-dlp..."
   mkdir -p "${HOME}/.local/bin"
   curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "${HOME}/.local/bin/yt-dlp"
   chmod +x "${HOME}/.local/bin/yt-dlp"
 fi
 
-# 2. Symlink agent persona, config, and extensions
+# 2. Symlink agent persona, config, extensions, and skills
 mkdir -p "${OMP_AGENT_DIR}/extensions"
 ln -sf "${REPO_DIR}/agent/APPEND_SYSTEM.md" "${OMP_AGENT_DIR}/APPEND_SYSTEM.md"
 ln -sf "${REPO_DIR}/agent/config.yml" "${OMP_AGENT_DIR}/config.yml"
@@ -59,11 +60,22 @@ providers:
 EOF
     echo "==> Configured ${OMP_AGENT_DIR}/models.yml with Gemini Sprites Connector"
   else
-    echo "WARNING: No authorized Gemini Sprites Connector found. Copy agent/models.yml.example to ${OMP_AGENT_DIR}/models.yml manually."
+    echo "WARNING: No authorized Gemini Sprites Connector found. Add Google Gemini in Sprites Dashboard and re-run bash ~/lma/setup.sh."
   fi
 fi
 
-# 5. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)
+# 5. Ensure fail-closed Web UI passcode exists in ~/.config/lma/web.env (chmod 600)
+WEB_ENV_DIR="${HOME}/.config/lma"
+WEB_ENV_FILE="${WEB_ENV_DIR}/web.env"
+mkdir -p "${WEB_ENV_DIR}"
+if [ ! -f "${WEB_ENV_FILE}" ] || ! grep -q '^LMA_WEB_PASSWORD=' "${WEB_ENV_FILE}"; then
+  GEN_PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
+  echo "LMA_WEB_PASSWORD=${GEN_PASS}" >> "${WEB_ENV_FILE}"
+  chmod 600 "${WEB_ENV_FILE}"
+  echo "==> Generated Web Chat UI passcode in ${WEB_ENV_FILE}: ${GEN_PASS}"
+fi
+
+# 6. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)
 if [ -f "${REPO_DIR}/web/package.json" ]; then
   echo "==> Building lma-web frontend..."
   (cd "${REPO_DIR}/web" && /.sprite/bin/bun install --frozen-lockfile 2>/dev/null || /.sprite/bin/bun install)

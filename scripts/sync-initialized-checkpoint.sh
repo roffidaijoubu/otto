@@ -24,6 +24,19 @@ MSG="$(git log -1 --pretty=%s 2>/dev/null || echo 'manual sync')"
 COMMENT="initialized: ${SHA} — ${MSG}"
 
 echo "[lma-checkpoint] Syncing repo (${SHA}) to Sprite and resetting clean initialized state..."
+# 0. Protect live prod data: if MEMORY.md on Sprite differs from MEMORY.md.example, snapshot it first!
+HAS_LIVE_DATA="$(sprite exec -- bash -c '
+if [ -f /home/sprite/.omp/agent/MEMORY.md ] && [ -f /home/sprite/lma/agent/MEMORY.md.example ]; then
+  cmp -s /home/sprite/.omp/agent/MEMORY.md /home/sprite/lma/agent/MEMORY.md.example && echo "clean" || echo "modified"
+else
+  echo "clean"
+fi
+' 2>/dev/null | tr -d "\r\n" || echo "clean")"
+if [ "${HAS_LIVE_DATA}" = "modified" ]; then
+  echo "[lma-checkpoint] Live MEMORY.md detected — creating safety backup checkpoint first..."
+  sprite checkpoint create --comment "prod: auto-backup before ${SHA}"
+fi
+
 # 1. Record existing 'initialized:' checkpoints so we only clean up old initialized baselines (never prod checkpoints)
 OLD_INIT_IDS="$(sprite checkpoint list 2>/dev/null | awk '$4 ~ /^initialized:/ { print $1 }' || true)"
 

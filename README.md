@@ -80,7 +80,7 @@ Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprite
    - Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.
 ```
 
-> **Zero local secrets:** All connector keys stay in Fly.io's encrypted organization gateway — never inside the Sprite VM or this repo. `setup.sh` and `agent/extensions/*.ts` auto-discover every authorized connector at runtime.
+> **Zero outbound API keys:** All 6 third-party API keys stay in Fly.io's encrypted organization gateway — never inside the Sprite VM or this repo. `setup.sh` auto-generates your private Web UI passcode in `chmod 600 ~/.config/lma/web.env` and auto-discovers every authorized connector at runtime.
 
 <br>
 
@@ -99,6 +99,7 @@ sprite create --skip-console lma && sprite use lma
 
 # 3. Clone the repo inside the Sprite and run the idempotent installer
 sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma && bash ~/lma/setup.sh"
+#    (setup.sh prints your auto-generated Web Chat UI passcode stored in ~/.config/lma/web.env)
 
 # 4. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
 #    (or chat directly from your terminal via: sprite console && omp)
