@@ -201,6 +201,8 @@ function friendlyToolLabel(toolName: string): string {
   if (/youtube/i.test(toolName)) return "Checking YouTube...";
   if (/buffer/i.test(toolName)) return "Checking social channels...";
   if (/wakeup|schedule/i.test(toolName)) return "Managing schedule...";
+  if (/vod_scan_hype/i.test(toolName)) return "Scanning VOD live chat & hype spikes...";
+  if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating your notes...";
   if (/read/i.test(toolName)) return "Reviewing dossier...";
