@@ -25,6 +25,16 @@ if ! command -v omp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/omp" ]; then
   ln -sf "$(npm prefix -g)/bin/omp" "${HOME}/.local/bin/omp"
 fi
 
+# 1a. Install @jackwener/opencli for CDP-backed social/creator CLI automation
+if ! command -v opencli >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/opencli" ]; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "==> Installing @jackwener/opencli..."
+    npm install -g --allow-scripts=@jackwener/opencli @jackwener/opencli
+    mkdir -p "${HOME}/.local/bin"
+    ln -sf "$(npm prefix -g)/bin/opencli" "${HOME}/.local/bin/opencli"
+  fi
+fi
+
 # 1b. Install jq, ffmpeg, and yt-dlp for gateway discovery & VOD/clip workflows
 if ! command -v jq >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
   if ! command -v apt-get >/dev/null 2>&1; then

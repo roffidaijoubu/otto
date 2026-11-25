@@ -601,6 +601,7 @@ function friendlyToolLabel(toolName: string): string {
   if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail (Squint Test)...";
   if (/browser_login/i.test(toolName)) return "Waiting for browser login...";
   if (/browser_/i.test(toolName)) return "Checking saved browser sessions...";
+  if (/opencli/i.test(toolName)) return "Running OpenCLI on browser session...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating workspace files...";
   if (/read/i.test(toolName)) return "Reviewing dossier & files...";
@@ -1441,7 +1442,7 @@ Bun.serve<VncWsData>({
     }
 
     // Internal-only endpoints for omp subprocess (authenticated via ephemeral LMA_INTERNAL_SECRET)
-    if (url.pathname.startsWith("/api/internal/browser-login/")) {
+    if (url.pathname.startsWith("/api/internal/browser")) {
       const auth = req.headers.get("authorization") || "";
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
       if (!token || !timingSafeStrEqual(token, LMA_INTERNAL_SECRET)) {
@@ -1496,6 +1497,25 @@ Bun.serve<VncWsData>({
         if (!state) return Response.json({ ok: false, error: "Unknown requestId" }, { status: 404 });
         return Response.json({ ok: true, request: state });
       }
+      if (req.method === "POST" && url.pathname === "/api/internal/browser/ensure") {
+        const body = (await req.json().catch(() => ({}))) as { url?: string };
+        try {
+          await browserManager.ensureStarted(body.url);
+          return Response.json({
+            ok: true,
+            cdpEndpoint: `http://127.0.0.1:${browserManager.getCdpPort()}`,
+            status: browserManager.getStatus(),
+          });
+        } catch (err) {
+          return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
+        }
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/internal/browser/stop") {
+        await browserManager.stop();
+        return Response.json({ ok: true });
+      }
+
 
       return Response.json({ error: "Not Found" }, { status: 404 });
     }

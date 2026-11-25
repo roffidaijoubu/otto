@@ -1,10 +1,67 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 const HOME_DIR = process.env.HOME || "/home/sprite";
 const COOKIES_DIR = path.join(HOME_DIR, ".config", "lma", "cookies");
+
+const execFileAsync = promisify(execFile);
+
+function resolveOpenCliBin(): string {
+  const localBin = path.join(HOME_DIR, ".local", "bin", "opencli");
+  if (fs.existsSync(localBin)) return localBin;
+  return "opencli";
+}
+
+async function ensureBrowserCdp(initialUrl?: string): Promise<string> {
+  const secret = process.env.LMA_INTERNAL_SECRET;
+  if (!secret) {
+    return "http://127.0.0.1:9222";
+  }
+  const res = await fetch(`${getInternalBaseUrl()}/api/internal/browser/ensure`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({ url: initialUrl }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    cdpEndpoint?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Failed to start embedded Chrome CDP (HTTP ${res.status})`);
+  }
+  return data.cdpEndpoint || "http://127.0.0.1:9222";
+}
+
+async function runOpenCliExec(
+  args: string[],
+  extraEnv: Record<string, string | undefined> = {},
+  signal?: AbortSignal
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(resolveOpenCliBin(), args, {
+      env: { ...process.env, ...extraEnv },
+      timeout: 45_000,
+      maxBuffer: 4 * 1024 * 1024,
+      signal,
+    });
+    return { exitCode: 0, stdout, stderr };
+  } catch (err: unknown) {
+    const e = err as { code?: number | string; stdout?: string; stderr?: string; message?: string };
+    return {
+      exitCode: typeof e.code === "number" ? e.code : 1,
+      stdout: typeof e.stdout === "string" ? e.stdout : "",
+      stderr: typeof e.stderr === "string" ? e.stderr : e.message || "opencli execution failed",
+    };
+  }
+}
 
 function sanitizeSite(raw: string): string {
   return (
@@ -255,6 +312,124 @@ export default function (pi: ExtensionAPI) {
           {
             type: "text",
             text: JSON.stringify({ ok: exists, site, format: params.format, path: filePath }, null, 2),
+          },
+        ],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "opencli_list",
+    label: "List OpenCLI Site Commands",
+    description:
+      "Discover available OpenCLI commands across 100+ websites (tiktok, twitter, youtube, instagram, reddit, notebooklm, linkedin, etc.) or inspect a specific site/command.",
+    parameters: Type.Object({
+      site: Type.Optional(Type.String({ description: "Optional site filter, e.g. 'tiktok', 'twitter', 'youtube'." })),
+      query: Type.Optional(Type.String({ description: "Optional keyword search filter." })),
+      limit: Type.Optional(Type.Number({ description: "Max commands to return (default 50)." })),
+    }),
+    async execute(_id, params, signal) {
+      const cliArgs = ["list"];
+      if (params.query) cliArgs.push(params.query);
+      if (params.site) cliArgs.push("--site", params.site);
+      cliArgs.push("--limit", String(params.limit || 50));
+      const res = await runOpenCliExec(cliArgs, {}, signal);
+      return {
+        content: [{ type: "text", text: res.stdout || res.stderr }],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "opencli_run",
+    label: "Run OpenCLI Site Adapter",
+    description:
+      "Run an OpenCLI site command (e.g. site='tiktok', command='creator-videos', or site='tiktok', command='search', args=['vtuber']) against the Sprite's logged-in Chrome via CDP. Automatically wakes Chrome CDP if stopped. If exitCode is 77 (AUTH_REQUIRED), call browser_login for that site.",
+    parameters: Type.Object({
+      site: Type.String({ description: "Site name, e.g. 'tiktok', 'twitter', 'youtube', 'reddit', 'notebooklm'." }),
+      command: Type.String({ description: "Subcommand name, e.g. 'creator-videos', 'search', 'explore', 'timeline'." }),
+      args: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Positional/flag arguments passed after `<site> <command>`, e.g. ['vtuber', '--limit', '5'].",
+        })
+      ),
+      targetDomain: Type.Optional(
+        Type.String({
+          description:
+            "Optional CDP target URL substring filter (OPENCLI_CDP_TARGET), e.g. 'tiktok.com' or 'x.com'. Defaults to `<site>.com` when helpful.",
+        })
+      ),
+    }),
+    async execute(_id, params, signal) {
+      const site = params.site.trim().toLowerCase();
+      const command = params.command.trim();
+      const targetDomain =
+        params.targetDomain?.trim() ||
+        (site === "x" || site === "twitter"
+          ? "x.com"
+          : site === "youtube"
+            ? "youtube.com"
+            : site === "notebooklm"
+              ? "notebooklm.google.com"
+              : `${site}.com`);
+
+      const cdpEndpoint = await ensureBrowserCdp();
+      const cliArgs = [site, command, ...(params.args || []), "-f", "json"];
+      const res = await runOpenCliExec(
+        cliArgs,
+        {
+          OPENCLI_CDP_ENDPOINT: cdpEndpoint,
+          OPENCLI_CDP_TARGET: targetDomain,
+        },
+        signal
+      );
+
+      let parsed: unknown = null;
+      try {
+        parsed = res.stdout ? JSON.parse(res.stdout) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (res.exitCode === 77) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  ok: false,
+                  authRequired: true,
+                  exitCode: 77,
+                  site,
+                  command,
+                  hint: `Session not authenticated for ${site}. Call browser_login({ site: "${site}" }) to prompt the user to log in.`,
+                  raw: parsed || res.stdout || res.stderr,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: parsed
+              ? JSON.stringify(parsed, null, 2)
+              : JSON.stringify(
+                  {
+                    ok: res.exitCode === 0,
+                    exitCode: res.exitCode,
+                    stdout: res.stdout,
+                    stderr: res.stderr,
+                  },
+                  null,
+                  2
+                ),
           },
         ],
       };
