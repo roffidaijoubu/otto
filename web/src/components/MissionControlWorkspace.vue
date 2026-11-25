@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { renderMarkdown } from "../lib/markdown";
-
+import WorkspaceFileManager, {
+  type WorkspaceEntry,
+  type WorkspaceStats,
+} from "./WorkspaceFileManager.vue";
+import StudioDatabaseView from "./StudioDatabaseView.vue";
 export interface ConnectorInfo {
   provider: string;
   displayName: string;
@@ -51,6 +55,8 @@ export interface CalendarEventItem {
 
 const props = defineProps<{
   refreshTick: number;
+  workspaceRefreshTick: number;
+  dbRefreshTick: number;
 }>();
 
 const emit = defineEmits<{
@@ -58,7 +64,8 @@ const emit = defineEmits<{
   guardrailsUpdated: [payload: { zeroLocalKeys: boolean | null; aiMediaDisabled: boolean | null }];
 }>();
 
-const activeTab = ref<"overview" | "schedule" | "dossier" | "clips" | "connectors">("overview");
+const activeTab = ref<"overview" | "schedule" | "files" | "database" | "dossier" | "connectors">("overview");
+const workspaceInitialPath = ref("");
 const loading = ref(false);
 
 const dossierContent = ref("");
@@ -66,8 +73,15 @@ const dossierUpdatedAt = ref<string | null>(null);
 const connectors = ref<ConnectorInfo[]>([]);
 const zeroLocalKeys = ref<boolean | null>(null);
 const aiMediaDisabled = ref<boolean | null>(null);
-const clips = ref<ClipItem[]>([]);
-const previewClipUrl = ref<string | null>(null);
+const workspaceStats = ref<WorkspaceStats>({ totalBytes: 0, fileCount: 0, clipCount: 0 });
+const recentFiles = ref<WorkspaceEntry[]>([]);
+const dbSummary = ref({
+  pipelineCount: 0,
+  coreCount: 0,
+  experimentCount: 0,
+  contactsCount: 0,
+  trackersCount: 0,
+});
 const calendarEvents = ref<CalendarEventItem[]>([]);
 const cancellingEventId = ref<string | null>(null);
 const syncingGoogle = ref(false);
@@ -306,14 +320,42 @@ async function syncGoogleCalendar() {
   }
 }
 
+function openFilesAt(dirPath = "") {
+  workspaceInitialPath.value = dirPath;
+  activeTab.value = "files";
+}
+
+function askAboutWorkspaceEntry(entry: WorkspaceEntry) {
+  const hidden = `<hidden>Workspace file absolute path: ${entry.absPath} (relative: ${entry.relPath}, type: ${entry.kind})</hidden>`;
+  if (entry.kind === "image") {
+    emit(
+      "askPrompt",
+      `Run the Squint Test on my thumbnail draft "${entry.name}" and give concrete revision notes for my human artist.\n${hidden}`
+    );
+    return;
+  }
+  if (entry.kind === "video") {
+    emit(
+      "askPrompt",
+      `Watch my clip "${entry.name}" and critique the first 3-second hook, pacing, dead air, and editor notes.\n${hidden}`
+    );
+    return;
+  }
+  emit(
+    "askPrompt",
+    `Read and review my workspace file "${entry.relPath}" and give me sharp Professor L feedback.\n${hidden}`
+  );
+}
+
 async function fetchAll() {
   loading.value = true;
   try {
-    const [dRes, calRes, cRes, clRes] = await Promise.all([
+    const [dRes, calRes, cRes, wsRes, dbRes] = await Promise.all([
       fetch("/api/dossier").then((r) => r.json()).catch(() => null),
       fetch("/api/calendar").then((r) => r.json()).catch(() => null),
       fetch("/api/connectors").then((r) => r.json()).catch(() => null),
-      fetch("/api/clips").then((r) => r.json()).catch(() => null),
+      fetch("/api/workspace/list").then((r) => r.json()).catch(() => null),
+      fetch("/api/db/overview").then((r) => r.json()).catch(() => null),
     ]);
     if (dRes && typeof dRes === "object") {
       dossierContent.value = String(dRes.content || "");
@@ -334,8 +376,20 @@ async function fetchAll() {
       zeroLocalKeys: zeroLocalKeys.value,
       aiMediaDisabled: aiMediaDisabled.value,
     });
-    if (clRes && typeof clRes === "object") {
-      clips.value = Array.isArray(clRes.clips) ? clRes.clips : [];
+    if (wsRes && typeof wsRes === "object") {
+      if (wsRes.stats) workspaceStats.value = wsRes.stats;
+      if (Array.isArray(wsRes.recentFiles)) recentFiles.value = wsRes.recentFiles;
+    }
+    if (dbRes && typeof dbRes === "object") {
+      const tables = dbRes.tables || {};
+      const ratio = dbRes.threePlusOne || {};
+      dbSummary.value = {
+        pipelineCount: Number(tables.content_pipeline || 0),
+        coreCount: Number(ratio.core || 0),
+        experimentCount: Number(ratio.experiment || 0),
+        contactsCount: Number(tables.contacts || 0),
+        trackersCount: Array.isArray(dbRes.customTrackers) ? dbRes.customTrackers.length : 0,
+      };
     }
   } finally {
     loading.value = false;
@@ -397,13 +451,13 @@ defineExpose({ fetchAll });
         </div>
       </button>
 
-      <button type="button" class="kpi-card" @click="activeTab = 'clips'">
-        <div class="kpi-label">RAW CLIPS SHELF</div>
+      <button type="button" class="kpi-card" @click="openFilesAt('')">
+        <div class="kpi-label">STUDIO WORKSPACE</div>
         <div class="kpi-value">
-          {{ clips.length }} <span class="kpi-unit">.mp4</span>
+          {{ workspaceStats.fileCount }} <span class="kpi-unit">files</span>
         </div>
         <div class="kpi-sub">
-          {{ clips.length > 0 ? "Ready for human editor (.mp4 + .srt)" : "No VOD clips cut yet" }}
+          {{ workspaceStats.clipCount }} clips · {{ formatBytes(workspaceStats.totalBytes) }} shared with L
         </div>
       </button>
     </div>
@@ -417,11 +471,14 @@ defineExpose({ fetchAll });
         <button type="button" class="mc-tab" :class="{ active: activeTab === 'schedule' }" @click="activeTab = 'schedule'">
           Schedule ({{ activeCalendarEvents.length }})
         </button>
+        <button type="button" class="mc-tab" :class="{ active: activeTab === 'files' }" @click="activeTab = 'files'">
+          Files &amp; Clips ({{ workspaceStats.fileCount }})
+        </button>
+        <button type="button" class="mc-tab" :class="{ active: activeTab === 'database' }" @click="activeTab = 'database'">
+          Studio DB ({{ dbSummary.pipelineCount }})
+        </button>
         <button type="button" class="mc-tab" :class="{ active: activeTab === 'dossier' }" @click="activeTab = 'dossier'">
           Dossier
-        </button>
-        <button type="button" class="mc-tab" :class="{ active: activeTab === 'clips' }" @click="activeTab = 'clips'">
-          Clips ({{ clips.length }})
         </button>
         <button type="button" class="mc-tab" :class="{ active: activeTab === 'connectors' }" @click="activeTab = 'connectors'">
           Connectors ({{ connectors.length }})
@@ -588,50 +645,73 @@ defineExpose({ fetchAll });
         </div>
       </div>
 
-      <!-- BENTO 3: RAW CLIPS HAND-OFF SHELF -->
+      <!-- BENTO 3: UNIFIED STUDIO WORKSPACE & CLIPS -->
       <div class="cafe-card bento-card">
         <div class="bento-head">
           <div>
-            <div class="bento-title">Raw Clips Shelf</div>
-            <div class="bento-sub">Hype-Scanned .mp4 + .srt for Human Editor</div>
+            <div class="bento-title">Studio Workspace &amp; Clips</div>
+            <div class="bento-sub">Shared 2-way Desk · Thumbnails, Scripts, Raw Clips</div>
           </div>
-          <button type="button" class="btn btn-xs btn-ghost" @click="activeTab = 'clips'">
-            All Clips →
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button type="button" class="btn btn-xs btn-cafe-secondary" @click="openFilesAt('clips')">
+              Clips ({{ workspaceStats.clipCount }})
+            </button>
+            <button type="button" class="btn btn-xs btn-ghost" @click="openFilesAt('')">
+              All Files →
+            </button>
+          </div>
         </div>
 
-        <div v-if="clips.length === 0" class="empty-inset space-y-2.5">
-          <div>No raw clips cut yet. Drop any YouTube VOD URL in chat and Professor L will scan live-chat hype spikes and cut raw clips.</div>
-          <button
-            class="btn btn-xs btn-cafe-secondary"
-            type="button"
-            @click="emit('askPrompt', 'Help me find hype moments and cut raw clips from my latest livestream VOD.')"
-          >
-            Scan a VOD for Hype Clips
-          </button>
+        <div v-if="recentFiles.length === 0" class="empty-inset space-y-2.5">
+          <div>Shared Sprite workspace is ready. Upload human thumbnail drafts, YouTube CSVs, or ask Professor L to cut raw VOD clips (.mp4 + .srt).</div>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn btn-xs btn-cafe-primary" type="button" @click="openFilesAt('uploads')">
+              Upload Files
+            </button>
+            <button
+              class="btn btn-xs btn-cafe-secondary"
+              type="button"
+              @click="emit('askPrompt', 'Help me find hype moments and cut raw clips from my latest livestream VOD.')"
+            >
+              Scan VOD for Clips
+            </button>
+          </div>
         </div>
 
-        <div v-else class="space-y-2.5">
-          <div v-for="clip in clips.slice(0, 2)" :key="clip.mp4Url" class="sub-item-card">
+        <div v-else class="space-y-2">
+          <div v-for="file in recentFiles.slice(0, 3)" :key="file.relPath" class="sub-item-card">
             <div class="flex items-center justify-between gap-2">
               <div class="min-w-0">
-                <div class="font-medium text-sm truncate">{{ clip.name }}</div>
-                <div class="text-[11px] font-mono opacity-70">
-                  {{ formatBytes(clip.sizeBytes) }} · {{ formatTime(clip.updatedAt) }}
+                <div class="font-medium text-sm truncate">{{ file.name }}</div>
+                <div class="text-[11px] font-mono opacity-70 truncate">
+                  /{{ file.relPath }} · {{ formatBytes(file.sizeBytes) }}
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
+              <div class="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  class="btn btn-xs btn-cafe-secondary"
-                  @click="activeTab = 'clips'; previewClipUrl = clip.mp4Url"
+                  class="btn btn-xs btn-cafe-primary"
+                  @click="askAboutWorkspaceEntry(file)"
                 >
-                  Preview
+                  {{ file.kind === "image" ? "Squint" : file.kind === "video" ? "Review" : "Ask L" }}
                 </button>
-                <a :href="clip.mp4Url" :download="clip.filename" class="btn btn-xs btn-cafe-primary">.mp4</a>
+                <a
+                  :href="`/api/workspace/file?path=${encodeURIComponent(file.relPath)}&download=1`"
+                  class="btn btn-xs btn-cafe-secondary no-underline"
+                  title="Download"
+                >
+                  ↓
+                </a>
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="mt-auto pt-2 flex items-center justify-between gap-2 text-[11.5px] font-mono opacity-80 border-t border-[var(--border)]">
+          <span>Studio DB: {{ dbSummary.coreCount }} Core / {{ dbSummary.experimentCount }} Exp · {{ dbSummary.contactsCount }} contacts</span>
+          <button type="button" class="underline cursor-pointer" @click="activeTab = 'database'">
+            Open DB →
+          </button>
         </div>
       </div>
 
@@ -829,57 +909,24 @@ defineExpose({ fetchAll });
       </div>
     </div>
 
-    <!-- VIEW 4: RAW CLIPS HAND-OFF SHELF -->
-    <div v-else-if="activeTab === 'clips'" class="detail-stack">
-      <div v-if="clips.length === 0" class="cafe-card space-y-3">
-        <div class="text-xs font-mono opacity-75">
-          No raw clips cut yet. Paste any YouTube livestream VOD URL in chat and ask Professor L to find hype moments and cut raw clips.
-        </div>
-        <button
-          class="btn btn-sm btn-cafe-primary"
-          type="button"
-          @click="emit('askPrompt', 'Help me find hype moments and cut raw clips from my latest livestream VOD.')"
-        >
-          Scan a VOD for Hype Clips
-        </button>
-      </div>
+    <!-- VIEW 4: UNIFIED WORKSPACE FILE MANAGER & CLIPS -->
+    <div v-else-if="activeTab === 'files'" class="detail-stack">
+      <WorkspaceFileManager
+        :refresh-tick="props.workspaceRefreshTick"
+        :initial-path="workspaceInitialPath"
+        @ask-prompt="emit('askPrompt', $event)"
+        @stats-updated="(p) => { workspaceStats = p.stats; recentFiles = p.recentFiles; }"
+      />
+    </div>
 
-      <div v-else class="clips-grid">
-        <div v-for="clip in clips" :key="clip.mp4Url" class="cafe-card space-y-2.5">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="font-medium text-sm truncate">{{ clip.name }}</div>
-              <div class="text-[11px] font-mono opacity-70 mt-0.5">
-                VOD {{ clip.videoId }} · {{ formatBytes(clip.sizeBytes) }} · {{ formatTime(clip.updatedAt) }}
-              </div>
-            </div>
-          </div>
-
-          <video
-            v-if="previewClipUrl === clip.mp4Url"
-            :src="clip.mp4Url"
-            controls
-            preload="metadata"
-            class="w-full rounded-lg bg-black max-h-60"
-          ></video>
-
-          <div class="flex flex-wrap gap-2 pt-1">
-            <button
-              type="button"
-              class="btn btn-xs btn-cafe-secondary"
-              @click="previewClipUrl = previewClipUrl === clip.mp4Url ? null : clip.mp4Url"
-            >
-              {{ previewClipUrl === clip.mp4Url ? "Hide Preview" : "Preview" }}
-            </button>
-            <a :href="clip.mp4Url" :download="clip.filename" class="btn btn-xs btn-cafe-primary">
-              Download .mp4
-            </a>
-            <a v-if="clip.srtUrl" :href="clip.srtUrl" :download="`${clip.name}.srt`" class="btn btn-xs btn-cafe-secondary">
-              Download .srt
-            </a>
-          </div>
-        </div>
-      </div>
+    <!-- VIEW 5: UNIFIED STUDIO DATABASE (SQLITE WAL) -->
+    <div v-else-if="activeTab === 'database'" class="detail-stack">
+      <StudioDatabaseView
+        :refresh-tick="props.dbRefreshTick"
+        @ask-prompt="emit('askPrompt', $event)"
+        @open-workspace-path="openFilesAt"
+        @overview-updated="(p) => { dbSummary = p; }"
+      />
     </div>
 
     <!-- VIEW 5: ZERO-KEY CONNECTORS & GUARDRAILS -->

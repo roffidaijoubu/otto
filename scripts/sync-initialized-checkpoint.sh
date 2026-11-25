@@ -50,13 +50,14 @@ tar \
   | sprite exec --stdin -- bash -c '
     set -e
     sprite-env services delete lma-web >/dev/null 2>&1 || true
-    rm -rf /home/sprite/lma/web /home/sprite/lma/agent/extensions /home/sprite/lma/agent/skills
+    rm -rf /home/sprite/lma/web /home/sprite/lma/agent/extensions /home/sprite/lma/agent/skills /home/sprite/lma/agent/lib
     mkdir -p /home/sprite/lma
     tar xzf - -C /home/sprite/lma
-    rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/* /home/sprite/.omp/agent/calendar.json
+    rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/* \
+      /home/sprite/.omp/agent/calendar.json* /home/sprite/.omp/agent/studio.db* \
+      /home/sprite/workspace
     cp /home/sprite/lma/agent/MEMORY.md.example /home/sprite/.omp/agent/MEMORY.md
     LMA_SKIP_BOOTSTRAP=1 bash /home/sprite/lma/setup.sh
-    sleep 1
     curl -sf http://127.0.0.1:8080/api/health >/dev/null
   '
 

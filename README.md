@@ -56,17 +56,17 @@ Meanwhile, most "AI creator tools" try to replace the exact craft your community
 
 ```mermaid
 flowchart LR
-    U["Streamer (CafeBlend Web UI / CLI)"] --> S["Fly.io Sprite: lma<br/>Bun + omp RPC · MEMORY.md · Mnemopi"]
+    U["Streamer (Mission Control + Co-Pilot Chat)"] --> S["Fly.io Sprite: lma<br/>Bun + omp RPC · workspace/ · studio.db · MEMORY.md"]
     S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
     G --> M["Google Gemini<br/>(Brain + Multimodal Review)"]
-    G --> E["Exa, Firecrawl, YouTube, Buffer &amp; QStash<br/>(Research, Social &amp; Proactive Wake-Ups)"]
+    G --> E["Exa, Firecrawl, YouTube, GCal, Buffer &amp; QStash<br/>(Research, Social, Calendar &amp; Wake-Ups)"]
 ```
 
 - **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw `.mp4`/`.srt` material for human artists and clippers — never replaces them.
-- **Zero outbound API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo.
-- **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining a structured `MEMORY.md` talent dossier (3 Goals, Ideal Schedule, 3 GOATs, 3+1 tracker) with built-in **Mnemopi** SQLite memory across sessions.
+- **Zero outbound API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Google Calendar, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo.
+- **Unified 2-Way Studio Workspace + Unified SQLite Studio DB:** Both Mission Control and Professor L share `/home/sprite/workspace/` (full file manager with drag-drop &amp; chat `📎` uploads, unified VOD `clips/`, inline image/video/audio/Markdown preview &amp; editor, folder ZIP downloads, and 1-click *Squint Test* / *Review Clip*) and `~/.omp/agent/studio.db` (SQLite WAL storing Schedule + Google Calendar sync, 3+1 Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics History, and Custom Trackers — with live SSE auto-refresh).
+- **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining `MEMORY.md` (Talent Dossier), `studio.db` (structured ops data), `workspace/` (shared files/media), and **Mnemopi** SQLite conversational memory across sessions.
 - **Professor L coaching playbook:** Grounded in Ludwig's *Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
-
 <br>
 
 ---
@@ -143,11 +143,11 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `agent/APPEND_SYSTEM.md` | Professor L persona, 4-lecture playbook, non-negotiable rules, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
 | `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
-| `agent/extensions/*.ts` | Auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, and `--new` |
-| `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control Dashboard &amp; docked Co-Pilot Chat (`TodoChecklistCard`, `ThoughtTrace`, passcode gate, `/api/calendar`, `/api/wakeup`) |
-| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 16-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
-| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Talent Dossier from connected OAuth accounts |
-
+| `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, 3+1 Pipeline, Contacts, Metrics &amp; Custom Trackers |
+| `agent/extensions/*.ts` | 9 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, and `--new` |
+| `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control (`WorkspaceFileManager`, `StudioDatabaseView`, `TodoChecklistCard`, `ThoughtTrace`, chat `📎` uploads, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
+| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 22-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
+| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Talent Dossier |
 ### Why Fly.io Sprites Made Building `lma` 10× Faster
 Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
 - Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, clean Mnemopi SQLite, rebuilt `web/`).
@@ -163,10 +163,10 @@ Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Ups
 Built actively during **Fly.io Hacksgiving 2026**:
 
 - ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + one-time OAuth auto-bootstrap) &amp; Mission Control-first CafeBlend Studio UI (with live `omp` Todo checklist &amp; docked Co-Pilot Chat)
+- ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, inline preview &amp; Markdown editor, folder ZIP export, and 1-click *Squint Test* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db` powering Schedule, 3+1 Content Pipeline, Contacts, Metrics History &amp; Custom Trackers with live SSE refresh)
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export)
 - ✅ Professor L persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
-- ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
-
+- ⚠️ Final UI redesign &amp; Hacksgiving demo video — next up!
 <br>
 
 ---

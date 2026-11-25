@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
-import ChatComposer from "./components/ChatComposer.vue";
+import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ChatHeader from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
@@ -21,6 +21,8 @@ const mobilePane = ref<"dashboard" | "chat">("dashboard");
 const zeroLocalKeys = ref<boolean | null>(null);
 const aiMediaDisabled = ref<boolean | null>(null);
 const missionRefreshTick = ref(0);
+const workspaceRefreshTick = ref(0);
+const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
 
 // Live streaming accumulator for the active assistant response
@@ -177,11 +179,19 @@ function connectEvents() {
       scrollToBottom();
     } else if (type === "assistant_end" && typeof msg.text === "string") {
       commitLiveAssistant(msg.text);
+    } else if (type === "workspace_changed") {
+      workspaceRefreshTick.value += 1;
+      missionRefreshTick.value += 1;
+    } else if (type === "db_changed") {
+      dbRefreshTick.value += 1;
+      missionRefreshTick.value += 1;
     } else if (type === "done") {
       commitLiveAssistant();
       busy.value = false;
       loadSessions();
       missionRefreshTick.value += 1;
+      workspaceRefreshTick.value += 1;
+      dbRefreshTick.value += 1;
     } else if (type === "session_changed") {
       resetLiveBuffers();
       todos.value = [];
@@ -195,9 +205,18 @@ function connectEvents() {
   };
 }
 
-async function sendMessage() {
-  const text = draft.value.trim();
-  if (!text || busy.value) return;
+async function sendMessage(attachments: ComposerAttachment[] = []) {
+  const userText = draft.value.trim();
+  if ((!userText && attachments.length === 0) || busy.value) return;
+  let fullMessage = userText;
+  if (attachments.length > 0) {
+    const names = attachments.map((a) => a.name).join(", ");
+    const visiblePart = userText || `Uploaded to workspace: ${names}. Please review.`;
+    const hiddenLines = attachments
+      .map((a) => `- ${a.absPath} (relative: ${a.relPath}, type: ${a.kind})`)
+      .join("\n");
+    fullMessage = `${visiblePart}\n<hidden>Attached workspace files:\n${hiddenLines}</hidden>`;
+  }
   error.value = "";
   draft.value = "";
   busy.value = true;
@@ -206,7 +225,7 @@ async function sendMessage() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: fullMessage }),
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({ error: res.statusText }))) as {
@@ -294,6 +313,8 @@ onMounted(async () => {
       <div class="workspace-pane" :class="{ 'mobile-hidden': mobilePane !== 'dashboard' }">
         <MissionControlWorkspace
           :refresh-tick="missionRefreshTick"
+          :workspace-refresh-tick="workspaceRefreshTick"
+          :db-refresh-tick="dbRefreshTick"
           @ask-prompt="handleMissionPrompt"
           @guardrails-updated="handleGuardrailsUpdated"
         />

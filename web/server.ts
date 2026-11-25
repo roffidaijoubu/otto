@@ -1,6 +1,46 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  addChannelMetric,
+  deleteChannelMetric,
+  deleteContact,
+  deleteCustomTracker,
+  deleteCustomTrackerItem,
+  deletePipelineItem,
+  getStudioDbOverview,
+  listCalendarEvents,
+  listChannelMetrics,
+  listContacts,
+  listCustomTrackerItems,
+  listCustomTrackers,
+  listPipelineItems,
+  saveCalendarEventsBatch,
+  upsertContact,
+  upsertCustomTracker,
+  upsertCustomTrackerItem,
+  upsertPipelineItem,
+  type CalendarEvent,
+  type CalendarWakeupHook,
+  type ContactRole,
+  type ContactStatus,
+  type PipelineFormat,
+  type PipelinePillar,
+  type PipelineStatus,
+} from "../agent/lib/studio-db.ts";
+import {
+  classifyFile,
+  createWorkspaceZip,
+  ensureWorkspaceScaffold,
+  listWorkspaceDirectory,
+  MAX_TEXT_PREVIEW_BYTES,
+  MAX_UPLOAD_BYTES,
+  resolveSafeWorkspacePath,
+  sanitizeSegment,
+  uniqueDestinationPath,
+  WORKSPACE_CLIPS_DIR,
+  WORKSPACE_ROOT,
+} from "./lib/workspace.ts";
 
 const PORT = Number(process.env.PORT || 8080);
 const DIST_DIR = path.join(import.meta.dir, "dist");
@@ -306,14 +346,15 @@ function friendlyToolLabel(toolName: string): string {
   if (/buffer/i.test(toolName)) return "Checking social channels...";
   if (/wakeup|schedule|calendar/i.test(toolName)) return "Managing schedule...";
   if (/^todo/i.test(toolName)) return "Updating checklist...";
+  if (/^studio_/i.test(toolName)) return "Updating studio tracker...";
   if (/vod_scan_hype/i.test(toolName)) return "Scanning VOD live chat & hype spikes...";
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
   if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
   if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail (Squint Test)...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
-  if (/edit|write/i.test(toolName)) return "Updating your notes...";
-  if (/read/i.test(toolName)) return "Reviewing dossier...";
+  if (/edit|write/i.test(toolName)) return "Updating workspace files...";
+  if (/read/i.test(toolName)) return "Reviewing dossier & files...";
   if (/bash/i.test(toolName)) return "Running workspace tools...";
   return "Working on it...";
 }
@@ -597,9 +638,16 @@ class OmpRpcBridge {
     }
 
     if (ev.type === "tool_execution_end") {
-      if ((ev.toolName === "todo" || ev.toolName === "todo_write") && ev.result?.details) {
+      const tName = String(ev.toolName || "");
+      if ((tName === "todo" || tName === "todo_write") && ev.result?.details) {
         this.todos = normalizeTodoPhases(ev.result.details.phases);
         broadcast({ type: "todos", phases: this.todos });
+      }
+      if (/^(write|edit|bash|vod_cut_clip|vod_prep_clip|vod_scan_hype)$/i.test(tName)) {
+        broadcast({ type: "workspace_changed" });
+      }
+      if (/^(studio_|calendar_|schedule_wakeup|cancel_wakeup)/i.test(tName)) {
+        broadcast({ type: "db_changed" });
       }
       broadcast({ type: "tool_end" });
       return;
@@ -781,58 +829,31 @@ class OmpRpcBridge {
 }
 
 const rpc = new OmpRpcBridge();
-interface ServerCalendarWakeupHook {
-  qstashId: string;
-  kind: "one_shot" | "recurring_cron";
-  label: string;
-  triggerAt: string | null;
-  cron: string | null;
-  offsetMinutes: number | null;
-  prompt: string;
-  status: "armed" | "cancelled";
+
+// Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
+ensureWorkspaceScaffold();
+let workspaceWatchTimer: NodeJS.Timeout | null = null;
+try {
+  fs.watch(WORKSPACE_ROOT, { recursive: true }, () => {
+    clearTimeout(workspaceWatchTimer ?? undefined);
+    workspaceWatchTimer = setTimeout(() => {
+      broadcast({ type: "workspace_changed" });
+    }, 350);
+  });
+} catch {
+  // Recursive fs.watch may be unsupported on some kernels; tool_execution_end + API mutations still broadcast live
 }
 
-interface ServerCalendarEvent {
-  id: string;
-  title: string;
-  type: "stream" | "collab" | "upload" | "reminder" | "deadline";
-  startAt: string;
-  endAt: string | null;
-  cron: string | null;
-  notes: string;
-  status: "planned" | "done" | "cancelled";
-  source?: "local" | "google";
-  googleEventId?: string | null;
-  googleHtmlLink?: string | null;
-  wakeups: ServerCalendarWakeupHook[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-function getCalendarFilePath(): string {
-  const home = process.env.HOME || "/home/sprite";
-  return path.join(home, ".omp", "agent", "calendar.json");
-}
+type ServerCalendarWakeupHook = CalendarWakeupHook;
+type ServerCalendarEvent = CalendarEvent;
 
 function readCalendarEvents(): ServerCalendarEvent[] {
-  const filePath = getCalendarFilePath();
-  if (!fs.existsSync(filePath)) return [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
-      events?: ServerCalendarEvent[];
-    };
-    return Array.isArray(parsed.events) ? parsed.events : [];
-  } catch {
-    return [];
-  }
+  return listCalendarEvents();
 }
 
 function writeCalendarEvents(events: ServerCalendarEvent[]): void {
-  const filePath = getCalendarFilePath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify({ version: 1, events }, null, 2) + "\n", "utf8");
-  fs.renameSync(tmpPath, filePath);
+  saveCalendarEventsBatch(events);
+  broadcast({ type: "db_changed" });
 }
 
 async function resolveQStashGatewayForServer(): Promise<string | null> {
@@ -1404,9 +1425,485 @@ Bun.serve({
       }
     }
 
+    // ---------- Unified Studio Workspace (Tier 3 File Manager + Clips) ----------
+
+    if (req.method === "GET" && url.pathname === "/api/workspace/list") {
+      try {
+        const relDir = url.searchParams.get("path") || "";
+        const q = url.searchParams.get("q") || "";
+        const listing = listWorkspaceDirectory(relDir, q);
+        return Response.json(listing);
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        const status = /not found/i.test(msg) ? 404 : 400;
+        return Response.json({ error: msg }, { status });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspace/upload") {
+      try {
+        const form = await req.formData();
+        const rawDir = typeof form.get("dir") === "string" ? String(form.get("dir")) : "uploads";
+        const { absPath: targetDirAbs, relPath: targetDirRel } = resolveSafeWorkspacePath(rawDir, {
+          allowMissing: true,
+        });
+        fs.mkdirSync(targetDirAbs, { recursive: true });
+        if (!fs.statSync(targetDirAbs).isDirectory()) {
+          return Response.json({ error: "Upload target is not a directory" }, { status: 400 });
+        }
+        const rawEntries = form.getAll("files");
+        const single = form.get("file");
+        if (single && rawEntries.length === 0) rawEntries.push(single);
+        const files = rawEntries.filter((f): f is Exclude<typeof f, string> => typeof f !== "string");
+        if (files.length === 0) {
+          return Response.json({ error: "No files uploaded" }, { status: 400 });
+        }
+        const uploaded: Array<{
+          name: string;
+          relPath: string;
+          absPath: string;
+          sizeBytes: number;
+          kind: string;
+        }> = [];
+        for (const file of files) {
+          if (file.size > MAX_UPLOAD_BYTES) {
+            return Response.json(
+              { error: `File '${file.name}' exceeds ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)} MB limit` },
+              { status: 413 }
+            );
+          }
+          const { absPath: destAbs, finalName } = uniqueDestinationPath(targetDirAbs, file.name || "upload.bin");
+          await Bun.write(destAbs, file);
+          const relPath = targetDirRel ? `${targetDirRel}/${finalName}` : finalName;
+          const cls = classifyFile(finalName);
+          uploaded.push({
+            name: finalName,
+            relPath,
+            absPath: destAbs,
+            sizeBytes: file.size,
+            kind: cls.kind,
+          });
+        }
+        broadcast({ type: "workspace_changed" });
+        return Response.json({ ok: true, uploaded });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspace/mkdir") {
+      try {
+        const body = (await req.json()) as { dir?: string; name?: string };
+        const safeName = sanitizeSegment(String(body?.name || ""));
+        const parentRel = typeof body?.dir === "string" ? body.dir : "";
+        const combined = parentRel ? `${parentRel}/${safeName}` : safeName;
+        const { absPath, relPath } = resolveSafeWorkspacePath(combined, { allowMissing: true });
+        fs.mkdirSync(absPath, { recursive: true });
+        broadcast({ type: "workspace_changed" });
+        return Response.json({ ok: true, path: relPath });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspace/rename") {
+      try {
+        const body = (await req.json()) as { path?: string; newPath?: string };
+        const src = resolveSafeWorkspacePath(String(body?.path || ""));
+        if (!src.relPath) {
+          return Response.json({ error: "Cannot rename workspace root" }, { status: 400 });
+        }
+        const dst = resolveSafeWorkspacePath(String(body?.newPath || ""), { allowMissing: true });
+        if (!dst.relPath) {
+          return Response.json({ error: "Destination path is required" }, { status: 400 });
+        }
+        if (dst.absPath === src.absPath) {
+          return Response.json({ ok: true, path: dst.relPath });
+        }
+        if (dst.absPath.startsWith(src.absPath + path.sep)) {
+          return Response.json({ error: "Cannot move a folder inside itself" }, { status: 400 });
+        }
+        if (fs.existsSync(dst.absPath)) {
+          return Response.json({ error: "Destination already exists" }, { status: 409 });
+        }
+        fs.mkdirSync(path.dirname(dst.absPath), { recursive: true });
+        fs.renameSync(src.absPath, dst.absPath);
+        broadcast({ type: "workspace_changed" });
+        return Response.json({ ok: true, path: dst.relPath });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/workspace/entry") {
+      try {
+        const rel = url.searchParams.get("path") || "";
+        const target = resolveSafeWorkspacePath(rel);
+        if (!target.relPath) {
+          return Response.json({ error: "Cannot delete workspace root" }, { status: 400 });
+        }
+        fs.rmSync(target.absPath, { recursive: true, force: true });
+        broadcast({ type: "workspace_changed" });
+        return Response.json({ ok: true, deleted: target.relPath });
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        return Response.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/workspace/text") {
+      try {
+        const rel = url.searchParams.get("path") || "";
+        const { absPath, relPath } = resolveSafeWorkspacePath(rel);
+        const st = fs.statSync(absPath);
+        if (!st.isFile()) {
+          return Response.json({ error: "Path is not a file" }, { status: 400 });
+        }
+        if (st.size > MAX_TEXT_PREVIEW_BYTES) {
+          return Response.json({ error: "File exceeds 2 MB inline text preview limit" }, { status: 413 });
+        }
+        const cls = classifyFile(path.basename(absPath));
+        if (!cls.editable) {
+          return Response.json({ error: "File type is not a plain-text previewable format" }, { status: 415 });
+        }
+        const content = fs.readFileSync(absPath, "utf8");
+        return Response.json({
+          path: relPath,
+          absPath,
+          name: path.basename(absPath),
+          kind: cls.kind,
+          content,
+          sizeBytes: st.size,
+          updatedAt: st.mtime.toISOString(),
+        });
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        return Response.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 });
+      }
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/workspace/text") {
+      try {
+        const body = (await req.json()) as { path?: string; content?: string };
+        const rawPath = String(body?.path || "");
+        const content = typeof body?.content === "string" ? body.content : "";
+        if (Buffer.byteLength(content, "utf8") > MAX_TEXT_PREVIEW_BYTES) {
+          return Response.json({ error: "Content exceeds 2 MB inline editor limit" }, { status: 413 });
+        }
+        const { absPath, relPath } = resolveSafeWorkspacePath(rawPath, { allowMissing: true });
+        if (!relPath) {
+          return Response.json({ error: "File path is required" }, { status: 400 });
+        }
+        const cls = classifyFile(path.basename(absPath));
+        if (!cls.editable) {
+          return Response.json({ error: "Only text/markdown files can be edited inline" }, { status: 415 });
+        }
+        fs.mkdirSync(path.dirname(absPath), { recursive: true });
+        const tmp = `${absPath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmp, content, "utf8");
+        fs.renameSync(tmp, absPath);
+        const st = fs.statSync(absPath);
+        broadcast({ type: "workspace_changed" });
+        return Response.json({
+          ok: true,
+          path: relPath,
+          sizeBytes: st.size,
+          updatedAt: st.mtime.toISOString(),
+        });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/workspace/file") {
+      try {
+        const rel = url.searchParams.get("path") || "";
+        const { absPath } = resolveSafeWorkspacePath(rel);
+        const st = fs.statSync(absPath);
+        if (!st.isFile()) {
+          return Response.json({ error: "Path is not a file" }, { status: 400 });
+        }
+        const fileName = path.basename(absPath);
+        const cls = classifyFile(fileName);
+        const forceDownload = url.searchParams.get("download") === "1" || !cls.inlineMime;
+        const contentType = forceDownload ? "application/octet-stream" : cls.inlineMime!;
+        const size = st.size;
+        const headers: Record<string, string> = {
+          "Content-Type": contentType,
+          "X-Content-Type-Options": "nosniff",
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(size),
+          "Cache-Control": "no-store",
+        };
+        if (forceDownload) {
+          const safeAscii = fileName.replace(/["\\\r\n]/g, "_");
+          headers["Content-Disposition"] = `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+        }
+        if (req.method === "HEAD") {
+          return new Response(null, { status: 200, headers });
+        }
+        const rangeHeader = req.headers.get("range");
+        if (rangeHeader && rangeHeader.startsWith("bytes=")) {
+          const [startStr, endStr] = rangeHeader.slice(6).split("-");
+          const start = startStr ? Number.parseInt(startStr, 10) : 0;
+          const end = endStr ? Math.min(size - 1, Number.parseInt(endStr, 10)) : size - 1;
+          if (Number.isNaN(start) || Number.isNaN(end) || start < 0 || start > end || start >= size) {
+            return new Response(null, {
+              status: 416,
+              headers: { "Content-Range": `bytes */${size}` },
+            });
+          }
+          headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+          headers["Content-Length"] = String(end - start + 1);
+          return new Response(Bun.file(absPath).slice(start, end + 1), { status: 206, headers });
+        }
+        return new Response(Bun.file(absPath), { headers });
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        return Response.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/workspace/zip") {
+      let zipResult: { zipPath: string; downloadName: string; cleanup: () => void } | null = null;
+      try {
+        const relDir = url.searchParams.get("path") || "";
+        zipResult = await createWorkspaceZip(relDir);
+        const bytes = fs.readFileSync(zipResult.zipPath);
+        const downloadName = zipResult.downloadName;
+        zipResult.cleanup();
+        zipResult = null;
+        return new Response(bytes, {
+          headers: {
+            "Content-Type": "application/zip",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": `attachment; filename="${downloadName}"`,
+            "Cache-Control": "no-store",
+          },
+        });
+      } catch (err: unknown) {
+        if (zipResult) zipResult.cleanup();
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    // ---------- Unified Studio Database API (SQLite WAL) ----------
+
+    if (req.method === "GET" && url.pathname === "/api/db/overview") {
+      return Response.json(getStudioDbOverview());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/db/pipeline") {
+      const status = url.searchParams.get("status") || undefined;
+      const pillar = url.searchParams.get("pillar") || undefined;
+      const format = url.searchParams.get("format") || undefined;
+      return Response.json({ items: listPipelineItems({ status, pillar, format }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/pipeline") {
+      try {
+        const body = (await req.json()) as {
+          id?: string;
+          title?: string;
+          format?: PipelineFormat;
+          pillar?: PipelinePillar;
+          status?: PipelineStatus;
+          hook?: string;
+          thumbnailPath?: string;
+          scriptPath?: string;
+          scheduledFor?: string | null;
+          notes?: string;
+        };
+        const item = upsertPipelineItem(body || {});
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, item });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "PATCH" && url.pathname.startsWith("/api/db/pipeline/")) {
+      try {
+        const id = decodeURIComponent(url.pathname.slice("/api/db/pipeline/".length)).trim();
+        const body = (await req.json()) as Record<string, unknown>;
+        const item = upsertPipelineItem({ ...(body as Record<string, never>), id });
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, item });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/db/pipeline/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/db/pipeline/".length)).trim();
+      const deleted = deletePipelineItem(id);
+      if (deleted) broadcast({ type: "db_changed" });
+      return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/db/contacts") {
+      const role = url.searchParams.get("role") || undefined;
+      const status = url.searchParams.get("status") || undefined;
+      return Response.json({ contacts: listContacts({ role, status }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/contacts") {
+      try {
+        const body = (await req.json()) as {
+          id?: string;
+          name?: string;
+          role?: ContactRole;
+          handle?: string;
+          platform?: string;
+          status?: ContactStatus;
+          notes?: string;
+        };
+        const contact = upsertContact(body || {});
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, contact });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "PATCH" && url.pathname.startsWith("/api/db/contacts/")) {
+      try {
+        const id = decodeURIComponent(url.pathname.slice("/api/db/contacts/".length)).trim();
+        const body = (await req.json()) as Record<string, unknown>;
+        const contact = upsertContact({ ...(body as Record<string, never>), id });
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, contact });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/db/contacts/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/db/contacts/".length)).trim();
+      const deleted = deleteContact(id);
+      if (deleted) broadcast({ type: "db_changed" });
+      return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/db/metrics") {
+      const limit = Number(url.searchParams.get("limit") || 50);
+      return Response.json({ metrics: listChannelMetrics(Number.isFinite(limit) ? limit : 50) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/metrics") {
+      try {
+        const body = (await req.json()) as {
+          recordedAt?: string;
+          platform?: string;
+          subscribers?: number | null;
+          totalViews?: number | null;
+          avgCcv?: number | null;
+          avgCtr?: number | null;
+          notes?: string;
+        };
+        const metric = addChannelMetric(body || {});
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, metric });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/db/metrics/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/db/metrics/".length)).trim();
+      const deleted = deleteChannelMetric(id);
+      if (deleted) broadcast({ type: "db_changed" });
+      return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/db/trackers") {
+      return Response.json({ trackers: listCustomTrackers() });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/trackers") {
+      try {
+        const body = (await req.json()) as {
+          slug?: string;
+          name?: string;
+          description?: string;
+          columns?: string[];
+        };
+        const tracker = upsertCustomTracker({
+          slug: body?.slug,
+          name: String(body?.name || ""),
+          description: body?.description,
+          columns: Array.isArray(body?.columns) ? body.columns.map(String) : undefined,
+        });
+        broadcast({ type: "db_changed" });
+        return Response.json({ ok: true, tracker });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    const trackerItemsMatch = url.pathname.match(/^\/api\/db\/trackers\/([a-z0-9-]+)\/items(?:\/([^/]+))?$/);
+    if (trackerItemsMatch) {
+      const slug = trackerItemsMatch[1];
+      const itemId = trackerItemsMatch[2] ? decodeURIComponent(trackerItemsMatch[2]) : undefined;
+      try {
+        if (req.method === "GET" && !itemId) {
+          return Response.json({ items: listCustomTrackerItems(slug) });
+        }
+        if (req.method === "POST" && !itemId) {
+          const body = (await req.json()) as {
+            id?: string;
+            title?: string;
+            status?: string;
+            data?: Record<string, string>;
+          };
+          const item = upsertCustomTrackerItem({
+            trackerSlug: slug,
+            id: body?.id,
+            title: body?.title,
+            status: body?.status,
+            data: body?.data,
+          });
+          broadcast({ type: "db_changed" });
+          return Response.json({ ok: true, item });
+        }
+        if (req.method === "PATCH" && itemId) {
+          const body = (await req.json()) as {
+            title?: string;
+            status?: string;
+            data?: Record<string, string>;
+          };
+          const item = upsertCustomTrackerItem({
+            trackerSlug: slug,
+            id: itemId,
+            title: body?.title,
+            status: body?.status,
+            data: body?.data,
+          });
+          broadcast({ type: "db_changed" });
+          return Response.json({ ok: true, item });
+        }
+        if (req.method === "DELETE" && itemId) {
+          const deleted = deleteCustomTrackerItem(slug, itemId);
+          if (deleted) broadcast({ type: "db_changed" });
+          return Response.json({ ok: deleted, id: itemId }, { status: deleted ? 200 : 404 });
+        }
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/db/trackers/")) {
+      const slug = decodeURIComponent(url.pathname.slice("/api/db/trackers/".length)).trim();
+      const deleted = deleteCustomTracker(slug);
+      if (deleted) broadcast({ type: "db_changed" });
+      return Response.json({ ok: deleted, slug }, { status: deleted ? 200 : 404 });
+    }
+
+    // ---------- Backwards-Compatible Raw Clips Endpoints (now unified under workspace/clips) ----------
+
     if (req.method === "GET" && url.pathname === "/api/clips") {
-      const home = process.env.HOME || "/home/sprite";
-      const clipsRoot = path.join(home, "clips");
+      ensureWorkspaceScaffold();
+      const clipsRoot = WORKSPACE_CLIPS_DIR;
       if (!fs.existsSync(clipsRoot)) {
         return Response.json({ clips: [] });
       }
@@ -1414,6 +1911,7 @@ Bun.serve({
         videoId: string;
         name: string;
         filename: string;
+        relPath: string;
         mp4Url: string;
         srtUrl: string | null;
         sizeBytes: number;
@@ -1439,6 +1937,7 @@ Bun.serve({
             videoId: vidEntry.name,
             name: base,
             filename: f,
+            relPath: `clips/${vidEntry.name}/${f}`,
             mp4Url: `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(f)}`,
             srtUrl: matchedSrt
               ? `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(matchedSrt)}`
@@ -1467,8 +1966,7 @@ Bun.serve({
       if (!/^[A-Za-z0-9_-]{6,32}$/.test(vidRaw) || !/^[A-Za-z0-9_.-]+\.(mp4|srt)$/.test(fileRaw)) {
         return Response.json({ error: "Invalid clip filename" }, { status: 400 });
       }
-      const home = process.env.HOME || "/home/sprite";
-      const clipsRoot = path.resolve(home, "clips");
+      const clipsRoot = path.resolve(WORKSPACE_CLIPS_DIR);
       const candidate = path.resolve(clipsRoot, vidRaw, fileRaw);
       if (!candidate.startsWith(clipsRoot + path.sep) || !fs.existsSync(candidate)) {
         return Response.json({ error: "Clip not found" }, { status: 404 });
@@ -1479,6 +1977,7 @@ Bun.serve({
       const size = stat.size;
       const headers: Record<string, string> = {
         "Content-Type": contentType,
+        "X-Content-Type-Options": "nosniff",
         "Accept-Ranges": "bytes",
         "Content-Length": String(size),
       };

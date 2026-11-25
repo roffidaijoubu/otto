@@ -57,6 +57,13 @@ if [ -d "${REPO_DIR}/agent/skills" ]; then
   done
 fi
 
+# 2b. Ensure Unified Studio Workspace folders exist (and migrate legacy ~/clips once)
+mkdir -p "${HOME}/workspace/clips" "${HOME}/workspace/thumbnails" "${HOME}/workspace/scripts" \
+  "${HOME}/workspace/briefs" "${HOME}/workspace/uploads" "${HOME}/workspace/exports"
+if [ -d "${HOME}/clips" ] && [ ! -L "${HOME}/clips" ]; then
+  cp -rn "${HOME}/clips/." "${HOME}/workspace/clips/" 2>/dev/null || true
+fi
+
 # 3. Initialize persistent MEMORY.md if absent
 if [ ! -f "${OMP_AGENT_DIR}/MEMORY.md" ]; then
   cp "${REPO_DIR}/agent/MEMORY.md.example" "${OMP_AGENT_DIR}/MEMORY.md"

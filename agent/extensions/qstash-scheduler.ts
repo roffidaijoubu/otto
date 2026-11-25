@@ -1,38 +1,15 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import {
+  listCalendarEvents,
+  saveCalendarEventsBatch,
+  type CalendarEvent,
+  type CalendarEventType,
+  type CalendarWakeupHook,
+} from "../lib/studio-db.ts";
 
-export type CalendarEventType = "stream" | "collab" | "upload" | "reminder" | "deadline";
+export type { CalendarEvent, CalendarEventType, CalendarWakeupHook };
 export type LifecycleHookPreset = "promo_24h" | "pre_stream_1h" | "post_stream_vod_3h" | "at_start";
-
-export interface CalendarWakeupHook {
-  qstashId: string;
-  kind: "one_shot" | "recurring_cron";
-  label: string;
-  triggerAt: string | null;
-  cron: string | null;
-  offsetMinutes: number | null;
-  prompt: string;
-  status: "armed" | "cancelled";
-}
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  type: CalendarEventType;
-  startAt: string;
-  endAt: string | null;
-  cron: string | null;
-  notes: string;
-  status: "planned" | "done" | "cancelled";
-  source?: "local" | "google";
-  googleEventId?: string | null;
-  googleHtmlLink?: string | null;
-  wakeups: CalendarWakeupHook[];
-  createdAt: string;
-  updatedAt: string;
-}
 
 interface CalendarStore {
   version: 1;
@@ -47,33 +24,14 @@ interface GoogleCalComposioCtx {
 
 let cachedGatewayUrl: string | null = null;
 let cachedGCalCtx: GoogleCalComposioCtx | null | undefined = undefined;
-function getCalendarPath(): string {
-  const home = process.env.HOME || "/home/sprite";
-  return path.join(home, ".omp", "agent", "calendar.json");
-}
 
 function loadCalendar(): CalendarStore {
-  const filePath = getCalendarPath();
-  if (!fs.existsSync(filePath)) {
-    return { version: 1, events: [] };
-  }
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<CalendarStore>;
-    const events = Array.isArray(parsed.events) ? parsed.events : [];
-    return { version: 1, events };
-  } catch {
-    return { version: 1, events: [] };
-  }
+  return { version: 1, events: listCalendarEvents() };
 }
 
 function saveCalendar(store: CalendarStore): void {
-  const filePath = getCalendarPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(store, null, 2) + "\n", "utf8");
-  fs.renameSync(tmpPath, filePath);
+  saveCalendarEventsBatch(store.events);
 }
-
 async function getGoogleCalendarContext(): Promise<GoogleCalComposioCtx | null> {
   if (cachedGCalCtx !== undefined) return cachedGCalCtx;
   try {

@@ -84,6 +84,32 @@ echo "CHECK_TRAV_SESS:${TRAV_SESS}"
 TRAV_CLIP=$(curl -s --path-as-is -b /tmp/lma_v_cookie.txt -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/api/clips/file/../../etc/passwd)
 echo "CHECK_TRAV_CLIP:${TRAV_CLIP}"
 
+# Unified Workspace Tier 3 checks (list, traversal block, text put/get, zip, delete)
+WS_DIRS=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/workspace/list | jq -r ".dirs | join(\",\")")
+echo "CHECK_WS_LIST:${WS_DIRS}"
+
+TRAV_WS=$(curl -s -b /tmp/lma_v_cookie.txt -o /dev/null -w "%{http_code}" "http://127.0.0.1:8080/api/workspace/file?path=../../etc/passwd")
+echo "CHECK_TRAV_WS:${TRAV_WS}"
+
+WS_PUT=$(curl -s -b /tmp/lma_v_cookie.txt -X PUT http://127.0.0.1:8080/api/workspace/text -H "Content-Type: application/json" -d "{\"path\":\"scripts/_verify_tmp.md\",\"content\":\"# Verify OK\"}" | jq -r ".ok")
+WS_GET=$(curl -s -b /tmp/lma_v_cookie.txt "http://127.0.0.1:8080/api/workspace/text?path=scripts/_verify_tmp.md" | jq -r ".content")
+WS_ZIP_MAGIC=$(curl -s -b /tmp/lma_v_cookie.txt "http://127.0.0.1:8080/api/workspace/zip?path=scripts" | head -c 2)
+WS_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/workspace/entry?path=scripts/_verify_tmp.md" | jq -r ".ok")
+echo "CHECK_WS_ROUNDTRIP:${WS_PUT}:${WS_GET}:${WS_ZIP_MAGIC}:${WS_DEL}"
+
+# Unified Studio DB (SQLite WAL) checks (overview, pipeline CRUD, custom tracker CRUD)
+DB_OV=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/db/overview | jq -r "[.tables.calendar_events, .tables.content_pipeline, .threePlusOne.core] | map(type) | join(\":\")")
+echo "CHECK_DB_OVERVIEW:${DB_OV}"
+
+PIPE_ID=$(curl -s -b /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/db/pipeline -H "Content-Type: application/json" -d "{\"title\":\"_verify_idea\",\"format\":\"stream\",\"pillar\":\"experiment\"}" | jq -r ".item.id")
+PIPE_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/db/pipeline/${PIPE_ID}" | jq -r ".ok")
+echo "CHECK_DB_PIPELINE:${PIPE_ID}:${PIPE_DEL}"
+
+TRK_SLUG=$(curl -s -b /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/db/trackers -H "Content-Type: application/json" -d "{\"name\":\"_verify_tracker\",\"columns\":[\"genre\"]}" | jq -r ".tracker.slug")
+TRK_ROW=$(curl -s -b /tmp/lma_v_cookie.txt -X POST "http://127.0.0.1:8080/api/db/trackers/${TRK_SLUG}/items" -H "Content-Type: application/json" -d "{\"title\":\"Hollow Knight\",\"status\":\"open\",\"data\":{\"genre\":\"Metroidvania\"}}" | jq -r ".ok")
+TRK_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/db/trackers/${TRK_SLUG}" | jq -r ".ok")
+echo "CHECK_DB_TRACKER:${TRK_SLUG}:${TRK_ROW}:${TRK_DEL}"
+
 rm -f /tmp/lma_v_cookie.txt
 ' 2>&1 || true)
 
@@ -98,7 +124,7 @@ check_grep() {
 }
 
 check_grep "All 5 skills symlinked" "CHECK_SKILLS:.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*youtube-audit"
-check_grep "All 8 extensions symlinked" "CHECK_EXTS:.*buffer-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*media-reviewer\.ts.*new-session\.ts.*qstash-scheduler\.ts.*vod-clipper\.ts"
+check_grep "All 9 extensions symlinked" "CHECK_EXTS:.*buffer-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*media-reviewer\.ts.*new-session\.ts.*qstash-scheduler\.ts.*studio-db\.ts.*vod-clipper\.ts"
 check_grep "Python clipper scripts compile cleanly" "CHECK_PY:OK"
 check_grep "Tasks API keep-alive hold (PUT 200 / DELETE 204)" "CHECK_TASKS:200:204"
 check_grep "GET /api/health returns ok:true" "CHECK_HEALTH:true"
@@ -112,6 +138,12 @@ check_grep "Authenticated /api/calendar/export.ics returns VCALENDAR" "^CHECK_CA
 check_grep "Authenticated /api/sessions returns array" "CHECK_SESSIONS:array"
 check_grep "Session switch path traversal blocked (400)" "CHECK_TRAV_SESS:400"
 check_grep "Clip file path traversal blocked (400/404)" "CHECK_TRAV_CLIP:(400|404)"
+check_grep "Unified Workspace list returns starter folders" "CHECK_WS_LIST:.*clips.*scripts.*thumbnails.*uploads"
+check_grep "Workspace path traversal blocked (400)" "CHECK_TRAV_WS:400"
+check_grep "Workspace PUT/GET text + ZIP export + DELETE roundtrip" "CHECK_WS_ROUNDTRIP:true:# Verify OK:PK:true"
+check_grep "Unified Studio DB overview returns SQLite counts" "CHECK_DB_OVERVIEW:number:number:number"
+check_grep "Unified Studio DB 3+1 pipeline CRUD roundtrip" "CHECK_DB_PIPELINE:idea_[a-f0-9]+:true"
+check_grep "Unified Studio DB custom tracker CRUD roundtrip" "CHECK_DB_TRACKER:verify-tracker:true:true"
 
 if [ "$MODE" = "live" ]; then
   echo ""

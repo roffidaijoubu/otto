@@ -11,17 +11,27 @@ const execFileAsync = promisify(execFile);
 let cachedGeminiBaseUrl: string | null = null;
 const REVIEW_MODEL = process.env.LMA_REVIEW_MODEL || "gemini-2.5-flash";
 const MAX_INLINE_BYTES = 14 * 1024 * 1024; // 14 MB safe inline base64 cap
-const CLIPS_ROOT = path.resolve(process.env.HOME || "/home/sprite", "clips");
+const HOME_DIR = process.env.HOME || "/home/sprite";
+const WORKSPACE_ROOT = path.resolve(process.env.LMA_WORKSPACE_DIR || path.join(HOME_DIR, "workspace"));
+const CLIPS_ROOT = path.resolve(HOME_DIR, "clips");
 
 function resolveClipFile(localPath: string): string {
-  const resolved = path.resolve(localPath);
-  if (!resolved.startsWith(CLIPS_ROOT + path.sep)) {
-    throw new Error(`Local media path must reside inside ${CLIPS_ROOT}`);
+  const candidate = path.resolve(localPath);
+  if (!fs.existsSync(candidate)) {
+    throw new Error(`Media file not found: ${path.basename(candidate)}`);
   }
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-    throw new Error(`Media file not found inside ${CLIPS_ROOT}: ${path.basename(resolved)}`);
+  const realTarget = fs.realpathSync(candidate);
+  const allowedRoots = [WORKSPACE_ROOT, CLIPS_ROOT]
+    .filter((r) => fs.existsSync(r))
+    .map((r) => fs.realpathSync(r));
+  const inside = allowedRoots.some((root) => realTarget.startsWith(root + path.sep));
+  if (!inside) {
+    throw new Error(`Local media path must reside inside ${WORKSPACE_ROOT}`);
   }
-  return resolved;
+  if (!fs.statSync(realTarget).isFile()) {
+    throw new Error(`Media path is not a regular file: ${path.basename(realTarget)}`);
+  }
+  return realTarget;
 }
 
 function assertSafePublicHttpsUrl(rawUrl: string): URL {
@@ -184,10 +194,10 @@ export default function (pi: ExtensionAPI) {
     name: "watch_clip",
     label: "Watch Clip / Video (Multimodal Review)",
     description:
-      "Visually and aurally watch a local raw .mp4 clip (e.g. from /home/sprite/clips/...) or a public YouTube video URL using the zero-key Google Gemini Sprites Connector. Critiques the first 3-second hook, dead air, pacing, Live2D/camera framing, audio clarity, and gives concrete human-editor notes (strictly zero AI video generation).",
+      "Visually and aurally watch a local raw .mp4 clip (from /home/sprite/workspace/... including clips/ and uploads/) or a public YouTube video URL using the zero-key Google Gemini Sprites Connector. Critiques the first 3-second hook, dead air, pacing, Live2D/camera framing, audio clarity, and gives concrete human-editor notes (strictly zero AI video generation).",
     parameters: Type.Object({
       pathOrUrl: Type.String({
-        description: "Local .mp4 file path inside the Sprite OR a public YouTube URL",
+        description: "Local .mp4 file path inside /home/sprite/workspace/ OR a public YouTube URL",
       }),
       focus: Type.Optional(
         Type.String({

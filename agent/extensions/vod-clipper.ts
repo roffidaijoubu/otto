@@ -9,7 +9,8 @@ const execFileAsync = promisify(execFile);
 
 const HOME = process.env.HOME || "/home/sprite";
 const SCRIPTS_DIR = path.join(HOME, ".omp", "agent", "skills", "raw-clip-finder", "scripts");
-const CLIPS_ROOT = path.join(HOME, "clips");
+const WORKSPACE_ROOT = path.resolve(process.env.LMA_WORKSPACE_DIR || path.join(HOME, "workspace"));
+const CLIPS_ROOT = path.join(WORKSPACE_ROOT, "clips");
 
 function extractVideoId(urlOrId: string): string {
   const trimmed = urlOrId.trim();
@@ -160,7 +161,7 @@ export default function (pi: ExtensionAPI) {
     name: "vod_cut_clip",
     label: "Cut Raw VOD Clip (.mp4 + .srt)",
     description:
-      "Download and cut an exact raw .mp4 clip plus time-shifted .srt captions from a YouTube VOD using yt-dlp --download-sections and ffmpeg, saved cleanly in /home/sprite/clips/<video_id>/ for human clippers/editors (zero AI video editing).",
+      "Download and cut an exact raw .mp4 clip plus time-shifted .srt captions from a YouTube VOD using yt-dlp --download-sections and ffmpeg, saved cleanly in /home/sprite/workspace/clips/<video_id>/ for human clippers/editors (zero AI video editing).",
     parameters: Type.Object({
       url: Type.String({ description: "YouTube VOD URL or 11-character video ID" }),
       startSec: Type.Number({ description: "Exact clip start timestamp in seconds" }),
@@ -209,10 +210,10 @@ export default function (pi: ExtensionAPI) {
     name: "vod_prep_clip",
     label: "Prep Raw Clip for Human Editor (CFR + -14 LUFS)",
     description:
-      "Normalize an existing raw .mp4 clip inside /home/sprite/clips/ for Premiere/DaVinci/CapCut human editors: converts to constant frame rate (CFR 30fps), H.264 yuv420p, +faststart, EBU R128 -14 LUFS social/broadcast audio loudness, and optional start/end trim. Pure local ffmpeg, zero AI video generation.",
+      "Normalize an existing raw .mp4 clip inside /home/sprite/workspace/ (including clips/ and uploads/) for Premiere/DaVinci/CapCut human editors: converts to constant frame rate (CFR 30fps), H.264 yuv420p, +faststart, EBU R128 -14 LUFS social/broadcast audio loudness, and optional start/end trim. Pure local ffmpeg, zero AI video generation.",
     parameters: Type.Object({
       inputPath: Type.String({
-        description: "Path to an existing .mp4 clip inside /home/sprite/clips/",
+        description: "Path to an existing .mp4 clip inside /home/sprite/workspace/",
       }),
       trimStartSec: Type.Optional(
         Type.Number({ description: "Optional trim offset from start of clip in seconds" })
@@ -225,12 +226,17 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_id, params) {
-      const resolvedRoot = path.resolve(CLIPS_ROOT);
       const resolvedIn = path.resolve(params.inputPath.trim());
-      if (!resolvedIn.startsWith(resolvedRoot + path.sep) || !fs.existsSync(resolvedIn)) {
-        throw new Error(`Input clip must exist inside ${resolvedRoot}`);
+      if (!fs.existsSync(resolvedIn)) {
+        throw new Error(`Input clip not found: ${resolvedIn}`);
       }
-
+      const realIn = fs.realpathSync(resolvedIn);
+      const allowedRoots = [WORKSPACE_ROOT, path.resolve(HOME, "clips")]
+        .filter((r) => fs.existsSync(r))
+        .map((r) => fs.realpathSync(r));
+      if (!allowedRoots.some((root) => realIn.startsWith(root + path.sep))) {
+        throw new Error(`Input clip must exist inside ${WORKSPACE_ROOT}`);
+      }
       const dir = path.dirname(resolvedIn);
       const base = path.basename(resolvedIn, path.extname(resolvedIn)).replace(/_prepped$/, "");
       const outPath = path.join(dir, `${base}_prepped.mp4`);

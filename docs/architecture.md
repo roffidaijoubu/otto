@@ -96,14 +96,39 @@ flowchart LR
     G -->|"sprite restore &lt;prod-id&gt;"| P["Live Prod State<br/>(Zero Data Loss)"]
 ```
 
-1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** Installed via `bash scripts/install-hooks.sh` into `.git/hooks/post-commit`, every code commit automatically snapshots live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints.
-2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs 14 deterministic checks in ~11 seconds — TypeScript/Vite build, all 5 skill &amp; 8 extension symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, and authenticated Mission Control APIs.
+1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** Installed via `bash scripts/install-hooks.sh` into `.git/hooks/post-commit`, every code commit automatically snapshots live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`studio.db`/`workspace/`, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints.
+2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs 22 deterministic checks in ~15 seconds — TypeScript/Vite build, all 5 skill &amp; 9 extension symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
 3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Instead of flaky regex assertions, behavioral tests live as Markdown playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with a programmatic communication guide (`scripts/e2e/INDEX.md`) and a golden reference dossier (`scripts/e2e/expected-memory.md`). A completely blank-slate coding agent can restore `initialized:`, execute multi-turn conversations against Professor L, inspect raw JSONL tool calls, semantically grade the resulting `MEMORY.md` against `expected-memory.md`, and jump straight back to live state in seconds — making iteration dramatically faster and consistently reproducible.
+
 ---
 
-## 5. Defense-in-Depth Security
+## 5. Unified 2-Way Studio Workspace &amp; Unified Studio Database (SQLite WAL)
+
+Because `lma` runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and a native SQLite WAL database with zero external database servers:
+
+```mermaid
+flowchart LR
+    UI["Mission Control UI<br/>(Files &amp; Clips · Studio DB · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
+    S <-->|"web/lib/workspace.ts<br/>(realpath jail)"| WS["/home/sprite/workspace/<br/>clips · thumbnails · scripts · briefs · uploads · exports"]
+    S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · metrics · custom_trackers"]
+    OMP["omp Agent (Professor L)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
+    OMP <-->|"studio-db.ts &amp; qstash-scheduler.ts"| DB
+```
+
+| Layer | Backing Store | Shared By | Live Sync Mechanism |
+| :--- | :--- | :--- | :--- |
+| **Unified Workspace** | `/home/sprite/workspace/` | Web File Manager + Chat `📎` uploads + `omp` (`read`/`write`/`vod-clipper`/`media-reviewer`) | `tool_execution_end` + debounced `fs.watch` -> SSE `workspace_changed` |
+| **Unified Studio DB** | `~/.omp/agent/studio.db` (`bun:sqlite`, `WAL`, `busy_timeout=5000`) | Web `/api/db/*` &amp; `/api/calendar/*` + `omp` (`studio-db.ts` &amp; `qstash-scheduler.ts`) | `tool_execution_end` + API mutations -> SSE `db_changed` |
+| **Talent Dossier** | `~/.omp/agent/MEMORY.md` | Mission Control Dossier view + `omp` system prompt memory | Reloaded on turn completion |
+| **Chat Memory** | `~/.omp/agent/mnemopi.db` | Managed internally by `omp` | Automatic across sessions |
+
+---
+
+## 6. Defense-in-Depth Security
 
 - **Zero outbound API keys in VM or repo:** All 6 external API credentials stay inside Fly.io's encrypted org gateway. Inbound verification secrets (`LMA_WEB_PASSWORD` and Upstash QStash signing keys) live in `chmod 600 ~/.config/lma/web.env` outside git, and `web/server.ts` strips them from the `omp` subprocess environment (`qstash-scheduler.ts` reads only the non-secret `LMA_PUBLIC_URL` env var and never opens `web.env`).
 - **Fail-closed Web Chat UI gate:** `setup.sh` auto-generates `LMA_WEB_PASSWORD` in `~/.config/lma/web.env`; if unset, `web/server.ts` fails closed (`401` on `/` &amp; `/api/*`, `503` on `/api/auth/login`), rate-limits brute-force attempts (`429` keyed on `fly-client-ip` / rightmost proxy hop / socket IP), and sets `HttpOnly; SameSite=Lax` cookies (with `Secure` over HTTPS / `x-forwarded-proto: https`) verified with `crypto.timingSafeEqual`.
-- **Headless RPC execution model &amp; containment:** Because `omp` runs headlessly (`--mode rpc --no-ui`) inside a dedicated single-tenant Sprite VM, `agent/config.yml` uses `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `/home/sprite/clips/` path containment on `vod-clipper.ts` &amp; `media-reviewer.ts`, SSRF/size-capped thumbnail fetching, and prompt-injection rules for untrusted web/chat data.
-- **Path-traversal protection:** `POST /api/sessions/switch`, `/api/clips/file/...` (with HTTP `Range` 206 support), and static file serving strictly verify `path.resolve(...)` stays within the expected directory.
+- **Headless RPC execution model &amp; containment:** Because `omp` runs headlessly (`--mode rpc --no-ui`) inside a dedicated single-tenant Sprite VM, `agent/config.yml` uses `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `realpathSync` containment under `/home/sprite/workspace/` on `vod-clipper.ts` &amp; `media-reviewer.ts`, SSRF/size-capped thumbnail fetching, read-only SQL validation (`SELECT`/`WITH`/`PRAGMA table_info` only) on `studio_db_query`, and prompt-injection rules for untrusted web/chat data.
+- **Workspace Root Jail &amp; Anti-Stored-XSS:** `web/lib/workspace.ts` enforces strict `path.resolve` + `fs.realpathSync` confinement inside `/home/sprite/workspace/`, blocks symlinks, dotfiles, and parent traversal (`..`), caps uploads at 100 MB and ZIP exports at 500 MB (skipping symlinks), and serves downloads/HTML/SVG/binaries with `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` so uploaded files can never execute scripts under the app origin.
+- **Database Separation &amp; Parameterized Queries:** `~/.omp/agent/studio.db` lives outside `/home/sprite/workspace/` so file-manager operations cannot delete or corrupt the database, and every Web API / tool mutation uses parameterized SQLite statements.
+- **Path-traversal protection:** `POST /api/sessions/switch`, `/api/workspace/*`, `/api/clips/file/...` (with HTTP `Range` 206 support), and static file serving strictly verify resolved paths remain within their authorized roots.
