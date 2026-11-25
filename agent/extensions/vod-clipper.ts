@@ -204,4 +204,84 @@ export default function (pi: ExtensionAPI) {
       };
     },
   });
+
+  pi.registerTool({
+    name: "vod_prep_clip",
+    label: "Prep Raw Clip for Human Editor (CFR + -14 LUFS)",
+    description:
+      "Normalize an existing raw .mp4 clip inside /home/sprite/clips/ for Premiere/DaVinci/CapCut human editors: converts to constant frame rate (CFR 30fps), H.264 yuv420p, +faststart, EBU R128 -14 LUFS social/broadcast audio loudness, and optional start/end trim. Pure local ffmpeg, zero AI video generation.",
+    parameters: Type.Object({
+      inputPath: Type.String({
+        description: "Path to an existing .mp4 clip inside /home/sprite/clips/",
+      }),
+      trimStartSec: Type.Optional(
+        Type.Number({ description: "Optional trim offset from start of clip in seconds" })
+      ),
+      trimEndSec: Type.Optional(
+        Type.Number({ description: "Optional trim end timestamp in seconds" })
+      ),
+      targetLufs: Type.Optional(
+        Type.Number({ description: "Target integrated loudness in LUFS (default: -14)" })
+      ),
+    }),
+    async execute(_id, params) {
+      const resolvedRoot = path.resolve(CLIPS_ROOT);
+      const resolvedIn = path.resolve(params.inputPath.trim());
+      if (!resolvedIn.startsWith(resolvedRoot + path.sep) || !fs.existsSync(resolvedIn)) {
+        throw new Error(`Input clip must exist inside ${resolvedRoot}`);
+      }
+
+      const dir = path.dirname(resolvedIn);
+      const base = path.basename(resolvedIn, path.extname(resolvedIn)).replace(/_prepped$/, "");
+      const outPath = path.join(dir, `${base}_prepped.mp4`);
+      const lufs = Math.min(-8, Math.max(-24, params.targetLufs ?? -14));
+
+      const ffArgs: string[] = ["-y"];
+      if (typeof params.trimStartSec === "number" && params.trimStartSec > 0) {
+        ffArgs.push("-ss", String(params.trimStartSec));
+      }
+      if (typeof params.trimEndSec === "number" && params.trimEndSec > 0) {
+        ffArgs.push("-to", String(params.trimEndSec));
+      }
+      ffArgs.push(
+        "-i",
+        resolvedIn,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        "-vsync",
+        "cfr",
+        "-r",
+        "30",
+        "-af",
+        `loudnorm=I=${lufs}:TP=-1.5:LRA=11`,
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        outPath
+      );
+
+      await execFileAsync("ffmpeg", ffArgs, { timeout: 240_000, maxBuffer: 8 * 1024 * 1024 });
+      const stat = fs.statSync(outPath);
+      const result = {
+        input_path: resolvedIn,
+        output_path: outPath,
+        output_bytes: stat.size,
+        target_lufs: lufs,
+        format: "H.264 yuv420p CFR 30fps + AAC 192k +faststart",
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        details: result,
+      };
+    },
+  });
 }

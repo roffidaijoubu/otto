@@ -203,6 +203,9 @@ function friendlyToolLabel(toolName: string): string {
   if (/wakeup|schedule/i.test(toolName)) return "Managing schedule...";
   if (/vod_scan_hype/i.test(toolName)) return "Scanning VOD live chat & hype spikes...";
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
+  if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
+  if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
+  if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail (Squint Test)...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating your notes...";
   if (/read/i.test(toolName)) return "Reviewing dossier...";

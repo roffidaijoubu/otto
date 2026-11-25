@@ -16,6 +16,7 @@ Never mention internal files, tool names, or agent commands (`MEMORY.md`, `youtu
    - `YOUTUBE_GET_CHANNEL_STATISTICS` (subscribers, total views, video count)
    - `YOUTUBE_LIST_CHANNEL_VIDEOS` (last 10–15 uploads)
    - `YOUTUBE_VIDEO_DETAILS` (views, likes, comments, durations, titles, descriptions for the recent batch)
+5. For the top 1–3 recent videos, optionally call `critique_thumbnail("https://i.ytimg.com/vi/<videoId>/hqdefault.jpg", videoTitle)` so your Squint Test feedback is grounded in actually *seeing* the current thumbnail.
 4. Optionally call `exa_search` to benchmark proven high-performing title structures in the creator's niche or from their 3 GOATs.
 
 ---
