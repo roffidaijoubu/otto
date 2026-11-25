@@ -41,8 +41,8 @@ echo "==> Bootstrapping Draft Talent Dossier from connected Sprites Connectors..
 3. Call calendar_sync_google (daysAhead: 30) to pull any existing Google Calendar commitments. Ignore errors if Google Calendar is not connected.
 4. If you discovered a creator name or handle, run 1 quick exa_search query for their public bio/niche/branding.
 5. Update ~/.omp/agent/MEMORY.md with a clean **Draft Talent Dossier**:
-   - Fill the Profile section (Name/Persona, Niche & Core Vibe, Platforms + handles/channel ID + live subscriber/video/view baseline, Recent Uploads summary).
-   - Mark Profile status clearly as '(Auto-discovered draft — verify facts & OPSEC boundaries with talent on first chat)'.
+   - Fill the Profile section (Name/Persona, Niche & Core Vibe, Timezone — infer from synced Google Calendar event offsets if present, otherwise mark '(pending — ask talent)', Platforms + handles/channel ID + live subscriber/video/view baseline, Recent Uploads summary).
+   - Mark Profile status clearly as '(Auto-discovered draft — verify facts, timezone & OPSEC boundaries with talent on first chat)'.
    - Leave Homework #1 (3 Concrete Goals, Mandatory Days Off, 3 GOATs, Upcoming Christmas) as '(pending — ask talent during first chat)'.
    - If NO social/YouTube connectors returned data, leave MEMORY.md untouched.
 6. Reply with a single line: BOOTSTRAP_OK or BOOTSTRAP_NO_DATA." || echo "WARNING: Dossier bootstrap did not complete; Professor L will auto-discover on first chat."
