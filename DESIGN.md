@@ -152,18 +152,15 @@ Loaded via Google Fonts in `web/index.html`:
 ### Passcode Gate (`web/server.ts` `LOGIN_HTML`)
 - Centered `#FFFFFF` `20px`-radius widget card floating on the exact **Otto Studio backdrop gradient**, opening with the `(Y)our studio.` `11px` monospace header strip, centered `OttoMascot` SVG circle-with-eyes, `"Otto is (y)our stream manager."` (`(y)our` in `#F9F5A2`), `#EDEDED` `25px` passcode input, and `#303030` Charcoal pill button `Unlock Studio`.
 
-### DaisyUI v5 Theme (`web/src/styles/daisy.css`)
-Replace `lma-cafe` with custom theme `lma-otto`:
-- `base-100: #FFFFFF`
-- `base-200: #F2F2F2`
-- `base-300: #EDEDED`
-- `base-content: #303030`
-- `primary: #303030` (`primary-content: #FFFFFF`)
-- `secondary: #F2F2F2` (`secondary-content: #303030`)
-- `accent: #F9F5A2` (`accent-content: #303030`)
-- `success: #166534`, `warning: #854D0E`, `error: #991B1B`, `info: #6A728E` (`--color-info`)
-- `--radius-box: 1.25rem` (`20px`), `--radius-field: 1.5625rem` (`25px`), `--radius-selector: 9999px`
-
+### shadcn-vue Theme (`web/src/styles/globals.css`)
+Styled on `reka-nova` (Reka UI + Tailwind CSS v4 + `@lucide/vue`) mapped directly to Otto Studio Bento OS tokens:
+- `--background` / `--card` / `--popover`: `#FFFFFF` (`--foreground`: `#303030`)
+- `--primary`: `#303030` (`--primary-foreground`: `#FFFFFF`)
+- `--secondary` / `--muted`: `#F2F2F2` (`--muted-foreground`: `#808080`)
+- `--accent`: `#EDEDED` (`--accent-foreground`: `#303030`)
+- `--highlight-yellow`: `#F9F5A2`, `--highlight-cyan`: `#C7F6FF`
+- `--destructive`: `#991B1B`, `--border`: `#EDEDED`, `--input`: `#D9D9D9`, `--ring`: `#303030`
+- `--radius`: `0.875rem` (`14px`; `rounded-xl` ≈ `20px` bento card); buttons use `rounded-full` monochrome pills
 ---
 
 ## 7. CSS Custom Properties Reference (`web/src/styles/tokens.css`)

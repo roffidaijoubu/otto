@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-
+import { FileTextIcon, ImageIcon, PlusIcon, Trash2Icon, XIcon } from "@lucide/vue";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 export interface ContentPipelineItem {
   id: string;
   title: string;
@@ -300,8 +311,16 @@ async function createTracker() {
   }
 }
 
-async function removeTracker(slug: string) {
-  if (!window.confirm(`Delete custom tracker "${slug}" and all its rows?`)) return;
+const trackerPendingDelete = ref<string | null>(null);
+
+function promptRemoveTracker(slug: string) {
+  trackerPendingDelete.value = slug;
+}
+
+async function confirmRemoveTracker() {
+  const slug = trackerPendingDelete.value;
+  if (!slug) return;
+  trackerPendingDelete.value = null;
   await fetch(`/api/db/trackers/${encodeURIComponent(slug)}`, { method: "DELETE" });
   await fetchAllDb();
 }
@@ -374,19 +393,20 @@ defineExpose({ fetchAllDb });
           </button>
         </div>
 
-        <div v-if="errorMsg" class="text-xs text-error font-mono">{{ errorMsg }}</div>
+        <div v-if="errorMsg" class="text-xs text-destructive font-mono">{{ errorMsg }}</div>
 
         <!-- TAB 1: 3+1 CONTENT PIPELINE -->
-        <div v-if="subTab === 'pipeline'" class="space-y-3">
+        <div v-if="subTab === 'pipeline'" class="flex flex-col gap-3">
           <div class="db-panel-head">
             <div class="db-sub">Shared live with Otto — track Core vs Experiment streams, videos &amp; packaging.</div>
-            <button
+            <Button
               type="button"
-              class="btn btn-xs btn-otto-secondary"
+              variant="secondary"
+              size="xs"
               @click="emit('askPrompt', 'Review my 3+1 Content Pipeline in the Studio Database, check my Core vs Experiment ratio, and tell me which idea we should sharpen next.')"
             >
               Audit 3+1 with Otto
-            </button>
+            </Button>
           </div>
 
           <form class="db-form" @submit.prevent="addPipeline">
@@ -402,7 +422,10 @@ defineExpose({ fetchAllDb });
               <option value="experiment">+1 Experiment</option>
             </select>
             <input v-model="newPipeHook" type="text" class="db-input" placeholder="Hook / angle (optional)" />
-            <button type="submit" class="btn btn-sm btn-otto-primary">+ Add</button>
+            <Button type="submit" size="sm">
+              <PlusIcon data-icon="inline-start" />
+              Add
+            </Button>
           </form>
 
           <div v-if="pipeline.length === 0" class="db-empty">
@@ -433,14 +456,17 @@ defineExpose({ fetchAllDb });
                     <option value="published">Published</option>
                     <option value="dropped">Dropped</option>
                   </select>
-                  <button
+                  <Button
                     type="button"
-                    class="btn btn-xs btn-otto-secondary"
+                    variant="secondary"
+                    size="xs"
                     @click="emit('askPrompt', `Let's sharpen the packaging, 4 Ps intro, and thumbnail brief for my ${item.pillar} ${item.format} idea '${item.title}' (DB id: ${item.id}).`)"
                   >
                     Prep
-                  </button>
-                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removePipeline(item.id)">✕</button>
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" aria-label="Delete item" @click="removePipeline(item.id)">
+                    <XIcon />
+                  </Button>
                 </div>
               </div>
 
@@ -448,22 +474,26 @@ defineExpose({ fetchAllDb });
               <div v-if="item.notes" class="text-xs text-[var(--fg-muted)] mt-0.5">{{ item.notes }}</div>
 
               <div v-if="item.thumbnailPath || item.scriptPath" class="flex flex-wrap gap-1.5 mt-1.5">
-                <button
+                <Button
                   v-if="item.thumbnailPath"
                   type="button"
-                  class="btn btn-xs btn-otto-secondary"
+                  variant="secondary"
+                  size="xs"
                   @click="emit('openWorkspacePath', item.thumbnailPath.includes('/') ? item.thumbnailPath.slice(0, item.thumbnailPath.lastIndexOf('/')) : '')"
                 >
-                  🖼 {{ item.thumbnailPath }}
-                </button>
-                <button
+                  <ImageIcon data-icon="inline-start" />
+                  {{ item.thumbnailPath }}
+                </Button>
+                <Button
                   v-if="item.scriptPath"
                   type="button"
-                  class="btn btn-xs btn-otto-secondary"
+                  variant="secondary"
+                  size="xs"
                   @click="emit('openWorkspacePath', item.scriptPath.includes('/') ? item.scriptPath.slice(0, item.scriptPath.lastIndexOf('/')) : '')"
                 >
-                  📝 {{ item.scriptPath }}
-                </button>
+                  <FileTextIcon data-icon="inline-start" />
+                  {{ item.scriptPath }}
+                </Button>
               </div>
             </div>
           </div>
@@ -487,7 +517,10 @@ defineExpose({ fetchAllDb });
             <input v-model="newContactHandle" type="text" class="db-input" placeholder="@handle / email" />
             <input v-model="newContactPlatform" type="text" class="db-input" placeholder="Platform (X, VGen, YT)" />
             <input v-model="newContactNotes" type="text" class="db-input flex-1" placeholder="Rates, vibe, notes" />
-            <button type="submit" class="btn btn-sm btn-otto-primary">+ Add</button>
+            <Button type="submit" size="sm">
+              <PlusIcon data-icon="inline-start" />
+              Add
+            </Button>
           </form>
 
           <div v-if="contacts.length === 0" class="db-empty">
@@ -514,14 +547,17 @@ defineExpose({ fetchAllDb });
                     <option value="active">Active</option>
                     <option value="paused">Paused</option>
                   </select>
-                  <button
+                  <Button
                     type="button"
-                    class="btn btn-xs btn-otto-secondary"
+                    variant="secondary"
+                    size="xs"
                     @click="emit('askPrompt', `Draft a clear, zero-friction ${c.role === 'collab' ? 'collab pitch' : 'brief / outreach message'} for ${c.name} (${c.role}${c.handle ? ', ' + c.handle : ''}).`)"
                   >
                     Draft Outreach
-                  </button>
-                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeContact(c.id)">✕</button>
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" aria-label="Delete contact" @click="removeContact(c.id)">
+                    <XIcon />
+                  </Button>
                 </div>
               </div>
               <div v-if="c.notes" class="text-xs text-[var(--fg-muted)] mt-1">{{ c.notes }}</div>
@@ -533,15 +569,15 @@ defineExpose({ fetchAllDb });
         <div v-else-if="subTab === 'metrics'" class="space-y-3">
           <div class="db-panel-head">
             <div class="db-sub">Log growth snapshots (or let Otto record them during YouTube audits).</div>
-            <button
+            <Button
               type="button"
-              class="btn btn-xs btn-otto-secondary"
+              variant="secondary"
+              size="xs"
               @click="emit('askPrompt', 'Check my live YouTube stats, log a fresh Channel Metrics snapshot into the Studio Database, and compare against my previous snapshots.')"
             >
               Log Live YT Snapshot
-            </button>
+            </Button>
           </div>
-
           <form class="db-form" @submit.prevent="addMetric">
             <input v-model="newMetricDate" type="date" class="db-input" />
             <input v-model="newMetricSubs" type="number" class="db-input w-24" placeholder="Subs" />
@@ -549,7 +585,10 @@ defineExpose({ fetchAllDb });
             <input v-model="newMetricCcv" type="number" class="db-input w-24" placeholder="Avg CCV" />
             <input v-model="newMetricCtr" type="number" step="0.1" class="db-input w-24" placeholder="CTR %" />
             <input v-model="newMetricNotes" type="text" class="db-input flex-1" placeholder="Notes" />
-            <button type="submit" class="btn btn-sm btn-otto-primary">+ Log</button>
+            <Button type="submit" size="sm">
+              <PlusIcon data-icon="inline-start" />
+              Log
+            </Button>
           </form>
 
           <div v-if="metrics.length === 0" class="db-empty">
@@ -580,7 +619,9 @@ defineExpose({ fetchAllDb });
                   <td>{{ m.avgCtr !== null ? `${m.avgCtr}%` : "—" }}</td>
                   <td>{{ m.notes || "—" }}</td>
                   <td>
-                    <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeMetric(m.id)">✕</button>
+                    <Button type="button" variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" aria-label="Delete metric" @click="removeMetric(m.id)">
+                      <XIcon />
+                    </Button>
                   </td>
                 </tr>
               </tbody>
@@ -592,16 +633,16 @@ defineExpose({ fetchAllDb });
         <div v-else class="space-y-3">
           <div class="db-panel-head">
             <div class="db-sub">Flexible trackers created by you or Otto on the fly (e.g. Game Backlog, Series Plan).</div>
-            <button type="button" class="btn btn-xs btn-otto-primary" @click="creatingTracker = !creatingTracker">
+            <Button type="button" size="xs" @click="creatingTracker = !creatingTracker">
               {{ creatingTracker ? "Cancel" : "+ New Tracker" }}
-            </button>
+            </Button>
           </div>
 
           <form v-if="creatingTracker" class="db-form" @submit.prevent="createTracker">
             <input v-model="newTrackerName" type="text" class="db-input" placeholder="Tracker name (e.g. Game Backlog)" required />
             <input v-model="newTrackerCols" type="text" class="db-input flex-1" placeholder="Extra columns (genre, hours, priority)" />
             <input v-model="newTrackerDesc" type="text" class="db-input flex-1" placeholder="Short description (optional)" />
-            <button type="submit" class="btn btn-sm btn-otto-primary">Create</button>
+            <Button type="submit" size="sm">Create</Button>
           </form>
 
           <div v-if="trackers.length === 0" class="db-empty">
@@ -626,16 +667,18 @@ defineExpose({ fetchAllDb });
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <div class="text-xs font-mono text-[var(--fg-muted)]">{{ activeTracker.description || `slug: ${activeTracker.slug}` }}</div>
                 <div class="flex items-center gap-1.5">
-                  <button
+                  <Button
                     type="button"
-                    class="btn btn-xs btn-otto-secondary"
+                    variant="secondary"
+                    size="xs"
                     @click="emit('askPrompt', `Review my custom tracker '${activeTracker.name}' (slug: ${activeTracker.slug}) in the Studio Database and suggest priorities.`)"
                   >
                     Ask Otto
-                  </button>
-                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeTracker(activeTracker.slug)">
+                  </Button>
+                  <Button type="button" variant="ghost" size="xs" class="text-destructive hover:text-destructive" @click="promptRemoveTracker(activeTracker.slug)">
+                    <Trash2Icon data-icon="inline-start" />
                     Delete Tracker
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -650,7 +693,10 @@ defineExpose({ fetchAllDb });
                   class="db-input"
                   :placeholder="col"
                 />
-                <button type="submit" class="btn btn-sm btn-otto-primary">+ Add Row</button>
+                <Button type="submit" size="sm">
+                  <PlusIcon data-icon="inline-start" />
+                  Add Row
+                </Button>
               </form>
 
               <div v-if="activeTrackerItems.length === 0" class="db-empty">No rows in {{ activeTracker.name }} yet.</div>
@@ -671,7 +717,9 @@ defineExpose({ fetchAllDb });
                       <td><span class="otto-chip otto-chip-neutral">{{ row.status }}</span></td>
                       <td v-for="col in activeTracker.columns" :key="col">{{ row.data[col] || "—" }}</td>
                       <td>
-                        <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeCustomItem(row.id)">✕</button>
+                        <Button type="button" variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" aria-label="Delete row" @click="removeCustomItem(row.id)">
+                          <XIcon />
+                        </Button>
                       </td>
                     </tr>
                   </tbody>
@@ -682,6 +730,23 @@ defineExpose({ fetchAllDb });
         </div>
       </div>
     </div>
+
+    <AlertDialog :open="Boolean(trackerPendingDelete)" @update:open="(open) => { if (!open) trackerPendingDelete = null; }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle class="font-mono text-sm">Delete custom tracker?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes tracker <strong>{{ trackerPendingDelete }}</strong> and all of its saved rows.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" @click="confirmRemoveTracker">
+            Delete Tracker
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 

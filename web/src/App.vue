@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
+import { PlusIcon, MessageSquareIcon } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ChatHeader, { type StudioTab } from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
@@ -9,7 +13,6 @@ import SessionSidebar from "./components/SessionSidebar.vue";
 import StudioSetupWizard from "./components/StudioSetupWizard.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
-
 const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
 
 const messages = ref<ChatMessage[]>([]);
@@ -371,6 +374,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <TooltipProvider :delay-duration="220">
   <StudioSetupWizard
     v-if="setupChecked && showSetupWizard"
     :initial-name="setupInitialName"
@@ -418,24 +422,27 @@ onMounted(async () => {
       <aside class="chat-pane otto-card" :class="{ 'mobile-hidden': mobilePane !== 'chat' }">
         <div class="otto-card-head">
           <div class="otto-card-head-left">
-            <button
-              class="btn btn-xs btn-otto-secondary"
+            <Button
+              variant="secondary"
+              size="xs"
               type="button"
               @click="sidebarOpen = true"
             >
+              <MessageSquareIcon data-icon="inline-start" />
               Chats ({{ sessions.length }})
-            </button>
+            </Button>
           </div>
           <span>(Y)our co-pilot.</span>
           <div class="otto-card-head-right">
-            <button
-              class="btn btn-xs btn-otto-primary"
+            <Button
+              size="xs"
               type="button"
               :disabled="busy"
               @click="newChat"
             >
-              + New
-            </button>
+              <PlusIcon data-icon="inline-start" />
+              New
+            </Button>
           </div>
         </div>
 
@@ -504,6 +511,8 @@ onMounted(async () => {
       @select="switchChat"
     />
   </div>
+  <Toaster position="bottom-right" />
+  </TooltipProvider>
 </template>
 
 <style scoped>

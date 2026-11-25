@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { Skeleton } from "@/components/ui/skeleton";
+
 const props = withDefaults(
   defineProps<{
-    variant?: "rows" | "tree" | "preview";
+    variant?: "rows" | "grid" | "tree" | "preview";
     count?: number;
   }>(),
   {
@@ -10,12 +12,12 @@ const props = withDefaults(
   }
 );
 
-const ROW_TITLE_WIDTHS = ["118px", "158px", "96px", "174px", "134px", "112px"];
-const ROW_SUB_WIDTHS = ["126px", "106px", "140px", "114px", "122px", "98px"];
-const TREE_LABEL_WIDTHS = ["108px", "64px", "54px", "74px", "68px", "88px", "66px"];
-const PREVIEW_LINE_WIDTHS = ["42%", "92%", "86%", "95%", "72%", "60%"];
+const ROW_TITLE_WIDTHS = ["w-32", "w-44", "w-28", "w-48", "w-36", "w-30"];
+const ROW_SUB_WIDTHS = ["w-28", "w-24", "w-32", "w-26", "w-28", "w-22"];
+const TREE_LABEL_WIDTHS = ["w-28", "w-16", "w-14", "w-20", "w-16", "w-24", "w-16"];
+const PREVIEW_LINE_WIDTHS = ["w-2/5", "w-11/12", "w-5/6", "w-full", "w-3/4", "w-3/5"];
 
-function pickWidth(list: string[], idx: number): string {
+function pick(list: string[], idx: number): string {
   return list[idx % list.length];
 }
 </script>
@@ -23,7 +25,7 @@ function pickWidth(list: string[], idx: number): string {
 <template>
   <div
     v-if="props.variant === 'rows'"
-    class="fm-skel-rows"
+    class="flex flex-col gap-1.5"
     role="status"
     aria-busy="true"
     aria-label="Loading files"
@@ -31,35 +33,45 @@ function pickWidth(list: string[], idx: number): string {
     <div
       v-for="idx in props.count"
       :key="`row-${idx}`"
-      class="fm-skel-row"
-      :style="{ '--skel-delay': `${(idx - 1) * 70}ms` }"
+      class="flex items-center justify-between gap-3 rounded-2xl bg-secondary/70 px-3 py-2.5 min-h-[52px]"
     >
-      <div class="fm-skel-main">
-        <span class="fm-skel-bone fm-skel-icon" aria-hidden="true"></span>
-        <div class="fm-skel-meta">
-          <span
-            class="fm-skel-bone fm-skel-title"
-            :style="{ width: pickWidth(ROW_TITLE_WIDTHS, idx - 1) }"
-            aria-hidden="true"
-          ></span>
-          <span
-            class="fm-skel-bone fm-skel-sub"
-            :style="{ width: pickWidth(ROW_SUB_WIDTHS, idx - 1) }"
-            aria-hidden="true"
-          ></span>
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <Skeleton class="size-7 rounded-lg shrink-0 bg-accent" />
+        <div class="flex flex-col gap-1.5 min-w-0 flex-1">
+          <Skeleton :class="['h-3 rounded-md bg-accent', pick(ROW_TITLE_WIDTHS, idx - 1)]" />
+          <Skeleton :class="['h-2.5 rounded-md bg-accent/80', pick(ROW_SUB_WIDTHS, idx - 1)]" />
         </div>
       </div>
-      <div class="fm-skel-actions" aria-hidden="true">
-        <span class="fm-skel-bone fm-skel-pill-lg"></span>
-        <span class="fm-skel-bone fm-skel-pill-md"></span>
-        <span class="fm-skel-bone fm-skel-pill-sm"></span>
+      <div class="hidden sm:flex items-center gap-2 shrink-0">
+        <Skeleton class="h-6 w-16 rounded-full bg-accent" />
+        <Skeleton class="size-6 rounded-full bg-accent" />
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-else-if="props.variant === 'grid'"
+    class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5"
+    role="status"
+    aria-busy="true"
+    aria-label="Loading files"
+  >
+    <div
+      v-for="idx in props.count"
+      :key="`grid-${idx}`"
+      class="flex flex-col gap-2 rounded-2xl bg-secondary/70 p-2.5"
+    >
+      <Skeleton class="aspect-[16/10] w-full rounded-xl bg-accent" />
+      <div class="flex flex-col gap-1.5 px-0.5">
+        <Skeleton :class="['h-3 rounded-md bg-accent', idx % 2 === 0 ? 'w-4/5' : 'w-3/5']" />
+        <Skeleton class="h-2.5 w-1/2 rounded-md bg-accent/80" />
       </div>
     </div>
   </div>
 
   <div
     v-else-if="props.variant === 'tree'"
-    class="fm-skel-tree"
+    class="flex flex-col gap-1"
     role="status"
     aria-busy="true"
     aria-label="Loading folders"
@@ -67,203 +79,24 @@ function pickWidth(list: string[], idx: number): string {
     <div
       v-for="idx in props.count"
       :key="`tree-${idx}`"
-      class="fm-skel-dir"
-      :style="{ '--skel-delay': `${(idx - 1) * 55}ms` }"
+      class="flex items-center gap-2 h-8 px-2.5 rounded-full"
     >
-      <span class="fm-skel-bone fm-skel-dir-icon" aria-hidden="true"></span>
-      <span
-        class="fm-skel-bone fm-skel-dir-label"
-        :style="{ width: pickWidth(TREE_LABEL_WIDTHS, idx - 1) }"
-        aria-hidden="true"
-      ></span>
+      <Skeleton class="size-4 rounded bg-accent shrink-0" />
+      <Skeleton :class="['h-3 rounded-md bg-accent', pick(TREE_LABEL_WIDTHS, idx - 1)]" />
     </div>
   </div>
 
   <div
     v-else
-    class="fm-skel-preview"
+    class="flex flex-col gap-2.5 rounded-2xl bg-secondary/70 p-4"
     role="status"
     aria-busy="true"
     aria-label="Loading file preview"
   >
-    <span
+    <Skeleton
       v-for="(w, idx) in PREVIEW_LINE_WIDTHS"
       :key="`preview-${idx}`"
-      class="fm-skel-bone"
-      :class="idx === 0 ? 'fm-skel-preview-head' : 'fm-skel-preview-line'"
-      :style="{ width: w, '--skel-delay': `${idx * 60}ms` }"
-      aria-hidden="true"
-    ></span>
+      :class="[idx === 0 ? 'h-4 mb-1' : 'h-3', 'rounded-md bg-accent', w]"
+    />
   </div>
 </template>
-
-<style scoped>
-.fm-skel-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.fm-skel-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  min-height: 51px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-}
-
-.fm-skel-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.fm-skel-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.fm-skel-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.fm-skel-title {
-  height: 12px;
-  max-width: 100%;
-  border-radius: 6px;
-}
-
-.fm-skel-sub {
-  height: 10px;
-  max-width: 100%;
-  border-radius: 5px;
-  opacity: 0.78;
-}
-
-.fm-skel-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.fm-skel-pill-lg {
-  width: 48px;
-  height: 22px;
-  border-radius: var(--radius-pill);
-}
-
-.fm-skel-pill-md {
-  width: 44px;
-  height: 22px;
-  border-radius: var(--radius-pill);
-}
-
-.fm-skel-pill-sm {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-pill);
-}
-
-.fm-skel-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.fm-skel-dir {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-}
-
-.fm-skel-dir-icon {
-  width: 15px;
-  height: 15px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.fm-skel-dir-label {
-  height: 11px;
-  border-radius: 5px;
-}
-
-.fm-skel-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-}
-
-.fm-skel-preview-head {
-  height: 16px;
-  border-radius: 6px;
-  margin-bottom: 4px;
-}
-
-.fm-skel-preview-line {
-  height: 11px;
-  border-radius: 5px;
-}
-
-.fm-skel-bone {
-  display: block;
-  position: relative;
-  overflow: hidden;
-  background: var(--surface-inset-hover);
-}
-
-.fm-skel-bone::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  transform: translate3d(-100%, 0, 0);
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.58) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  animation: fm-skel-shimmer 1.35s ease-in-out infinite;
-  animation-delay: var(--skel-delay, 0ms);
-  will-change: transform;
-}
-
-@keyframes fm-skel-shimmer {
-  0% {
-    transform: translate3d(-100%, 0, 0);
-  }
-  100% {
-    transform: translate3d(100%, 0, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fm-skel-bone::after {
-    animation: none;
-    display: none;
-  }
-}
-
-@media (max-width: 560px) {
-  .fm-skel-actions {
-    display: none;
-  }
-}
-</style>

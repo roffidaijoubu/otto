@@ -1,5 +1,123 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch, type Component } from "vue";
+import {
+  ArchiveIcon,
+  ArrowUpDownIcon,
+  CaptionsIcon,
+  CheckIcon,
+  ClipboardListIcon,
+  DownloadIcon,
+  EyeIcon,
+  FileCodeIcon,
+  FilePlus2Icon,
+  FileTextIcon,
+  FilmIcon,
+  FolderIcon,
+  FolderInputIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  ImageIcon,
+  LayoutGridIcon,
+  ListIcon,
+  MoreHorizontalIcon,
+  MusicIcon,
+  PackageIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SaveIcon,
+  SearchIcon,
+  SparklesIcon,
+  Trash2Icon,
+  UploadIcon,
+  XIcon,
+} from "@lucide/vue";
+import { toast } from "vue-sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { renderMarkdown } from "../lib/markdown";
 import WorkspaceFileSkeleton from "./WorkspaceFileSkeleton.vue";
 
@@ -21,6 +139,12 @@ export interface WorkspaceStats {
   fileCount: number;
   clipCount: number;
 }
+
+type ViewMode = "list" | "grid";
+type SortMode = "name-asc" | "modified-desc" | "size-desc";
+
+const ROOT_SELECT_VALUE = "__workspace_root__";
+const VIEW_STORAGE_KEY = "otto_fm_view_mode";
 
 const props = defineProps<{
   refreshTick: number;
@@ -49,18 +173,29 @@ function buildBreadcrumbs(relDir: string): Array<{ name: string; path: string }>
   return out;
 }
 
+function readStoredViewMode(): ViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (saved === "grid" || saved === "list") return saved;
+  } catch {
+    // ignore storage failures
+  }
+  return "list";
+}
+
 const currentPath = ref(normalizeDirPath(props.initialPath || ""));
 const breadcrumbs = ref<Array<{ name: string; path: string }>>(buildBreadcrumbs(currentPath.value));
 const items = ref<WorkspaceEntry[]>([]);
 const dirs = ref<string[]>([""]);
 const stats = ref<WorkspaceStats>({ totalBytes: 0, fileCount: 0, clipCount: 0 });
 const searchQuery = ref("");
+const viewMode = ref<ViewMode>(readStoredViewMode());
+const sortMode = ref<SortMode>("name-asc");
 const loading = ref(false);
 const hasLoadedDirs = ref(false);
 const showListSkeleton = ref(true);
 const uploading = ref(false);
 const dragOver = ref(false);
-const statusMsg = ref("");
 const errorMsg = ref("");
 
 const dirCache = new Map<string, WorkspaceEntry[]>();
@@ -68,16 +203,37 @@ let latestRequestId = 0;
 let activeAbortController: AbortController | null = null;
 let latestTextRequestId = 0;
 let activeTextAbortController: AbortController | null = null;
-const creatingFolder = ref(false);
+
+// Dialog states
+const newFolderOpen = ref(false);
+const newFolderTargetDir = ref("");
 const newFolderName = ref("");
-const creatingNote = ref(false);
+const newFolderError = ref("");
+const newFolderSubmitting = ref(false);
+
+const newNoteOpen = ref(false);
+const newNoteTargetDir = ref("");
 const newNoteName = ref("");
+const newNoteError = ref("");
+const newNoteSubmitting = ref(false);
 
 const movingItem = ref<WorkspaceEntry | null>(null);
 const moveTargetName = ref("");
-const moveTargetDir = ref("");
+const moveTargetDir = ref(ROOT_SELECT_VALUE);
+const moveError = ref("");
+const moveSubmitting = ref(false);
 
+const entryPendingDelete = ref<WorkspaceEntry | null>(null);
+const deleteSubmitting = ref(false);
+
+// Slide-over Sheet preview & Tier 3 editor state
 const selectedFile = ref<WorkspaceEntry | null>(null);
+const previewSheetOpen = computed({
+  get: () => Boolean(selectedFile.value),
+  set: (next: boolean) => {
+    if (!next) selectedFile.value = null;
+  },
+});
 const textContent = ref("");
 const originalTextContent = ref("");
 const textLoading = ref(false);
@@ -90,6 +246,36 @@ const isTextDirty = computed(() => textContent.value !== originalTextContent.val
 const renderedPreviewHtml = computed(() =>
   selectedFile.value?.kind === "markdown" ? renderMarkdown(textContent.value) : ""
 );
+
+const sortedItems = computed(() => {
+  const copy = [...items.value];
+  copy.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    if (sortMode.value === "modified-desc") {
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    }
+    if (sortMode.value === "size-desc") {
+      return b.sizeBytes - a.sizeBytes || a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+  return copy;
+});
+
+const sortLabel = computed(() => {
+  if (sortMode.value === "modified-desc") return "Newest";
+  if (sortMode.value === "size-desc") return "Largest";
+  return "Name";
+});
+
+function setViewMode(mode: ViewMode) {
+  viewMode.value = mode;
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, mode);
+  } catch {
+    // ignore storage failures
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -111,14 +297,35 @@ function formatTime(iso: string): string {
   }
 }
 
-function fileIcon(entry: WorkspaceEntry): string {
-  if (entry.isDir) return "📁";
-  if (entry.kind === "image") return "🖼";
-  if (entry.kind === "video") return "🎬";
-  if (entry.kind === "audio") return "🎵";
-  if (entry.kind === "markdown") return "📝";
-  if (entry.kind === "text") return "📄";
-  return "📦";
+function folderIconComponent(dirPath: string, isActive: boolean): Component {
+  const seg = dirPath.split("/")[0];
+  if (seg === "clips") return FilmIcon;
+  if (seg === "thumbnails") return ImageIcon;
+  if (seg === "scripts") return FileTextIcon;
+  if (seg === "briefs") return ClipboardListIcon;
+  if (seg === "uploads") return UploadIcon;
+  if (seg === "exports") return PackageIcon;
+  return isActive ? FolderOpenIcon : FolderIcon;
+}
+
+function entryIconComponent(entry: WorkspaceEntry): Component {
+  if (entry.isDir) return folderIconComponent(entry.relPath, false);
+  if (entry.kind === "image") return ImageIcon;
+  if (entry.kind === "video") return FilmIcon;
+  if (entry.kind === "audio") return MusicIcon;
+  if (entry.kind === "markdown") return FileTextIcon;
+  if (entry.kind === "text") return FileCodeIcon;
+  return PackageIcon;
+}
+
+function kindBadgeLabel(entry: WorkspaceEntry): string {
+  if (entry.isDir) return "folder";
+  if (entry.kind === "markdown") return "md";
+  const dot = entry.name.lastIndexOf(".");
+  if (dot > 0 && dot < entry.name.length - 1) {
+    return entry.name.slice(dot + 1).toLowerCase().slice(0, 6);
+  }
+  return entry.kind;
 }
 
 function fileUrl(relPath: string, download = false): string {
@@ -130,14 +337,6 @@ function fileUrl(relPath: string, download = false): string {
 function zipUrl(relDir: string): string {
   const q = new URLSearchParams({ path: relDir });
   return `/api/workspace/zip?${q.toString()}`;
-}
-
-function setFlash(msg: string) {
-  statusMsg.value = msg;
-  errorMsg.value = "";
-  setTimeout(() => {
-    if (statusMsg.value === msg) statusMsg.value = "";
-  }, 3500);
 }
 
 interface LoadDirectoryOptions {
@@ -247,8 +446,8 @@ function navigateTo(relDir: string) {
 
   clearTimeout(searchTimer ?? undefined);
   searchQuery.value = "";
-  movingItem.value = null;
   errorMsg.value = "";
+
   // Optimistic client update: move sidebar active indicator and breadcrumbs immediately
   currentPath.value = nextDir;
   breadcrumbs.value = buildBreadcrumbs(nextDir);
@@ -266,13 +465,13 @@ function navigateTo(relDir: string) {
   void loadDirectory(nextDir, { showSkeleton: true, rollbackPath: prevPath });
 }
 
-async function openEntry(entry: WorkspaceEntry) {
+async function openEntry(entry: WorkspaceEntry, startInEdit = false) {
   if (entry.isDir) {
     navigateTo(entry.relPath);
     return;
   }
   selectedFile.value = entry;
-  editMode.value = false;
+  editMode.value = startInEdit && entry.editable;
   if (entry.kind === "markdown" || entry.kind === "text") {
     const textReqId = ++latestTextRequestId;
     activeTextAbortController?.abort();
@@ -288,7 +487,7 @@ async function openEntry(entry: WorkspaceEntry) {
       const data = (await res.json()) as { content?: string; error?: string };
       if (textReqId !== latestTextRequestId) return;
       if (!res.ok) {
-        errorMsg.value = data.error || "Unable to read file";
+        toast.error(data.error || "Unable to read file");
         textContent.value = "";
         originalTextContent.value = "";
       } else {
@@ -298,7 +497,7 @@ async function openEntry(entry: WorkspaceEntry) {
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       if (textReqId !== latestTextRequestId) return;
-      errorMsg.value = "Unable to read file";
+      toast.error("Unable to read file");
     } finally {
       if (textReqId === latestTextRequestId) {
         textLoading.value = false;
@@ -313,7 +512,6 @@ async function openEntry(entry: WorkspaceEntry) {
 async function saveTextFile() {
   if (!selectedFile.value || textSaving.value) return;
   textSaving.value = true;
-  errorMsg.value = "";
   try {
     const res = await fetch("/api/workspace/text", {
       method: "PUT",
@@ -325,15 +523,24 @@ async function saveTextFile() {
     });
     const data = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) {
-      errorMsg.value = data.error || "Save failed";
+      toast.error(data.error || "Save failed");
       return;
     }
     originalTextContent.value = textContent.value;
-    setFlash(`Saved ${selectedFile.value.name}`);
+    toast.success(`Saved ${selectedFile.value.name}`);
     dirCache.clear();
     await loadDirectory(currentPath.value, { silent: true });
   } finally {
     textSaving.value = false;
+  }
+}
+
+function onEditorKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    if (isTextDirty.value && !textSaving.value) {
+      void saveTextFile();
+    }
   }
 }
 
@@ -347,8 +554,9 @@ async function uploadFileList(fileList: FileList | File[]) {
   uploading.value = true;
   errorMsg.value = "";
   try {
+    const targetDir = currentPath.value || "uploads";
     const form = new FormData();
-    form.append("dir", currentPath.value || "uploads");
+    form.append("dir", targetDir);
     for (const f of arr) form.append("files", f);
     const res = await fetch("/api/workspace/upload", { method: "POST", body: form });
     const data = (await res.json()) as {
@@ -357,11 +565,11 @@ async function uploadFileList(fileList: FileList | File[]) {
       error?: string;
     };
     if (!res.ok) {
-      errorMsg.value = data.error || "Upload failed";
+      toast.error(data.error || "Upload failed");
       return;
     }
     const count = data.uploaded?.length || arr.length;
-    setFlash(`Uploaded ${count} file${count === 1 ? "" : "s"} to /${currentPath.value || "uploads"}`);
+    toast.success(`Uploaded ${count} file${count === 1 ? "" : "s"} to /${targetDir}`);
     dirCache.clear();
     if (!currentPath.value) {
       await loadDirectory("uploads", { showSkeleton: true });
@@ -369,7 +577,7 @@ async function uploadFileList(fileList: FileList | File[]) {
       await loadDirectory(currentPath.value, { silent: true });
     }
   } catch (err) {
-    errorMsg.value = err instanceof Error ? err.message : "Upload error";
+    toast.error(err instanceof Error ? err.message : "Upload error");
   } finally {
     uploading.value = false;
   }
@@ -378,7 +586,7 @@ async function uploadFileList(fileList: FileList | File[]) {
 function onFileInputChange(e: Event) {
   const input = e.target as HTMLInputElement;
   if (input.files && input.files.length > 0) {
-    uploadFileList(input.files);
+    void uploadFileList(input.files);
     input.value = "";
   }
 }
@@ -386,114 +594,169 @@ function onFileInputChange(e: Event) {
 function onDrop(e: DragEvent) {
   dragOver.value = false;
   if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-    uploadFileList(e.dataTransfer.files);
+    void uploadFileList(e.dataTransfer.files);
   }
+}
+
+function openNewFolderDialog(targetDir = currentPath.value) {
+  newFolderTargetDir.value = normalizeDirPath(targetDir);
+  newFolderName.value = "";
+  newFolderError.value = "";
+  newFolderOpen.value = true;
 }
 
 async function submitNewFolder() {
   const name = newFolderName.value.trim();
-  if (!name) return;
-  errorMsg.value = "";
-  const res = await fetch("/api/workspace/mkdir", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dir: currentPath.value, name }),
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!res.ok) {
-    errorMsg.value = data.error || "Failed to create folder";
+  if (!name) {
+    newFolderError.value = "Folder name is required.";
     return;
   }
-  newFolderName.value = "";
-  creatingFolder.value = false;
-  setFlash(`Created folder "${name}"`);
-  dirCache.clear();
-  await loadDirectory(currentPath.value, { silent: true });
+  newFolderSubmitting.value = true;
+  newFolderError.value = "";
+  try {
+    const res = await fetch("/api/workspace/mkdir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: newFolderTargetDir.value, name }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) {
+      newFolderError.value = data.error || "Failed to create folder";
+      return;
+    }
+    newFolderOpen.value = false;
+    toast.success(`Created folder "${name}"`);
+    dirCache.clear();
+    await loadDirectory(newFolderTargetDir.value, {
+      silent: newFolderTargetDir.value === currentPath.value,
+      showSkeleton: newFolderTargetDir.value !== currentPath.value,
+    });
+  } finally {
+    newFolderSubmitting.value = false;
+  }
+}
+
+function openNewNoteDialog(targetDir = currentPath.value || "scripts") {
+  newNoteTargetDir.value = normalizeDirPath(targetDir) || "scripts";
+  newNoteName.value = "";
+  newNoteError.value = "";
+  newNoteOpen.value = true;
 }
 
 async function submitNewNote() {
   let name = newNoteName.value.trim();
-  if (!name) return;
+  if (!name) {
+    newNoteError.value = "Note filename is required.";
+    return;
+  }
   if (!/\.(md|txt|csv|json|yml)$/i.test(name)) {
     name = `${name}.md`;
   }
-  const dir = currentPath.value || "scripts";
+  const dir = newNoteTargetDir.value || "scripts";
   const relPath = dir ? `${dir}/${name}` : name;
-  const res = await fetch("/api/workspace/text", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      path: relPath,
-      content: `# ${name.replace(/\.[^.]+$/, "")}\n\n`,
-    }),
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!res.ok) {
-    errorMsg.value = data.error || "Could not create note";
-    return;
-  }
-  newNoteName.value = "";
-  creatingNote.value = false;
-  setFlash(`Created ${relPath}`);
-  dirCache.clear();
-  await loadDirectory(dir, { silent: dir === currentPath.value, showSkeleton: dir !== currentPath.value });
-  const created = items.value.find((i) => i.relPath === relPath);
-  if (created) {
-    await openEntry(created);
-    editMode.value = true;
+  newNoteSubmitting.value = true;
+  newNoteError.value = "";
+  try {
+    const res = await fetch("/api/workspace/text", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: relPath,
+        content: `# ${name.replace(/\.[^.]+$/, "")}\n\n`,
+      }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) {
+      newNoteError.value = data.error || "Could not create note";
+      return;
+    }
+    newNoteOpen.value = false;
+    toast.success(`Created /${relPath}`);
+    dirCache.clear();
+    await loadDirectory(dir, {
+      silent: dir === currentPath.value,
+      showSkeleton: dir !== currentPath.value,
+    });
+    const created = items.value.find((i) => i.relPath === relPath);
+    if (created) {
+      await openEntry(created, true);
+    }
+  } finally {
+    newNoteSubmitting.value = false;
   }
 }
 
-function startMove(entry: WorkspaceEntry) {
+function openMoveDialog(entry: WorkspaceEntry) {
   movingItem.value = entry;
   moveTargetName.value = entry.name;
-  moveTargetDir.value = entry.relPath.includes("/")
+  const parent = entry.relPath.includes("/")
     ? entry.relPath.slice(0, entry.relPath.lastIndexOf("/"))
     : "";
+  moveTargetDir.value = parent || ROOT_SELECT_VALUE;
+  moveError.value = "";
 }
 
 async function submitMove() {
   if (!movingItem.value) return;
   const name = moveTargetName.value.trim();
-  if (!name) return;
-  const newPath = moveTargetDir.value ? `${moveTargetDir.value}/${name}` : name;
-  const res = await fetch("/api/workspace/rename", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: movingItem.value.relPath, newPath }),
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!res.ok) {
-    errorMsg.value = data.error || "Rename/Move failed";
+  if (!name) {
+    moveError.value = "Name cannot be empty.";
     return;
   }
-  if (selectedFile.value?.relPath === movingItem.value.relPath) {
-    selectedFile.value = null;
+  const destDir = moveTargetDir.value === ROOT_SELECT_VALUE ? "" : moveTargetDir.value;
+  const newPath = destDir ? `${destDir}/${name}` : name;
+  moveSubmitting.value = true;
+  moveError.value = "";
+  try {
+    const res = await fetch("/api/workspace/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: movingItem.value.relPath, newPath }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) {
+      moveError.value = data.error || "Rename/Move failed";
+      return;
+    }
+    if (selectedFile.value?.relPath === movingItem.value.relPath) {
+      selectedFile.value = null;
+    }
+    movingItem.value = null;
+    toast.success(`Moved to /${newPath}`);
+    dirCache.clear();
+    await loadDirectory(currentPath.value, { silent: true });
+  } finally {
+    moveSubmitting.value = false;
   }
-  movingItem.value = null;
-  setFlash(`Moved to /${newPath}`);
-  dirCache.clear();
-  await loadDirectory(currentPath.value, { silent: true });
 }
 
-async function deleteEntry(entry: WorkspaceEntry) {
-  if (!window.confirm(`Delete "${entry.name}"${entry.isDir ? " and all files inside it" : ""}?`)) {
-    return;
+function promptDelete(entry: WorkspaceEntry) {
+  entryPendingDelete.value = entry;
+}
+
+async function confirmDelete() {
+  const entry = entryPendingDelete.value;
+  if (!entry || deleteSubmitting.value) return;
+  deleteSubmitting.value = true;
+  try {
+    const res = await fetch(`/api/workspace/entry?path=${encodeURIComponent(entry.relPath)}`, {
+      method: "DELETE",
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) {
+      toast.error(data.error || "Delete failed");
+      return;
+    }
+    if (selectedFile.value?.relPath === entry.relPath) {
+      selectedFile.value = null;
+    }
+    entryPendingDelete.value = null;
+    toast.success(`Deleted ${entry.name}`);
+    dirCache.clear();
+    await loadDirectory(currentPath.value, { silent: true });
+  } finally {
+    deleteSubmitting.value = false;
   }
-  const res = await fetch(`/api/workspace/entry?path=${encodeURIComponent(entry.relPath)}`, {
-    method: "DELETE",
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!res.ok) {
-    errorMsg.value = data.error || "Delete failed";
-    return;
-  }
-  if (selectedFile.value?.relPath === entry.relPath) {
-    selectedFile.value = null;
-  }
-  setFlash(`Deleted ${entry.name}`);
-  dirCache.clear();
-  await loadDirectory(currentPath.value, { silent: true });
 }
 
 function askOttoAbout(entry: WorkspaceEntry) {
@@ -524,12 +787,39 @@ function askActionLabel(entry: WorkspaceEntry): string {
   return "Ask Otto";
 }
 
+function triggerDownload(url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 function onSearchInput() {
   clearTimeout(searchTimer ?? undefined);
   searchTimer = setTimeout(() => {
     void loadDirectory(currentPath.value, { showSkeleton: true });
   }, 220);
+}
+
+function clearSearch() {
+  searchQuery.value = "";
+  clearTimeout(searchTimer ?? undefined);
+  const cached = dirCache.get(currentPath.value);
+  if (cached) {
+    items.value = cached;
+    showListSkeleton.value = false;
+    void loadDirectory(currentPath.value, { silent: true });
+  } else {
+    void loadDirectory(currentPath.value, { showSkeleton: true });
+  }
+}
+
+function manualRefresh() {
+  dirCache.clear();
+  void loadDirectory(currentPath.value, { silent: true });
 }
 
 watch(
@@ -564,8 +854,12 @@ defineExpose({ loadDirectory, navigateTo });
 
 <template>
   <div
-    class="fm-shell"
-    :class="{ 'is-dragover': dragOver }"
+    :class="
+      cn(
+        'fm-shell',
+        dragOver && 'outline-2 outline-dashed outline-primary outline-offset-4 rounded-[var(--radius-card)]'
+      )
+    "
     @dragover.prevent="dragOver = true"
     @dragleave.self="dragOver = false"
     @drop.prevent="onDrop"
@@ -577,583 +871,1087 @@ defineExpose({ loadDirectory, navigateTo });
       <div class="otto-card-head">
         <span>(Y)our folders.</span>
         <div class="otto-card-head-right">
-          <span class="text-[10px] font-mono text-[var(--fg-muted)]">{{ formatBytes(stats.totalBytes) }}</span>
+          <span class="text-[10px] font-mono text-muted-foreground">{{ formatBytes(stats.totalBytes) }}</span>
         </div>
       </div>
 
-      <div class="fm-tree-body">
-        <div class="fm-tree-list">
-          <WorkspaceFileSkeleton v-if="!hasLoadedDirs && loading" variant="tree" :count="7" />
-          <template v-else>
-            <button
-              v-for="d in dirs"
-              :key="d || '__root__'"
-              type="button"
-              class="fm-dir-btn"
-              :class="{ active: currentPath === d && !searchQuery.trim() }"
-              :aria-current="currentPath === d && !searchQuery.trim() ? 'page' : undefined"
-              :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
-              @click="navigateTo(d)"
-            >
-              <span>{{ d === "clips" ? "🎬" : d === "thumbnails" ? "🖼" : d === "scripts" ? "📝" : d === "briefs" ? "📋" : "📁" }}</span>
-              <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
-            </button>
-          </template>
-        </div>
+      <div class="flex flex-col gap-2.5 p-3">
+        <ScrollArea class="max-h-[340px]">
+          <div class="flex flex-col gap-1 pr-1">
+            <WorkspaceFileSkeleton v-if="!hasLoadedDirs && loading" variant="tree" :count="7" />
+            <template v-else>
+              <ContextMenu v-for="d in dirs" :key="d || '__root__'">
+                <ContextMenuTrigger as-child>
+                  <button
+                    type="button"
+                    :class="
+                      cn(
+                        'fm-dir-btn flex items-center gap-2 w-full rounded-full py-1.5 pr-2.5 text-left font-mono text-[11.5px] transition-all active:scale-[0.985]',
+                        currentPath === d && !searchQuery.trim()
+                          ? 'active bg-primary text-primary-foreground font-medium'
+                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      )
+                    "
+                    :aria-current="currentPath === d && !searchQuery.trim() ? 'page' : undefined"
+                    :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
+                    @click="navigateTo(d)"
+                  >
+                    <component
+                      :is="folderIconComponent(d, currentPath === d && !searchQuery.trim())"
+                      class="size-3.5 shrink-0 opacity-85"
+                    />
+                    <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
+                  </button>
+                </ContextMenuTrigger>
+                <ContextMenuContent class="w-48">
+                  <ContextMenuLabel class="font-mono text-[11px] truncate">
+                    /{{ d || "workspace" }}
+                  </ContextMenuLabel>
+                  <ContextMenuSeparator />
+                  <ContextMenuGroup>
+                    <ContextMenuItem @select="navigateTo(d)">
+                      <FolderOpenIcon />
+                      Open Folder
+                    </ContextMenuItem>
+                    <ContextMenuItem @select="openNewFolderDialog(d)">
+                      <FolderPlusIcon />
+                      New Subfolder...
+                    </ContextMenuItem>
+                    <ContextMenuItem @select="openNewNoteDialog(d || 'scripts')">
+                      <FilePlus2Icon />
+                      New Note Here...
+                    </ContextMenuItem>
+                  </ContextMenuGroup>
+                  <ContextMenuSeparator />
+                  <ContextMenuGroup>
+                    <ContextMenuItem @select="triggerDownload(zipUrl(d))">
+                      <ArchiveIcon />
+                      Download ZIP
+                    </ContextMenuItem>
+                  </ContextMenuGroup>
+                </ContextMenuContent>
+              </ContextMenu>
+            </template>
+          </div>
+        </ScrollArea>
 
-        <div class="fm-tree-foot">
-          <div>{{ stats.fileCount }} files · {{ stats.clipCount }} clips</div>
-          <a :href="zipUrl(currentPath)" class="btn btn-xs btn-otto-secondary w-full mt-2 no-underline">
-            Download ZIP ↓
+        <Separator />
+
+        <div class="flex flex-col gap-2 font-mono text-[10.5px] text-muted-foreground">
+          <div class="flex items-center justify-between px-1">
+            <span>{{ stats.fileCount }} files · {{ stats.clipCount }} clips</span>
+          </div>
+          <a
+            :href="zipUrl(currentPath)"
+            :class="cn(buttonVariants({ variant: 'secondary', size: 'xs' }), 'w-full no-underline')"
+          >
+            <DownloadIcon data-icon="inline-start" />
+            Download ZIP
           </a>
         </div>
       </div>
     </aside>
 
-    <!-- RIGHT MAIN: (Y)our files. + Preview/Editor -->
-    <div class="fm-main">
+    <!-- RIGHT MAIN: (Y)our files. -->
+    <div class="flex flex-col gap-4 min-w-0">
       <div class="otto-card">
-        <div class="otto-card-head">(Y)our files.</div>
-        <div class="otto-card-body">
-          <div class="fm-toolbar">
-            <div class="fm-breadcrumbs">
-              <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
-                <span v-if="idx > 0" class="opacity-40">/</span>
-                <button type="button" class="fm-bc-btn" @click="navigateTo(bc.path)">
-                  {{ bc.name }}
-                </button>
-              </template>
-            </div>
+        <div class="otto-card-head">
+          <span>(Y)our files.</span>
+          <div class="otto-card-head-right">
+            <span class="text-[10px] font-mono text-muted-foreground">
+              {{ showListSkeleton ? "loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"}` }}
+            </span>
+          </div>
+        </div>
 
-            <div class="fm-actions">
-              <input
-                v-model="searchQuery"
-                type="text"
-                class="fm-search"
-                placeholder="Search files..."
-                @input="onSearchInput"
-              />
-              <button
-                type="button"
-                class="btn btn-xs btn-otto-primary"
-                :disabled="uploading"
-                @click="triggerUploadPicker"
+        <div class="otto-card-body">
+          <!-- COMMAND TOOLBAR -->
+          <div class="flex items-center justify-between gap-2.5 flex-wrap">
+            <Breadcrumb>
+              <BreadcrumbList class="font-mono text-xs gap-1">
+                <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
+                  <BreadcrumbSeparator v-if="idx > 0" />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage
+                      v-if="idx === breadcrumbs.length - 1"
+                      class="fm-bc-btn font-mono text-xs font-medium text-foreground px-1.5 py-0.5 rounded-md bg-secondary/70"
+                    >
+                      {{ bc.name }}
+                    </BreadcrumbPage>
+                    <BreadcrumbLink v-else as-child>
+                      <button
+                        type="button"
+                        class="fm-bc-btn font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-highlight-yellow px-1.5 py-0.5 rounded-md transition-colors"
+                        @click="navigateTo(bc.path)"
+                      >
+                        {{ bc.name }}
+                      </button>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                </template>
+              </BreadcrumbList>
+            </Breadcrumb>
+
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <InputGroup class="w-44 h-7 rounded-full bg-secondary border-transparent">
+                <InputGroupAddon align="inline-start">
+                  <SearchIcon />
+                </InputGroupAddon>
+                <InputGroupInput
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Search files..."
+                  class="font-mono text-[11.5px] h-7"
+                  @input="onSearchInput"
+                />
+                <InputGroupAddon v-if="searchQuery" align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="Clear search"
+                    @click="clearSearch"
+                  >
+                    <XIcon />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+
+              <ToggleGroup
+                type="single"
+                size="sm"
+                variant="outline"
+                :model-value="viewMode"
+                class="rounded-full bg-secondary p-0.5 gap-0.5"
+                @update:model-value="(val) => { if (val === 'list' || val === 'grid') setViewMode(val); }"
               >
-                {{ uploading ? "Uploading..." : "+ Upload" }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-otto-secondary"
-                @click="creatingNote = !creatingNote; creatingFolder = false"
-              >
-                + Note
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-otto-secondary"
-                @click="creatingFolder = !creatingFolder; creatingNote = false"
-              >
-                + Folder
-              </button>
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <ToggleGroupItem
+                      value="list"
+                      aria-label="List view"
+                      class="h-6 px-2 rounded-full border-0 data-[state=on]:bg-background data-[state=on]:shadow-xs"
+                    >
+                      <ListIcon class="size-3.5" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>List view</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <ToggleGroupItem
+                      value="grid"
+                      aria-label="Grid view"
+                      class="h-6 px-2 rounded-full border-0 data-[state=on]:bg-background data-[state=on]:shadow-xs"
+                    >
+                      <LayoutGridIcon class="size-3.5" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent>Grid view</TooltipContent>
+                </Tooltip>
+              </ToggleGroup>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button type="button" variant="secondary" size="xs">
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    {{ sortLabel }}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-40">
+                  <DropdownMenuLabel class="font-mono text-[11px]">Sort by</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem @select="sortMode = 'name-asc'">
+                      <CheckIcon :class="cn('opacity-0', sortMode === 'name-asc' && 'opacity-100')" />
+                      Name (A–Z)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @select="sortMode = 'modified-desc'">
+                      <CheckIcon :class="cn('opacity-0', sortMode === 'modified-desc' && 'opacity-100')" />
+                      Newest first
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @select="sortMode = 'size-desc'">
+                      <CheckIcon :class="cn('opacity-0', sortMode === 'size-desc' && 'opacity-100')" />
+                      Largest first
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button type="button" size="xs" :disabled="uploading" @click="triggerUploadPicker">
+                <Spinner v-if="uploading" data-icon="inline-start" />
+                <UploadIcon v-else data-icon="inline-start" />
+                {{ uploading ? "Uploading" : "Upload" }}
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button type="button" variant="secondary" size="xs">
+                    <PlusIcon data-icon="inline-start" />
+                    New
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-44">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem @select="openNewNoteDialog(currentPath || 'scripts')">
+                      <FilePlus2Icon />
+                      New Note (.md)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @select="openNewFolderDialog(currentPath)">
+                      <FolderPlusIcon />
+                      New Folder
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem @select="manualRefresh">
+                      <RefreshCwIcon />
+                      Refresh
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
-          <form v-if="creatingFolder" class="fm-inline-form" @submit.prevent="submitNewFolder">
-            <span class="text-xs font-mono">New folder in /{{ currentPath || "workspace" }}:</span>
-            <input v-model="newFolderName" type="text" class="fm-inline-input" placeholder="e.g. ep12-assets" autofocus />
-            <button type="submit" class="btn btn-xs btn-otto-primary">Create</button>
-            <button type="button" class="btn btn-xs btn-otto-secondary" @click="creatingFolder = false">Cancel</button>
-          </form>
+          <Alert v-if="errorMsg" variant="destructive">
+            <AlertDescription class="font-mono text-xs">{{ errorMsg }}</AlertDescription>
+          </Alert>
 
-          <form v-if="creatingNote" class="fm-inline-form" @submit.prevent="submitNewNote">
-            <span class="text-xs font-mono">New note in /{{ currentPath || "scripts" }}:</span>
-            <input v-model="newNoteName" type="text" class="fm-inline-input" placeholder="e.g. run-of-show.md" autofocus />
-            <button type="submit" class="btn btn-xs btn-otto-primary">Create &amp; Edit</button>
-            <button type="button" class="btn btn-xs btn-otto-secondary" @click="creatingNote = false">Cancel</button>
-          </form>
-
-          <form v-if="movingItem" class="fm-inline-form" @submit.prevent="submitMove">
-            <span class="text-xs font-mono">Move/Rename:</span>
-            <select v-model="moveTargetDir" class="fm-inline-select">
-              <option v-for="d in dirs" :key="d || '__r'" :value="d">/{{ d || "workspace" }}</option>
-            </select>
-            <input v-model="moveTargetName" type="text" class="fm-inline-input" />
-            <button type="submit" class="btn btn-xs btn-otto-primary">Apply</button>
-            <button type="button" class="btn btn-xs btn-otto-secondary" @click="movingItem = null">Cancel</button>
-          </form>
-
-          <div v-if="statusMsg" class="fm-banner fm-banner-ok">{{ statusMsg }}</div>
-          <div v-if="errorMsg" class="fm-banner fm-banner-err">{{ errorMsg }}</div>
-
-          <div class="fm-list-wrap">
-            <div v-if="dragOver" class="fm-drop-overlay">
-              Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong>
-            </div>
-
-            <WorkspaceFileSkeleton
-              v-if="showListSkeleton"
-              variant="rows"
-              :count="currentPath === '' ? 6 : 4"
-            />
-            <div v-else-if="items.length === 0" class="fm-empty">
-              <p class="mb-3">
-                {{
-                  searchQuery.trim()
-                    ? `No files match "${searchQuery.trim()}".`
-                    : `This folder is empty. Drag & drop files here, click "+ Upload", or ask Otto to write a brief or cut a VOD clip.`
-                }}
-              </p>
-              <div class="flex flex-wrap justify-center gap-2">
-                <button type="button" class="btn btn-xs btn-otto-primary" @click="triggerUploadPicker">
-                  Upload Files
-                </button>
-                <button
-                  v-if="currentPath === 'clips' || !currentPath"
-                  type="button"
-                  class="btn btn-xs btn-otto-secondary"
-                  @click="emit('askPrompt', 'Scan my latest YouTube VOD for hype moments and cut the top raw clips (.mp4 + .srt) into my workspace clips folder.')"
+          <!-- FILE LIST / GRID AREA WITH BACKGROUND CONTEXT MENU -->
+          <ContextMenu>
+            <ContextMenuTrigger as-child>
+              <div class="relative min-h-[220px]">
+                <div
+                  v-if="dragOver"
+                  class="absolute inset-0 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-highlight-yellow/90 font-mono text-xs text-foreground"
                 >
-                  Scan VOD for Clips
-                </button>
-              </div>
-            </div>
+                  <span>Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong></span>
+                </div>
 
-            <div v-else class="fm-rows">
-              <div
-                v-for="entry in items"
-                :key="entry.relPath"
-                class="fm-row"
-                :class="{ selected: selectedFile?.relPath === entry.relPath }"
-              >
-                <button type="button" class="fm-row-main" @click="openEntry(entry)">
-                  <span class="fm-icon">{{ fileIcon(entry) }}</span>
-                  <div class="fm-meta">
-                    <div class="fm-name">{{ entry.name }}</div>
-                    <div class="fm-sub">
-                      <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
-                      <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
-                      <span>{{ formatTime(entry.updatedAt) }}</span>
+                <!-- SKELETON STATE -->
+                <WorkspaceFileSkeleton
+                  v-if="showListSkeleton"
+                  :variant="viewMode === 'grid' ? 'grid' : 'rows'"
+                  :count="currentPath === '' ? 6 : 4"
+                />
+
+                <!-- EMPTY STATE -->
+                <Empty v-else-if="sortedItems.length === 0" class="rounded-2xl bg-secondary/60 border-0 py-10">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <FolderOpenIcon />
+                    </EmptyMedia>
+                    <EmptyTitle class="font-mono text-xs">
+                      {{ searchQuery.trim() ? `No files match "${searchQuery.trim()}"` : "This folder is empty" }}
+                    </EmptyTitle>
+                    <EmptyDescription class="text-xs max-w-md">
+                      {{
+                        searchQuery.trim()
+                          ? "Try a different filename keyword or clear the search filter."
+                          : "Drag & drop files here, right-click anywhere, click Upload, or ask Otto to write a brief or cut a VOD clip."
+                      }}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <div class="flex flex-wrap justify-center gap-2">
+                      <Button v-if="searchQuery.trim()" type="button" variant="secondary" size="xs" @click="clearSearch">
+                        Clear Search
+                      </Button>
+                      <template v-else>
+                        <Button type="button" size="xs" @click="triggerUploadPicker">
+                          <UploadIcon data-icon="inline-start" />
+                          Upload Files
+                        </Button>
+                        <Button type="button" variant="secondary" size="xs" @click="openNewNoteDialog(currentPath || 'scripts')">
+                          <FilePlus2Icon data-icon="inline-start" />
+                          New Note
+                        </Button>
+                        <Button
+                          v-if="currentPath === 'clips' || !currentPath"
+                          type="button"
+                          variant="secondary"
+                          size="xs"
+                          @click="emit('askPrompt', 'Scan my latest YouTube VOD for hype moments and cut the top raw clips (.mp4 + .srt) into my workspace clips folder.')"
+                        >
+                          <SparklesIcon data-icon="inline-start" />
+                          Scan VOD for Clips
+                        </Button>
+                      </template>
                     </div>
-                  </div>
-                </button>
+                  </EmptyContent>
+                </Empty>
 
-                <div class="fm-row-actions">
-                  <template v-if="!entry.isDir">
-                    <button type="button" class="btn btn-xs btn-otto-primary" @click="askOttoAbout(entry)">
-                      {{ askActionLabel(entry) }}
-                    </button>
-                    <a
-                      v-if="entry.matchedSrtRelPath"
-                      :href="fileUrl(entry.matchedSrtRelPath, true)"
-                      class="btn btn-xs btn-otto-secondary no-underline"
-                      title="Download paired .srt captions"
-                    >
-                      .srt ↓
-                    </a>
-                    <a
-                      :href="fileUrl(entry.relPath, true)"
-                      class="btn btn-xs btn-otto-secondary no-underline"
-                      title="Download file"
-                    >
-                      ↓
-                    </a>
-                  </template>
-                  <template v-else>
-                    <a :href="zipUrl(entry.relPath)" class="btn btn-xs btn-otto-secondary no-underline">
-                      ZIP ↓
-                    </a>
-                  </template>
-                  <button type="button" class="btn btn-xs btn-otto-secondary" @click="startMove(entry)">
-                    Move
-                  </button>
-                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="deleteEntry(entry)">
-                    ✕
-                  </button>
+                <!-- LIST VIEW -->
+                <div v-else-if="viewMode === 'list'" class="flex flex-col gap-1.5">
+                  <div class="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_76px_126px_142px] items-center gap-3 px-3 pb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <span>Name</span>
+                    <span class="text-right">Size</span>
+                    <span class="text-right">Modified</span>
+                    <span class="text-right pr-1">Actions</span>
+                  </div>
+
+                  <div class="fm-rows flex flex-col gap-1.5">
+                    <ContextMenu v-for="entry in sortedItems" :key="entry.relPath">
+                      <ContextMenuTrigger as-child>
+                        <div
+                          :class="
+                            cn(
+                              'fm-row group flex sm:grid sm:grid-cols-[minmax(0,1fr)_76px_126px_142px] items-center justify-between gap-2 sm:gap-3 rounded-2xl px-3 py-2 transition-colors',
+                              selectedFile?.relPath === entry.relPath
+                                ? 'bg-highlight-yellow text-foreground'
+                                : 'bg-secondary/75 hover:bg-accent/90'
+                            )
+                          "
+                        >
+                          <button
+                            type="button"
+                            class="fm-row-main flex items-center gap-2.5 min-w-0 flex-1 text-left"
+                            @click="openEntry(entry)"
+                          >
+                            <span
+                              :class="
+                                cn(
+                                  'grid place-items-center size-8 rounded-xl shrink-0 transition-colors',
+                                  entry.isDir
+                                    ? 'bg-background text-foreground shadow-2xs'
+                                    : entry.kind === 'image' || entry.kind === 'video'
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-background text-muted-foreground shadow-2xs'
+                                )
+                              "
+                            >
+                              <component :is="entryIconComponent(entry)" class="size-4" />
+                            </span>
+                            <div class="min-w-0 flex-1">
+                              <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="fm-name font-mono text-[12.5px] font-medium text-foreground truncate">
+                                  {{ entry.name }}
+                                </span>
+                                <Badge v-if="entry.matchedSrtRelPath" variant="secondary" class="font-mono text-[9.5px] h-4 px-1.5">
+                                  .srt
+                                </Badge>
+                              </div>
+                              <div class="sm:hidden font-mono text-[10.5px] text-muted-foreground truncate">
+                                <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
+                                <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
+                                <span>{{ formatTime(entry.updatedAt) }}</span>
+                              </div>
+                              <div v-if="searchQuery.trim()" class="hidden sm:block font-mono text-[10px] text-muted-foreground truncate">
+                                /{{ entry.relPath }}
+                              </div>
+                            </div>
+                          </button>
+
+                          <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
+                            {{ entry.isDir ? "—" : formatBytes(entry.sizeBytes) }}
+                          </div>
+
+                          <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
+                            {{ formatTime(entry.updatedAt) }}
+                          </div>
+
+                          <div class="flex items-center justify-end gap-1 shrink-0">
+                            <Button
+                              v-if="!entry.isDir"
+                              type="button"
+                              size="xs"
+                              @click.stop="askOttoAbout(entry)"
+                            >
+                              <SparklesIcon data-icon="inline-start" />
+                              {{ askActionLabel(entry) }}
+                            </Button>
+                            <Button
+                              v-else
+                              type="button"
+                              variant="secondary"
+                              size="xs"
+                              class="bg-background/80 hover:bg-background"
+                              @click.stop="navigateTo(entry.relPath)"
+                            >
+                              Open
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger as-child>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label="More actions"
+                                  @click.stop
+                                >
+                                  <MoreHorizontalIcon />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" class="w-48">
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem @select="openEntry(entry)">
+                                    <FolderOpenIcon v-if="entry.isDir" />
+                                    <EyeIcon v-else />
+                                    {{ entry.isDir ? "Open Folder" : "Preview" }}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                                    <PencilIcon />
+                                    Edit File
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                                    <SparklesIcon />
+                                    {{ askActionLabel(entry) }}
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem
+                                    v-if="entry.isDir"
+                                    @select="triggerDownload(zipUrl(entry.relPath))"
+                                  >
+                                    <ArchiveIcon />
+                                    Download ZIP
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    v-else
+                                    @select="triggerDownload(fileUrl(entry.relPath, true))"
+                                  >
+                                    <DownloadIcon />
+                                    Download
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    v-if="entry.matchedSrtRelPath"
+                                    @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
+                                  >
+                                    <CaptionsIcon />
+                                    Download .srt Captions
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem @select="openMoveDialog(entry)">
+                                    <FolderInputIcon />
+                                    Rename / Move...
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem variant="destructive" @select="promptDelete(entry)">
+                                    <Trash2Icon />
+                                    Delete...
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </ContextMenuTrigger>
+
+                      <ContextMenuContent class="w-52">
+                        <ContextMenuLabel class="font-mono text-[11px] truncate">
+                          {{ entry.name }}
+                        </ContextMenuLabel>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem @select="openEntry(entry)">
+                            <FolderOpenIcon v-if="entry.isDir" />
+                            <EyeIcon v-else />
+                            {{ entry.isDir ? "Open Folder" : "Preview" }}
+                          </ContextMenuItem>
+                          <ContextMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                            <PencilIcon />
+                            Edit File
+                          </ContextMenuItem>
+                          <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                            <SparklesIcon />
+                            {{ askActionLabel(entry) }}
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            v-if="entry.isDir"
+                            @select="triggerDownload(zipUrl(entry.relPath))"
+                          >
+                            <ArchiveIcon />
+                            Download ZIP
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            v-else
+                            @select="triggerDownload(fileUrl(entry.relPath, true))"
+                          >
+                            <DownloadIcon />
+                            Download
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            v-if="entry.matchedSrtRelPath"
+                            @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
+                          >
+                            <CaptionsIcon />
+                            Download .srt Captions
+                          </ContextMenuItem>
+                          <ContextMenuItem @select="openMoveDialog(entry)">
+                            <FolderInputIcon />
+                            Rename / Move...
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem variant="destructive" @select="promptDelete(entry)">
+                            <Trash2Icon />
+                            Delete...
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  </div>
+                </div>
+
+                <!-- GRID VIEW -->
+                <div v-else class="fm-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                  <ContextMenu v-for="entry in sortedItems" :key="entry.relPath">
+                    <ContextMenuTrigger as-child>
+                      <div
+                        :class="
+                          cn(
+                            'fm-grid-card group relative flex flex-col gap-2 rounded-2xl p-2.5 transition-all',
+                            selectedFile?.relPath === entry.relPath
+                              ? 'bg-highlight-yellow text-foreground'
+                              : 'bg-secondary/75 hover:bg-accent/90'
+                          )
+                        "
+                      >
+                        <button
+                          type="button"
+                          class="flex flex-col gap-2 text-left w-full"
+                          @click="openEntry(entry)"
+                        >
+                          <div
+                            :class="
+                              cn(
+                                'relative aspect-[16/10] w-full overflow-hidden rounded-xl flex items-center justify-center',
+                                entry.kind === 'video' ? 'bg-primary text-primary-foreground' : 'bg-background'
+                              )
+                            "
+                          >
+                            <img
+                              v-if="entry.kind === 'image'"
+                              :src="fileUrl(entry.relPath)"
+                              :alt="entry.name"
+                              loading="lazy"
+                              class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                            />
+                            <component
+                              v-else
+                              :is="entryIconComponent(entry)"
+                              :class="cn('size-7', entry.kind === 'video' ? 'text-primary-foreground' : 'text-muted-foreground')"
+                            />
+                            <Badge
+                              variant="secondary"
+                              class="absolute bottom-1.5 left-1.5 font-mono text-[9.5px] uppercase px-1.5 h-4 bg-background/90 text-foreground"
+                            >
+                              {{ kindBadgeLabel(entry) }}
+                            </Badge>
+                            <Badge
+                              v-if="entry.matchedSrtRelPath"
+                              variant="secondary"
+                              class="absolute bottom-1.5 right-1.5 font-mono text-[9.5px] px-1.5 h-4 bg-highlight-yellow text-foreground"
+                            >
+                              .srt
+                            </Badge>
+                          </div>
+
+                          <div class="flex flex-col gap-0.5 px-0.5 min-w-0">
+                            <span class="fm-name font-mono text-xs font-medium text-foreground truncate">
+                              {{ entry.name }}
+                            </span>
+                            <span class="font-mono text-[10px] text-muted-foreground truncate">
+                              {{ entry.isDir ? formatTime(entry.updatedAt) : `${formatBytes(entry.sizeBytes)} · ${formatTime(entry.updatedAt)}` }}
+                            </span>
+                          </div>
+                        </button>
+
+                        <div class="absolute top-3.5 right-3.5">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger as-child>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="icon-xs"
+                                class="bg-background/90 shadow-xs hover:bg-background"
+                                aria-label="More actions"
+                                @click.stop
+                              >
+                                <MoreHorizontalIcon />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" class="w-48">
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem @select="openEntry(entry)">
+                                  <FolderOpenIcon v-if="entry.isDir" />
+                                  <EyeIcon v-else />
+                                  {{ entry.isDir ? "Open Folder" : "Preview" }}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                                  <PencilIcon />
+                                  Edit File
+                                </DropdownMenuItem>
+                                <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                                  <SparklesIcon />
+                                  {{ askActionLabel(entry) }}
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  v-if="entry.isDir"
+                                  @select="triggerDownload(zipUrl(entry.relPath))"
+                                >
+                                  <ArchiveIcon />
+                                  Download ZIP
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  v-else
+                                  @select="triggerDownload(fileUrl(entry.relPath, true))"
+                                >
+                                  <DownloadIcon />
+                                  Download
+                                </DropdownMenuItem>
+                                <DropdownMenuItem @select="openMoveDialog(entry)">
+                                  <FolderInputIcon />
+                                  Rename / Move...
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem variant="destructive" @select="promptDelete(entry)">
+                                  <Trash2Icon />
+                                  Delete...
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </ContextMenuTrigger>
+
+                    <ContextMenuContent class="w-52">
+                      <ContextMenuLabel class="font-mono text-[11px] truncate">
+                        {{ entry.name }}
+                      </ContextMenuLabel>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem @select="openEntry(entry)">
+                          <FolderOpenIcon v-if="entry.isDir" />
+                          <EyeIcon v-else />
+                          {{ entry.isDir ? "Open Folder" : "Preview" }}
+                        </ContextMenuItem>
+                        <ContextMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                          <PencilIcon />
+                          Edit File
+                        </ContextMenuItem>
+                        <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                          <SparklesIcon />
+                          {{ askActionLabel(entry) }}
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem
+                          v-if="entry.isDir"
+                          @select="triggerDownload(zipUrl(entry.relPath))"
+                        >
+                          <ArchiveIcon />
+                          Download ZIP
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          v-else
+                          @select="triggerDownload(fileUrl(entry.relPath, true))"
+                        >
+                          <DownloadIcon />
+                          Download
+                        </ContextMenuItem>
+                        <ContextMenuItem @select="openMoveDialog(entry)">
+                          <FolderInputIcon />
+                          Rename / Move...
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem variant="destructive" @select="promptDelete(entry)">
+                          <Trash2Icon />
+                          Delete...
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
+            </ContextMenuTrigger>
 
-      <!-- INLINE PREVIEW & TIER 3 MARKDOWN/TEXT EDITOR -->
-      <div v-if="selectedFile" class="otto-card">
-        <div class="otto-card-head">
-          <span>(Y)our preview · {{ selectedFile.name }}.</span>
-          <div class="otto-card-head-right">
-            <button type="button" class="btn btn-xs btn-ghost" @click="selectedFile = null">✕</button>
-          </div>
-        </div>
-
-        <div class="otto-card-body">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="text-[11px] font-mono text-[var(--fg-muted)]">
-              /{{ selectedFile.relPath }} · {{ formatBytes(selectedFile.sizeBytes) }} · {{ formatTime(selectedFile.updatedAt) }}
-            </div>
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <button type="button" class="btn btn-xs btn-otto-primary" @click="askOttoAbout(selectedFile)">
-                {{ askActionLabel(selectedFile) }}
-              </button>
-              <button
-                v-if="selectedFile.editable"
-                type="button"
-                class="btn btn-xs btn-otto-secondary"
-                @click="editMode = !editMode"
-              >
-                {{ editMode ? "Preview" : "Edit" }}
-              </button>
-              <button
-                v-if="selectedFile.editable && editMode"
-                type="button"
-                class="btn btn-xs btn-otto-primary"
-                :disabled="textSaving || !isTextDirty"
-                @click="saveTextFile"
-              >
-                {{ textSaving ? "Saving..." : isTextDirty ? "Save*" : "Saved" }}
-              </button>
-              <a :href="fileUrl(selectedFile.relPath, true)" class="btn btn-xs btn-otto-secondary no-underline">
-                Download ↓
-              </a>
-            </div>
-          </div>
-
-          <div v-if="selectedFile.kind === 'image'" class="fm-media-box">
-            <img :src="fileUrl(selectedFile.relPath)" :alt="selectedFile.name" class="fm-img-preview" />
-          </div>
-
-          <div v-else-if="selectedFile.kind === 'video'" class="fm-media-box">
-            <video
-              :key="selectedFile.relPath"
-              :src="fileUrl(selectedFile.relPath)"
-              controls
-              preload="metadata"
-              class="fm-video-preview"
-            ></video>
-            <div v-if="selectedFile.matchedSrtRelPath" class="mt-2 flex items-center gap-2 text-xs font-mono">
-              <span class="text-[var(--fg-muted)]">Paired captions:</span>
-              <a :href="fileUrl(selectedFile.matchedSrtRelPath, true)" class="btn btn-xs btn-otto-secondary no-underline">
-                Download .srt ↓
-              </a>
-            </div>
-          </div>
-
-          <div v-else-if="selectedFile.kind === 'audio'" class="fm-media-box">
-            <audio :key="selectedFile.relPath" :src="fileUrl(selectedFile.relPath)" controls class="w-full"></audio>
-          </div>
-
-          <div v-else-if="selectedFile.kind === 'markdown' || selectedFile.kind === 'text'">
-            <WorkspaceFileSkeleton v-if="textLoading" variant="preview" />
-            <textarea v-else-if="editMode" v-model="textContent" class="fm-editor" spellcheck="false"></textarea>
-            <div v-else-if="selectedFile.kind === 'markdown'" class="md-content fm-md-box" v-html="renderedPreviewHtml"></div>
-            <pre v-else class="fm-code-box">{{ textContent }}</pre>
-          </div>
-
-          <div v-else class="text-xs font-mono text-[var(--fg-muted)] py-2">
-            Preview unavailable. Use Download ↓ or send to Otto.
-          </div>
+            <!-- EMPTY-SPACE CONTEXT MENU -->
+            <ContextMenuContent class="w-48">
+              <ContextMenuLabel class="font-mono text-[11px] truncate">
+                /{{ currentPath || "workspace" }}
+              </ContextMenuLabel>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem @select="triggerUploadPicker">
+                  <UploadIcon />
+                  Upload Files...
+                </ContextMenuItem>
+                <ContextMenuItem @select="openNewNoteDialog(currentPath || 'scripts')">
+                  <FilePlus2Icon />
+                  New Note (.md)...
+                </ContextMenuItem>
+                <ContextMenuItem @select="openNewFolderDialog(currentPath)">
+                  <FolderPlusIcon />
+                  New Folder...
+                </ContextMenuItem>
+              </ContextMenuGroup>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem @select="triggerDownload(zipUrl(currentPath))">
+                  <ArchiveIcon />
+                  Download Folder ZIP
+                </ContextMenuItem>
+                <ContextMenuItem @select="manualRefresh">
+                  <RefreshCwIcon />
+                  Refresh
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </ContextMenuContent>
+          </ContextMenu>
         </div>
       </div>
     </div>
+
+    <!-- SLIDE-OVER SHEET: INLINE PREVIEW & TIER 3 MARKDOWN/TEXT EDITOR -->
+    <Sheet v-model:open="previewSheetOpen">
+      <SheetContent side="right" class="w-full sm:max-w-xl p-0 gap-0">
+        <template v-if="selectedFile">
+          <SheetHeader class="border-b border-border px-5 py-4 pr-12">
+            <SheetTitle class="font-mono text-sm font-medium truncate">
+              {{ selectedFile.name }}
+            </SheetTitle>
+            <SheetDescription class="font-mono text-[11px] truncate">
+              /{{ selectedFile.relPath }} · {{ formatBytes(selectedFile.sizeBytes) }} · {{ formatTime(selectedFile.updatedAt) }}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div class="flex items-center justify-between gap-2 flex-wrap border-b border-border bg-secondary/40 px-5 py-2.5">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <Button type="button" size="xs" @click="askOttoAbout(selectedFile)">
+                <SparklesIcon data-icon="inline-start" />
+                {{ askActionLabel(selectedFile) }}
+              </Button>
+              <Button
+                v-if="selectedFile.editable"
+                type="button"
+                variant="secondary"
+                size="xs"
+                @click="editMode = !editMode"
+              >
+                <EyeIcon v-if="editMode" data-icon="inline-start" />
+                <PencilIcon v-else data-icon="inline-start" />
+                {{ editMode ? "Preview" : "Edit" }}
+              </Button>
+              <Button
+                v-if="selectedFile.editable && editMode"
+                type="button"
+                size="xs"
+                :disabled="textSaving || !isTextDirty"
+                @click="saveTextFile"
+              >
+                <Spinner v-if="textSaving" data-icon="inline-start" />
+                <SaveIcon v-else data-icon="inline-start" />
+                {{ textSaving ? "Saving" : isTextDirty ? "Save*" : "Saved" }}
+              </Button>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <a
+                    :href="fileUrl(selectedFile.relPath, true)"
+                    :class="buttonVariants({ variant: 'secondary', size: 'icon-xs' })"
+                    aria-label="Download file"
+                  >
+                    <DownloadIcon />
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>Download</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-xs"
+                    aria-label="Rename or move file"
+                    @click="openMoveDialog(selectedFile)"
+                  >
+                    <FolderInputIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Rename / Move</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    class="text-destructive hover:text-destructive"
+                    aria-label="Delete file"
+                    @click="promptDelete(selectedFile)"
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+
+          <ScrollArea class="flex-1 min-h-0">
+            <div class="p-5 flex flex-col gap-4">
+              <div
+                v-if="selectedFile.kind === 'image'"
+                class="flex flex-col items-center rounded-2xl bg-secondary p-3"
+              >
+                <img
+                  :src="fileUrl(selectedFile.relPath)"
+                  :alt="selectedFile.name"
+                  class="max-w-full max-h-[65vh] rounded-xl object-contain"
+                />
+              </div>
+
+              <div
+                v-else-if="selectedFile.kind === 'video'"
+                class="flex flex-col gap-3 rounded-2xl bg-secondary p-3"
+              >
+                <video
+                  :key="selectedFile.relPath"
+                  :src="fileUrl(selectedFile.relPath)"
+                  controls
+                  preload="metadata"
+                  class="w-full max-h-[60vh] rounded-xl bg-primary"
+                ></video>
+                <div v-if="selectedFile.matchedSrtRelPath" class="flex items-center justify-between gap-2 text-xs font-mono">
+                  <span class="text-muted-foreground">Paired captions ready</span>
+                  <a
+                    :href="fileUrl(selectedFile.matchedSrtRelPath, true)"
+                    :class="buttonVariants({ variant: 'secondary', size: 'xs' })"
+                  >
+                    <CaptionsIcon data-icon="inline-start" />
+                    Download .srt
+                  </a>
+                </div>
+              </div>
+
+              <div
+                v-else-if="selectedFile.kind === 'audio'"
+                class="rounded-2xl bg-secondary p-4"
+              >
+                <audio :key="selectedFile.relPath" :src="fileUrl(selectedFile.relPath)" controls class="w-full"></audio>
+              </div>
+
+              <div v-else-if="selectedFile.kind === 'markdown' || selectedFile.kind === 'text'">
+                <WorkspaceFileSkeleton v-if="textLoading" variant="preview" />
+                <Textarea
+                  v-else-if="editMode"
+                  v-model="textContent"
+                  spellcheck="false"
+                  class="min-h-[58vh] font-mono text-xs leading-relaxed rounded-2xl bg-secondary border-transparent focus-visible:border-ring"
+                  @keydown="onEditorKeydown"
+                />
+                <div
+                  v-else-if="selectedFile.kind === 'markdown'"
+                  class="md-content fm-md-box rounded-2xl bg-secondary/70 p-4 text-sm"
+                  v-html="renderedPreviewHtml"
+                ></div>
+                <pre
+                  v-else
+                  class="rounded-2xl bg-secondary/70 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words m-0"
+                >{{ textContent }}</pre>
+              </div>
+
+              <Empty v-else class="border-0 py-10">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <PackageIcon />
+                  </EmptyMedia>
+                  <EmptyTitle class="font-mono text-xs">Preview unavailable</EmptyTitle>
+                  <EmptyDescription class="text-xs">
+                    Download the file directly or send it to Otto for review.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </div>
+          </ScrollArea>
+        </template>
+      </SheetContent>
+    </Sheet>
+
+    <!-- DIALOG: NEW FOLDER -->
+    <Dialog v-model:open="newFolderOpen">
+      <DialogContent class="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle class="font-mono text-sm">New Folder</DialogTitle>
+          <DialogDescription class="font-mono text-xs">
+            Create a folder inside /{{ newFolderTargetDir || "workspace" }}.
+          </DialogDescription>
+        </DialogHeader>
+        <form @submit.prevent="submitNewFolder">
+          <FieldGroup>
+            <Field :data-invalid="Boolean(newFolderError) || undefined">
+              <FieldLabel for="fm-new-folder-name" class="font-mono text-xs">Folder name</FieldLabel>
+              <Input
+                id="fm-new-folder-name"
+                v-model="newFolderName"
+                type="text"
+                placeholder="e.g. ep12-assets"
+                :aria-invalid="Boolean(newFolderError)"
+                autofocus
+              />
+              <FieldError v-if="newFolderError">{{ newFolderError }}</FieldError>
+            </Field>
+          </FieldGroup>
+          <DialogFooter class="mt-4">
+            <Button type="button" variant="secondary" size="sm" :disabled="newFolderSubmitting" @click="newFolderOpen = false">
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" :disabled="newFolderSubmitting">
+              <Spinner v-if="newFolderSubmitting" data-icon="inline-start" />
+              Create Folder
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- DIALOG: NEW NOTE -->
+    <Dialog v-model:open="newNoteOpen">
+      <DialogContent class="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle class="font-mono text-sm">New Note</DialogTitle>
+          <DialogDescription class="font-mono text-xs">
+            Create an editable Markdown or text file in /{{ newNoteTargetDir || "scripts" }}.
+          </DialogDescription>
+        </DialogHeader>
+        <form @submit.prevent="submitNewNote">
+          <FieldGroup>
+            <Field :data-invalid="Boolean(newNoteError) || undefined">
+              <FieldLabel for="fm-new-note-name" class="font-mono text-xs">Filename</FieldLabel>
+              <Input
+                id="fm-new-note-name"
+                v-model="newNoteName"
+                type="text"
+                placeholder="e.g. run-of-show.md"
+                :aria-invalid="Boolean(newNoteError)"
+                autofocus
+              />
+              <FieldDescription class="font-mono text-[11px]">
+                Defaults to .md if no extension is specified.
+              </FieldDescription>
+              <FieldError v-if="newNoteError">{{ newNoteError }}</FieldError>
+            </Field>
+          </FieldGroup>
+          <DialogFooter class="mt-4">
+            <Button type="button" variant="secondary" size="sm" :disabled="newNoteSubmitting" @click="newNoteOpen = false">
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" :disabled="newNoteSubmitting">
+              <Spinner v-if="newNoteSubmitting" data-icon="inline-start" />
+              Create &amp; Edit
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- DIALOG: RENAME / MOVE -->
+    <Dialog :open="Boolean(movingItem)" @update:open="(open) => { if (!open) movingItem = null; }">
+      <DialogContent class="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle class="font-mono text-sm">Rename or Move</DialogTitle>
+          <DialogDescription class="font-mono text-xs truncate">
+            Updating /{{ movingItem?.relPath }}
+          </DialogDescription>
+        </DialogHeader>
+        <form @submit.prevent="submitMove">
+          <FieldGroup>
+            <Field>
+              <FieldLabel class="font-mono text-xs">Destination folder</FieldLabel>
+              <Select v-model="moveTargetDir">
+                <SelectTrigger class="w-full font-mono text-xs">
+                  <SelectValue placeholder="Choose folder" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem
+                      v-for="d in dirs"
+                      :key="d || '__r'"
+                      :value="d || ROOT_SELECT_VALUE"
+                      class="font-mono text-xs"
+                    >
+                      /{{ d || "workspace" }}
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field :data-invalid="Boolean(moveError) || undefined">
+              <FieldLabel for="fm-move-name" class="font-mono text-xs">Name</FieldLabel>
+              <Input
+                id="fm-move-name"
+                v-model="moveTargetName"
+                type="text"
+                :aria-invalid="Boolean(moveError)"
+                class="font-mono text-xs"
+              />
+              <FieldError v-if="moveError">{{ moveError }}</FieldError>
+            </Field>
+          </FieldGroup>
+          <DialogFooter class="mt-4">
+            <Button type="button" variant="secondary" size="sm" :disabled="moveSubmitting" @click="movingItem = null">
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" :disabled="moveSubmitting">
+              <Spinner v-if="moveSubmitting" data-icon="inline-start" />
+              Apply
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ALERT DIALOG: DELETE CONFIRMATION -->
+    <AlertDialog :open="Boolean(entryPendingDelete)" @update:open="(open) => { if (!open) entryPendingDelete = null; }">
+      <AlertDialogContent class="rounded-2xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle class="font-mono text-sm">
+            Delete {{ entryPendingDelete?.isDir ? "folder" : "file" }}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes <strong>{{ entryPendingDelete?.name }}</strong>{{
+              entryPendingDelete?.isDir ? " and all files inside it" : ""
+            }}. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="deleteSubmitting">Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" :disabled="deleteSubmitting" @click.prevent="confirmDelete">
+            <Spinner v-if="deleteSubmitting" data-icon="inline-start" />
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
 <style scoped>
 .fm-shell {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-}
-.fm-shell.is-dragover {
-  outline: 2px dashed var(--fg);
-  outline-offset: 4px;
-  border-radius: var(--radius-card);
-}
-.fm-tree-body {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.fm-tree-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 330px;
-  overflow-y: auto;
-}
-.fm-dir-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  text-align: left;
-  padding: 6px 10px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--fg-muted);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  cursor: pointer;
-  transition:
-    background-color 120ms var(--ease-out),
-    color 120ms var(--ease-out),
-    transform 100ms var(--ease-out);
-}
-.fm-dir-btn:hover {
-  background: var(--surface-alt);
-  color: var(--fg);
-}
-.fm-dir-btn:active {
-  transform: scale(0.985);
-}
-.fm-dir-btn.active {
-  background: var(--fg);
-  color: #ffffff;
-}
-.fm-tree-foot {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-}
-
-.fm-main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-.fm-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.fm-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.fm-bc-btn {
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-.fm-bc-btn:hover {
-  background: var(--highlight-yellow);
-}
-.fm-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.fm-search {
-  width: 155px;
-  padding: 6px 12px;
-  border: none;
-  border-radius: var(--radius-input);
-  background: var(--surface-inset);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  outline: none;
-}
-.fm-search:focus {
-  box-shadow: var(--shadow-focus);
-}
-.fm-inline-form {
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.fm-inline-input,
-.fm-inline-select {
-  padding: 6px 12px;
-  border: none;
-  border-radius: var(--radius-input);
-  background: var(--surface);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  outline: none;
-}
-.fm-inline-input {
-  flex: 1;
-  min-width: 140px;
-}
-.fm-banner {
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-.fm-banner-ok {
-  background: var(--success-bg);
-  color: var(--success);
-}
-.fm-banner-err {
-  background: var(--error-bg);
-  color: var(--error);
-}
-.fm-list-wrap {
-  position: relative;
-  min-height: 160px;
-}
-.fm-drop-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  border-radius: 14px;
-  background: rgba(249, 245, 162, 0.92);
-  border: 2px dashed var(--fg);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--fg);
-}
-.fm-empty {
-  padding: 28px 16px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-muted);
-  background: var(--surface-alt);
-  border-radius: 14px;
-}
-.fm-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.fm-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-  flex-wrap: wrap;
-}
-.fm-row:hover {
-  background: var(--surface-inset-hover);
-}
-.fm-row.selected {
-  background: var(--highlight-yellow);
-}
-.fm-row-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 170px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  padding: 0;
-}
-.fm-icon {
-  font-size: 17px;
-  flex-shrink: 0;
-}
-.fm-meta {
-  min-width: 0;
-}
-.fm-name {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--fg);
-  word-break: break-word;
-}
-.fm-sub {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-}
-.fm-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.fm-media-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: var(--surface-alt);
-  padding: 12px;
-  border-radius: var(--radius-media);
-}
-.fm-img-preview {
-  max-width: 100%;
-  max-height: 360px;
-  border-radius: var(--radius-media);
-  object-fit: contain;
-}
-.fm-video-preview {
-  width: 100%;
-  max-height: 360px;
-  border-radius: var(--radius-media);
-  background: #141414;
-}
-.fm-editor {
-  width: 100%;
-  min-height: 260px;
-  padding: 14px;
-  border: none;
-  border-radius: 14px;
-  background: var(--surface-inset);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  resize: vertical;
-  outline: none;
-}
-.fm-editor:focus {
-  box-shadow: var(--shadow-focus);
-}
-.fm-md-box {
-  max-height: 350px;
-  overflow-y: auto;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-}
-.fm-code-box {
-  max-height: 340px;
-  overflow: auto;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--surface-alt);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
 }
 
 @media (max-width: 820px) {

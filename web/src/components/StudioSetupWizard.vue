@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { Button } from "@/components/ui/button";
 import { TIMEZONE_OPTIONS } from "../lib/timezones";
 import OttoMascot from "./OttoMascot.vue";
 interface ConnectorInfo {
@@ -250,12 +251,12 @@ onMounted(() => {
           <div v-if="errorMsg" class="wiz-err">{{ errorMsg }}</div>
 
           <div class="wizard-actions">
-            <button type="button" class="btn btn-sm btn-otto-secondary" :disabled="saving" @click="skipSetup">
+            <Button type="button" variant="secondary" size="sm" :disabled="saving" @click="skipSetup">
               Skip for now
-            </button>
-            <button type="button" class="btn btn-sm btn-otto-primary" @click="goStep2">
+            </Button>
+            <Button type="button" size="sm" @click="goStep2">
               Next: Passcode →
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -295,12 +296,12 @@ onMounted(() => {
           <div v-if="errorMsg" class="wiz-err">{{ errorMsg }}</div>
 
           <div class="wizard-actions">
-            <button type="button" class="btn btn-sm btn-otto-secondary" @click="step = 1; errorMsg = ''">
+            <Button type="button" variant="secondary" size="sm" @click="step = 1; errorMsg = ''">
               ← Back
-            </button>
-            <button type="button" class="btn btn-sm btn-otto-primary" @click="goStep3">
+            </Button>
+            <Button type="button" size="sm" @click="goStep3">
               {{ newPassword.trim() ? "Next: Check Connectors →" : "Keep Current & Next →" }}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -343,12 +344,12 @@ onMounted(() => {
           <div v-if="errorMsg" class="wiz-err">{{ errorMsg }}</div>
 
           <div class="wizard-actions">
-            <button type="button" class="btn btn-sm btn-otto-secondary" :disabled="saving" @click="step = 2; errorMsg = ''">
+            <Button type="button" variant="secondary" size="sm" :disabled="saving" @click="step = 2; errorMsg = ''">
               ← Back
-            </button>
-            <button type="button" class="btn btn-sm btn-otto-primary" :disabled="saving" @click="finishSetup">
+            </Button>
+            <Button type="button" size="sm" :disabled="saving" @click="finishSetup">
               {{ saving ? "Opening Studio..." : "Enter (y)our studio →" }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

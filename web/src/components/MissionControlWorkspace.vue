@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, PlusIcon, XIcon } from "@lucide/vue";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { renderMarkdown } from "../lib/markdown";
 import type { StudioTab } from "./ChatHeader.vue";
 import LearnedPlaybooksCard from "./LearnedPlaybooksCard.vue";
@@ -534,9 +536,11 @@ defineExpose({ fetchAll });
             <div class="clock-sub truncate">
               {{ nextEvent ? `${nextEvent.title} · ${formatTime(nextEvent.startAt)}` : "No stream scheduled yet" }}
             </div>
-            <button
+            <Button
               type="button"
-              class="btn btn-xs btn-otto-secondary clock-btn"
+              variant="secondary"
+              size="xs"
+              class="clock-btn"
               @click="
                 nextEvent
                   ? emit('askPrompt', `Let's prep for my scheduled ${nextEvent.type} '${nextEvent.title}' (${nextEvent.startAt}). Review run-of-show, Buffer drafts, and readiness.`)
@@ -544,7 +548,7 @@ defineExpose({ fetchAll });
               "
             >
               {{ nextEvent ? "Prep with Otto" : "Schedule Stream" }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -578,14 +582,15 @@ defineExpose({ fetchAll });
                 class="pill-input"
                 placeholder="Quick-add stream, collab, or reminder..."
               />
-              <button
+              <Button
                 type="submit"
-                class="btn btn-sm btn-otto-primary quick-plus"
+                size="icon-sm"
+                class="quick-plus"
                 :disabled="!quickAddText.trim()"
                 aria-label="Add to calendar"
               >
-                +
-              </button>
+                <PlusIcon />
+              </Button>
             </form>
             <div v-if="googleSyncNote" class="text-[11px] font-mono text-[var(--fg-muted)]">{{ googleSyncNote }}</div>
 
@@ -612,21 +617,25 @@ defineExpose({ fetchAll });
                     </span>
                   </div>
                   <div class="flex items-center gap-1">
-                    <button
+                    <Button
                       type="button"
-                      class="btn btn-xs btn-otto-secondary"
+                      variant="secondary"
+                      size="xs"
                       @click="emit('askPrompt', `Let's prep for my scheduled ${evt.type} '${evt.title}' (${evt.startAt}). Review run-of-show, Buffer drafts, and readiness.`)"
                     >
                       Prep
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      class="btn btn-xs btn-ghost text-error"
+                      variant="ghost"
+                      size="icon-xs"
+                      class="text-destructive hover:text-destructive"
                       :disabled="cancellingEventId === evt.id"
                       @click="cancelEvent(evt.id)"
                     >
-                      {{ cancellingEventId === evt.id ? "..." : "✕" }}
-                    </button>
+                      <span v-if="cancellingEventId === evt.id">...</span>
+                      <XIcon v-else />
+                    </Button>
                   </div>
                 </div>
                 <div class="font-medium text-sm mt-1">{{ evt.title }}</div>
@@ -688,20 +697,23 @@ defineExpose({ fetchAll });
             </div>
 
             <div class="flex flex-wrap gap-2 mt-auto pt-2">
-              <button
-                class="btn btn-xs btn-otto-primary flex-1"
+              <Button
+                size="xs"
+                class="flex-1"
                 type="button"
                 @click="emit('askPrompt', 'Review my current dossier, goals, and schedule and tell me what needs attention next.')"
               >
                 Audit Dossier
-              </button>
-              <button
-                class="btn btn-xs btn-otto-secondary flex-1"
+              </Button>
+              <Button
+                variant="secondary"
+                size="xs"
+                class="flex-1"
                 type="button"
                 @click="emit('askPrompt', 'Audit my latest YouTube uploads and roast my titles & thumbnails (Squint Test).')"
               >
                 Audit YouTube
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -724,16 +736,18 @@ defineExpose({ fetchAll });
             <div v-if="recentFiles.length === 0" class="empty-inset space-y-2.5">
               <div>Shared 2-way studio desk. Upload human thumbnail drafts, CSVs, or ask Otto to cut raw VOD clips (.mp4 + .srt).</div>
               <div class="flex flex-wrap gap-2">
-                <button class="btn btn-xs btn-otto-primary" type="button" @click="openFilesAt('uploads')">
-                  + Upload Files
-                </button>
-                <button
-                  class="btn btn-xs btn-otto-secondary"
+                <Button size="xs" type="button" @click="openFilesAt('uploads')">
+                  <PlusIcon data-icon="inline-start" />
+                  Upload Files
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="xs"
                   type="button"
                   @click="emit('askPrompt', 'Help me find hype moments and cut raw clips from my latest livestream VOD.')"
                 >
                   Scan VOD
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -747,19 +761,19 @@ defineExpose({ fetchAll });
                     </div>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
-                    <button
+                    <Button
                       type="button"
-                      class="btn btn-xs btn-otto-primary"
+                      size="xs"
                       @click="askAboutWorkspaceEntry(file)"
                     >
                       {{ file.kind === "image" ? "Squint" : file.kind === "video" ? "Review" : "Ask Otto" }}
-                    </button>
+                    </Button>
                     <a
                       :href="`/api/workspace/file?path=${encodeURIComponent(file.relPath)}&download=1`"
-                      class="btn btn-xs btn-otto-secondary no-underline"
+                      :class="buttonVariants({ variant: 'secondary', size: 'icon-xs' })"
                       title="Download"
                     >
-                      ↓
+                      <DownloadIcon />
                     </a>
                   </div>
                 </div>
@@ -861,9 +875,13 @@ defineExpose({ fetchAll });
 
           <div class="otto-card-body">
             <div class="flex items-center justify-between gap-2">
-              <button class="btn btn-xs btn-otto-secondary" type="button" @click="shiftMonth(-1)">‹</button>
+              <Button variant="secondary" size="icon-xs" type="button" aria-label="Previous month" @click="shiftMonth(-1)">
+                <ChevronLeftIcon />
+              </Button>
               <span class="font-mono text-xs font-medium">{{ monthLabel }}</span>
-              <button class="btn btn-xs btn-otto-secondary" type="button" @click="shiftMonth(1)">›</button>
+              <Button variant="secondary" size="icon-xs" type="button" aria-label="Next month" @click="shiftMonth(1)">
+                <ChevronRightIcon />
+              </Button>
             </div>
             <div v-if="googleSyncNote" class="text-[11px] font-mono text-[var(--fg-muted)]">{{ googleSyncNote }}</div>
             <div class="cal-weekdays">
@@ -908,14 +926,15 @@ defineExpose({ fetchAll });
                 class="pill-input"
                 placeholder="Add stream, collab, or reminder..."
               />
-              <button
+              <Button
                 type="submit"
-                class="btn btn-sm btn-otto-primary quick-plus"
+                size="icon-sm"
+                class="quick-plus"
                 :disabled="!quickAddText.trim()"
                 aria-label="Add to calendar"
               >
-                +
-              </button>
+                <PlusIcon />
+              </Button>
             </form>
 
             <div v-if="visibleAgendaEvents.length === 0" class="empty-inset">
@@ -954,21 +973,25 @@ defineExpose({ fetchAll });
                 </div>
 
                 <div class="flex items-center gap-2 pt-1">
-                  <button
+                  <Button
                     type="button"
-                    class="btn btn-xs btn-otto-secondary flex-1"
+                    variant="secondary"
+                    size="xs"
+                    class="flex-1"
                     @click="emit('askPrompt', `Let's prep for my scheduled ${evt.type} '${evt.title}' (${evt.startAt}). Review run-of-show, Buffer drafts, and readiness.`)"
                   >
                     Ask Otto to Prep
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    class="btn btn-xs btn-ghost text-error"
+                    variant="ghost"
+                    size="xs"
+                    class="text-destructive hover:text-destructive"
                     :disabled="cancellingEventId === evt.id"
                     @click="cancelEvent(evt.id)"
                   >
                     {{ cancellingEventId === evt.id ? "..." : "Cancel" }}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1008,13 +1031,13 @@ defineExpose({ fetchAll });
         <div class="otto-card-head">
           <span>(Y)our dossier.</span>
           <div class="otto-card-head-right">
-            <button
-              class="btn btn-xs btn-otto-primary"
+            <Button
+              size="xs"
               type="button"
               @click="emit('askPrompt', 'Review my current goals, schedule, and 3+1 stream tracker and tell me what needs attention next.')"
             >
               Audit with Otto
-            </button>
+            </Button>
           </div>
         </div>
         <div class="otto-card-body">

@@ -141,60 +141,6 @@ body::after {
   border-radius: 0;
 }
 
-/* Monochrome Pill Buttons (over DaisyUI v5) */
-.btn-otto-secondary {
-  border: none !important;
-  border-radius: var(--radius-pill) !important;
-  background: var(--surface-alt) !important;
-  color: var(--fg) !important;
-  font-family: var(--font-mono) !important;
-  font-weight: 400 !important;
-  box-shadow: none !important;
-  transition: background var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
-}
-.btn-otto-secondary:hover:not(:disabled) {
-  background: var(--surface-inset-hover) !important;
-}
-.btn-otto-secondary:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.btn-otto-primary {
-  border: none !important;
-  border-radius: var(--radius-pill) !important;
-  background: var(--accent) !important;
-  color: var(--accent-fg) !important;
-  font-family: var(--font-mono) !important;
-  font-weight: 500 !important;
-  box-shadow: none !important;
-  transition: background var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
-}
-.btn-otto-primary:hover:not(:disabled) {
-  background: var(--accent-hover) !important;
-}
-.btn-otto-primary:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.btn-otto-primary:disabled,
-.btn-otto-secondary:disabled {
-  opacity: 0.42 !important;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  border: none !important;
-  border-radius: var(--radius-pill) !important;
-  background: var(--error-bg) !important;
-  color: var(--error) !important;
-  font-family: var(--font-mono) !important;
-  font-weight: 500 !important;
-  box-shadow: none !important;
-}
-.btn-danger:hover:not(:disabled) {
-  background: #fbd3d3 !important;
-}
-
 /* Restrained Semantic Chips */
 .otto-chip {
   display: inline-flex;

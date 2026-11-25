@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
-
+import { PaperclipIcon, Loader2Icon, SendHorizontalIcon, SquareIcon, XIcon } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
 export interface ComposerAttachment {
   name: string;
   relPath: string;
@@ -128,7 +129,7 @@ function attachIcon(kind: string): string {
         <span>{{ attachIcon(att.kind) }}</span>
         <span class="truncate max-w-[160px]">{{ att.name }}</span>
         <button type="button" class="attach-rm" aria-label="Remove attachment" @click="removeAttachment(att.relPath)">
-          ✕
+          <XIcon class="size-3" />
         </button>
       </span>
     </div>
@@ -136,16 +137,18 @@ function attachIcon(kind: string): string {
     <div v-if="uploadError" class="attach-err">{{ uploadError }}</div>
 
     <form class="composer" @submit.prevent="submit">
-      <button
+      <Button
         type="button"
-        class="attach-btn"
+        variant="secondary"
+        size="icon-sm"
         :disabled="uploading || busy"
         title="Attach file to workspace/uploads & send to Otto"
         aria-label="Attach file"
         @click="fileInputRef?.click()"
       >
-        {{ uploading ? "…" : "📎" }}
-      </button>
+        <Loader2Icon v-if="uploading" class="animate-spin" />
+        <PaperclipIcon v-else />
+      </Button>
       <textarea
         ref="inputRef"
         :value="modelValue"
@@ -154,14 +157,18 @@ function attachIcon(kind: string): string {
         @input="onInput"
         @keydown="onKeydown"
       ></textarea>
-      <button v-if="busy" class="btn btn-sm btn-danger" type="button" @click="emit('stop')">Stop</button>
-      <button
-        class="btn btn-sm btn-otto-primary"
+      <Button v-if="busy" variant="destructive" size="sm" type="button" @click="emit('stop')">
+        <SquareIcon data-icon="inline-start" />
+        Stop
+      </Button>
+      <Button
+        size="sm"
         type="submit"
         :disabled="busy || uploading || (!modelValue.trim() && attachments.length === 0)"
       >
+        <SendHorizontalIcon data-icon="inline-start" />
         Send
-      </button>
+      </Button>
     </form>
   </div>
 </template>

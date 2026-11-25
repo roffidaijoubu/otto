@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { Trash2Icon } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
 import { renderMarkdown } from "../lib/markdown";
-
 export interface LearnedSkillItem {
   slug: string;
   title: string;
@@ -201,22 +202,23 @@ watch(
         </div>
 
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
-          <button
+          <Button
             type="button"
-            class="btn btn-xs btn-otto-secondary"
+            variant="secondary"
+            size="xs"
             :disabled="savingConfig"
             @click="toggleNightly"
           >
             {{ savingConfig ? "Saving..." : config.enabled ? "Pause Nightly" : "Enable Nightly" }}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class="btn btn-xs btn-otto-primary"
+            size="xs"
             :disabled="runningNow || config.running"
             @click="runReflectNow"
           >
             {{ config.running || runningNow ? "Reflecting..." : "Reflect Now" }}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -254,37 +256,41 @@ watch(
             </div>
 
             <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
-              <button
+              <Button
                 type="button"
-                class="btn btn-xs btn-otto-secondary"
+                variant="secondary"
+                size="xs"
                 @click="expandedSlug = expandedSlug === sk.slug ? null : sk.slug"
               >
                 {{ expandedSlug === sk.slug ? "Hide" : "View" }}
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="sk.status !== 'active'"
                 type="button"
-                class="btn btn-xs btn-otto-primary"
+                size="xs"
                 @click="setSkillStatus(sk.slug, 'active')"
               >
                 Approve
-              </button>
-              <button
+              </Button>
+              <Button
                 v-if="sk.status === 'pending'"
                 type="button"
-                class="btn btn-xs btn-otto-secondary"
+                variant="secondary"
+                size="xs"
                 @click="setSkillStatus(sk.slug, 'rejected')"
               >
                 Reject
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                class="btn btn-xs btn-otto-ghost text-error"
+                variant="ghost"
+                size="icon-xs"
+                class="text-destructive hover:text-destructive"
                 title="Delete learned playbook"
                 @click="removeSkill(sk.slug)"
               >
-                ✕
-              </button>
+                <Trash2Icon />
+              </Button>
             </div>
           </div>
 

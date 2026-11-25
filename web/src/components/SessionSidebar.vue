@@ -1,7 +1,25 @@
 <script setup lang="ts">
+import { MessageSquareIcon, PlusIcon } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import type { SessionSummary } from "../types/chat";
 
-defineProps<{
+const props = defineProps<{
   open: boolean;
   sessions: SessionSummary[];
   busy: boolean;
@@ -26,104 +44,66 @@ function formatTime(iso: string): string {
     return "";
   }
 }
+
+function onOpenChange(next: boolean) {
+  if (!next) emit("close");
+}
 </script>
 
 <template>
-  <div v-if="open" class="backdrop" @click="emit('close')"></div>
-  <aside v-if="open" class="sidebar otto-card">
-    <div class="otto-card-head">
-      <span>(Y)our chats.</span>
-      <div class="otto-card-head-right">
-        <button class="btn btn-xs btn-otto-primary" type="button" :disabled="busy" @click="emit('newChat')">
-          + New
-        </button>
-        <button class="btn btn-xs btn-otto-secondary" type="button" @click="emit('close')">
-          ✕
-        </button>
-      </div>
-    </div>
-    <div class="session-list">
-      <div v-if="sessions.length === 0" class="session-empty">No previous chats yet.</div>
-      <button
-        v-for="s in sessions"
-        :key="s.path"
-        type="button"
-        class="session-item"
-        :class="{ active: s.active }"
-        :disabled="busy || s.active"
-        @click="emit('select', s)"
-      >
-        <span class="session-item-title">{{ s.title }}</span>
-        <span class="session-item-meta">{{ formatTime(s.updatedAt) }} · {{ s.messageCount }} msgs</span>
-      </button>
-    </div>
-  </aside>
-</template>
+  <Sheet :open="props.open" @update:open="onOpenChange">
+    <SheetContent side="right" class="w-full sm:max-w-sm p-0 gap-0">
+      <SheetHeader class="border-b border-border px-4 py-3 pr-12">
+        <div class="flex items-center justify-between gap-2">
+          <SheetTitle class="font-mono text-xs font-medium tracking-wide">
+            (Y)our chats.
+          </SheetTitle>
+          <Button size="xs" type="button" :disabled="busy" @click="emit('newChat')">
+            <PlusIcon data-icon="inline-start" />
+            New
+          </Button>
+        </div>
+        <SheetDescription class="sr-only">
+          Switch between previous Otto studio chat sessions or start a new conversation.
+        </SheetDescription>
+      </SheetHeader>
 
-<style scoped>
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(48, 48, 48, 0.25);
-  backdrop-filter: blur(2px);
-  z-index: 40;
-}
-.sidebar {
-  position: fixed;
-  top: 66px;
-  right: 18px;
-  bottom: 18px;
-  width: min(92vw, 320px);
-  z-index: 50;
-}
-.session-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.session-empty {
-  padding: 20px 12px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-.session-item {
-  width: 100%;
-  text-align: left;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 12px;
-  background: var(--surface-alt);
-  color: var(--fg);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-.session-item:hover:not(:disabled) {
-  background: var(--surface-inset-hover);
-}
-.session-item.active {
-  background: var(--highlight-yellow);
-  cursor: default;
-}
-.session-item-title {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.session-item-meta {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-}
-</style>
+      <ScrollArea class="flex-1 min-h-0">
+        <div class="flex flex-col gap-1.5 p-3">
+          <Empty v-if="sessions.length === 0" class="border-0 py-10">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquareIcon />
+              </EmptyMedia>
+              <EmptyTitle class="font-mono text-xs">No previous chats yet.</EmptyTitle>
+              <EmptyDescription class="text-xs">
+                Start a conversation with Otto to keep your session history here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+
+          <button
+            v-for="s in sessions"
+            :key="s.path"
+            type="button"
+            :disabled="busy || s.active"
+            :class="
+              cn(
+                'flex flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left transition-colors disabled:cursor-default',
+                s.active
+                  ? 'bg-highlight-yellow text-foreground'
+                  : 'bg-secondary/70 text-foreground hover:bg-accent'
+              )
+            "
+            @click="emit('select', s)"
+          >
+            <span class="truncate text-xs font-medium">{{ s.title }}</span>
+            <span class="font-mono text-[10.5px] text-muted-foreground">
+              {{ formatTime(s.updatedAt) }} · {{ s.messageCount }} msgs
+            </span>
+          </button>
+        </div>
+      </ScrollArea>
+    </SheetContent>
+  </Sheet>
+</template>
