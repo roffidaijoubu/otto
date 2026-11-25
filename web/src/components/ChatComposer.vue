@@ -31,7 +31,7 @@ function autoResize() {
   const el = inputRef.value;
   if (!el) return;
   el.style.height = "auto";
-  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  el.style.height = Math.min(el.scrollHeight, 150) + "px";
 }
 
 watch(
@@ -140,7 +140,7 @@ function attachIcon(kind: string): string {
         type="button"
         class="attach-btn"
         :disabled="uploading || busy"
-        title="Attach file to workspace/uploads & send to Professor L"
+        title="Attach file to workspace/uploads & send to Otto"
         aria-label="Attach file"
         @click="fileInputRef?.click()"
       >
@@ -150,13 +150,13 @@ function attachIcon(kind: string): string {
         ref="inputRef"
         :value="modelValue"
         rows="1"
-        placeholder="Talk to Professor L... (or drop a thumbnail/clip/CSV)"
+        placeholder="Talk to Otto... (or drop files)"
         @input="onInput"
         @keydown="onKeydown"
       ></textarea>
-      <button v-if="busy" class="btn btn-md btn-danger" type="button" @click="emit('stop')">Stop</button>
+      <button v-if="busy" class="btn btn-sm btn-danger" type="button" @click="emit('stop')">Stop</button>
       <button
-        class="btn btn-md btn-cafe-primary"
+        class="btn btn-sm btn-otto-primary"
         type="submit"
         :disabled="busy || uploading || (!modelValue.trim() && attachments.length === 0)"
       >
@@ -170,12 +170,11 @@ function attachIcon(kind: string): string {
 .composer-wrap {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
-  background: var(--bg);
-  padding: 12px 16px 16px;
+  background: var(--surface);
+  padding: 12px 14px 14px;
 }
 .composer-wrap.is-dragover {
-  background: var(--surface-inset);
-  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--highlight-yellow);
 }
 .attach-chips {
   display: flex;
@@ -187,24 +186,20 @@ function attachIcon(kind: string): string {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
-  border-radius: 9999px;
-  background: var(--surface);
-  box-shadow: var(--shadow-raised-sm);
-  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--highlight-cyan);
+  font-size: 11px;
   font-family: var(--font-mono);
   color: var(--fg);
 }
 .attach-rm {
   border: none;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--fg);
   cursor: pointer;
   padding: 0 2px;
   font-size: 11px;
-}
-.attach-rm:hover {
-  color: var(--error);
 }
 .attach-err {
   font-size: 11px;
@@ -213,61 +208,55 @@ function attachIcon(kind: string): string {
   margin-bottom: 6px;
 }
 .composer {
-  max-width: var(--max-width);
-  margin: 0 auto;
   display: flex;
   gap: 8px;
   align-items: flex-end;
 }
 .attach-btn {
-  width: 40px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   flex-shrink: 0;
   border: none;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-raised-sm);
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
   color: var(--fg);
-  font-size: 16px;
+  font-size: 15px;
   cursor: pointer;
   display: grid;
   place-items: center;
-  transition: transform var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .attach-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+  background: var(--surface-inset-hover);
 }
 .attach-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .composer textarea {
   flex: 1;
-  min-height: 44px;
-  max-height: 160px;
+  min-height: 38px;
+  max-height: 150px;
   resize: none;
-  padding: 11px 14px;
+  padding: 9px 15px;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-input);
   background: var(--surface-inset);
-  box-shadow: var(--shadow-inset);
   color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   line-height: 1.45;
   outline: none;
-  transition: background var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
 .composer textarea::placeholder {
   color: var(--fg-muted);
-  opacity: 0.75;
 }
 .composer textarea:hover {
   background: var(--surface-inset-hover);
 }
 .composer textarea:focus {
   background: var(--surface-inset);
-  box-shadow: var(--shadow-inset), var(--shadow-focus);
+  box-shadow: var(--shadow-focus);
 }
 </style>

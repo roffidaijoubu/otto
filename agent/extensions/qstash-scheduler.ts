@@ -133,7 +133,7 @@ async function createGoogleCalendarEvent(evt: {
     const raw = await execGoogleCalendarTool(ctx, "GOOGLECALENDAR_CREATE_EVENT", {
       calendar_id: "primary",
       summary: `[${evt.type.toUpperCase()}] ${evt.title}`,
-      description: evt.notes || `Scheduled via Professor L (${evt.type})`,
+      description: evt.notes || `Scheduled via Otto (${evt.type})`,
       start_datetime: toNaiveUtcDatetime(evt.startMs),
       timezone: "UTC",
       event_duration_hour: hours,
@@ -369,7 +369,7 @@ export default function (pi: ExtensionAPI) {
         prompt: {
           type: "string",
           description:
-            "Exact instruction for Professor L to execute when woken up (e.g. 'Remind the streamer their collab starts in 1 hour and check their Buffer drafts').",
+            "Exact instruction for Otto to execute when woken up (e.g. 'Remind the streamer their collab starts in 1 hour and check their Buffer drafts').",
         },
         runAt: {
           type: "string",

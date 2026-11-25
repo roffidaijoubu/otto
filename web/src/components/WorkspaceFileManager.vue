@@ -43,18 +43,15 @@ const dragOver = ref(false);
 const statusMsg = ref("");
 const errorMsg = ref("");
 
-// Inline folder / note creation
 const creatingFolder = ref(false);
 const newFolderName = ref("");
 const creatingNote = ref(false);
 const newNoteName = ref("");
 
-// Rename / Move inline state
 const movingItem = ref<WorkspaceEntry | null>(null);
 const moveTargetName = ref("");
 const moveTargetDir = ref("");
 
-// Preview / Editor state
 const selectedFile = ref<WorkspaceEntry | null>(null);
 const textContent = ref("");
 const originalTextContent = ref("");
@@ -229,13 +226,8 @@ async function uploadFileList(fileList: FileList | File[]) {
   try {
     const form = new FormData();
     form.append("dir", currentPath.value || "uploads");
-    for (const f of arr) {
-      form.append("files", f);
-    }
-    const res = await fetch("/api/workspace/upload", {
-      method: "POST",
-      body: form,
-    });
+    for (const f of arr) form.append("files", f);
+    const res = await fetch("/api/workspace/upload", { method: "POST", body: form });
     const data = (await res.json()) as {
       ok?: boolean;
       uploaded?: Array<{ name: string; relPath: string }>;
@@ -246,7 +238,7 @@ async function uploadFileList(fileList: FileList | File[]) {
       return;
     }
     const count = data.uploaded?.length || arr.length;
-    setFlash(`Uploaded ${count} file${count === 1 ? "" : "s"} to ${currentPath.value || "uploads"}`);
+    setFlash(`Uploaded ${count} file${count === 1 ? "" : "s"} to /${currentPath.value || "uploads"}`);
     if (!currentPath.value) {
       await loadDirectory("uploads");
     } else {
@@ -353,7 +345,7 @@ async function submitMove() {
     selectedFile.value = null;
   }
   movingItem.value = null;
-  setFlash(`Moved to ${newPath}`);
+  setFlash(`Moved to /${newPath}`);
   await loadDirectory();
 }
 
@@ -376,7 +368,7 @@ async function deleteEntry(entry: WorkspaceEntry) {
   await loadDirectory();
 }
 
-function askProfessorAbout(entry: WorkspaceEntry) {
+function askOttoAbout(entry: WorkspaceEntry) {
   const hidden = `<hidden>Workspace file absolute path: ${entry.absPath} (relative: ${entry.relPath}, type: ${entry.kind})</hidden>`;
   if (entry.kind === "image") {
     emit(
@@ -394,14 +386,14 @@ function askProfessorAbout(entry: WorkspaceEntry) {
   }
   emit(
     "askPrompt",
-    `Read and review my workspace file "${entry.relPath}" and give me sharp Professor L feedback.\n${hidden}`
+    `Read and review my workspace file "${entry.relPath}" and give me sharp Otto feedback.\n${hidden}`
   );
 }
 
 function askActionLabel(entry: WorkspaceEntry): string {
   if (entry.kind === "image") return "Squint Test";
   if (entry.kind === "video") return "Review Clip";
-  return "Ask L";
+  return "Ask Otto";
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -440,345 +432,280 @@ defineExpose({ loadDirectory, navigateTo });
     @dragleave.self="dragOver = false"
     @drop.prevent="onDrop"
   >
-    <input
-      ref="fileInputRef"
-      type="file"
-      multiple
-      class="hidden"
-      @change="onFileInputChange"
-    />
+    <input ref="fileInputRef" type="file" multiple class="hidden" @change="onFileInputChange" />
 
-    <!-- LEFT SIDEBAR: FOLDER TREE + STORAGE -->
-    <aside class="fm-tree cafe-card">
-      <div class="fm-tree-head">
-        <div class="fm-tree-title">Studio Folders</div>
-        <div class="fm-storage-pill">{{ formatBytes(stats.totalBytes) }}</div>
+    <!-- LEFT SIDEBAR: (Y)our folders. -->
+    <aside class="otto-card fm-tree">
+      <div class="otto-card-head">
+        <span>(Y)our folders.</span>
+        <div class="otto-card-head-right">
+          <span class="text-[10px] font-mono text-[var(--fg-muted)]">{{ formatBytes(stats.totalBytes) }}</span>
+        </div>
       </div>
 
-      <div class="fm-tree-list">
-        <button
-          v-for="d in dirs"
-          :key="d || '__root__'"
-          type="button"
-          class="fm-dir-btn"
-          :class="{ active: currentPath === d && !searchQuery.trim() }"
-          :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
-          @click="navigateTo(d)"
-        >
-          <span>{{ d === "clips" ? "🎬" : d === "thumbnails" ? "🖼" : d === "scripts" ? "📝" : d === "briefs" ? "📋" : "📁" }}</span>
-          <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
-        </button>
-      </div>
+      <div class="fm-tree-body">
+        <div class="fm-tree-list">
+          <button
+            v-for="d in dirs"
+            :key="d || '__root__'"
+            type="button"
+            class="fm-dir-btn"
+            :class="{ active: currentPath === d && !searchQuery.trim() }"
+            :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
+            @click="navigateTo(d)"
+          >
+            <span>{{ d === "clips" ? "🎬" : d === "thumbnails" ? "🖼" : d === "scripts" ? "📝" : d === "briefs" ? "📋" : "📁" }}</span>
+            <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
+          </button>
+        </div>
 
-      <div class="fm-tree-foot">
-        <div>{{ stats.fileCount }} files · {{ stats.clipCount }} clips</div>
-        <a :href="zipUrl(currentPath)" class="btn btn-xs btn-cafe-secondary w-full mt-2 no-underline">
-          Download Folder ZIP ↓
-        </a>
+        <div class="fm-tree-foot">
+          <div>{{ stats.fileCount }} files · {{ stats.clipCount }} clips</div>
+          <a :href="zipUrl(currentPath)" class="btn btn-xs btn-otto-secondary w-full mt-2 no-underline">
+            Download ZIP ↓
+          </a>
+        </div>
       </div>
     </aside>
 
-    <!-- RIGHT MAIN: TOOLBAR + FILE LIST + INLINE PREVIEW/EDITOR -->
+    <!-- RIGHT MAIN: (Y)our files. + Preview/Editor -->
     <div class="fm-main">
-      <!-- TOOLBAR -->
-      <div class="cafe-card fm-toolbar">
-        <div class="fm-breadcrumbs">
-          <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
-            <span v-if="idx > 0" class="opacity-40">/</span>
-            <button type="button" class="fm-bc-btn" @click="navigateTo(bc.path)">
-              {{ bc.name }}
-            </button>
-          </template>
-        </div>
+      <div class="otto-card">
+        <div class="otto-card-head">(Y)our files.</div>
+        <div class="otto-card-body">
+          <div class="fm-toolbar">
+            <div class="fm-breadcrumbs">
+              <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
+                <span v-if="idx > 0" class="opacity-40">/</span>
+                <button type="button" class="fm-bc-btn" @click="navigateTo(bc.path)">
+                  {{ bc.name }}
+                </button>
+              </template>
+            </div>
 
-        <div class="fm-actions">
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="fm-search"
-            placeholder="Search files..."
-            @input="onSearchInput"
-          />
-          <button
-            type="button"
-            class="btn btn-xs btn-cafe-primary"
-            :disabled="uploading"
-            @click="triggerUploadPicker"
-          >
-            {{ uploading ? "Uploading..." : "+ Upload" }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-xs btn-cafe-secondary"
-            @click="creatingNote = !creatingNote; creatingFolder = false"
-          >
-            + Note
-          </button>
-          <button
-            type="button"
-            class="btn btn-xs btn-cafe-secondary"
-            @click="creatingFolder = !creatingFolder; creatingNote = false"
-          >
-            + Folder
-          </button>
-        </div>
-      </div>
-
-      <!-- INLINE CREATE FOLDER / NOTE BARS -->
-      <form v-if="creatingFolder" class="cafe-card fm-inline-form" @submit.prevent="submitNewFolder">
-        <span class="text-xs font-medium">New folder in /{{ currentPath || "workspace" }}:</span>
-        <input
-          v-model="newFolderName"
-          type="text"
-          class="fm-inline-input"
-          placeholder="e.g. ep12-assets"
-          autofocus
-        />
-        <button type="submit" class="btn btn-xs btn-cafe-primary">Create</button>
-        <button type="button" class="btn btn-xs btn-ghost" @click="creatingFolder = false">Cancel</button>
-      </form>
-
-      <form v-if="creatingNote" class="cafe-card fm-inline-form" @submit.prevent="submitNewNote">
-        <span class="text-xs font-medium">New Markdown note in /{{ currentPath || "scripts" }}:</span>
-        <input
-          v-model="newNoteName"
-          type="text"
-          class="fm-inline-input"
-          placeholder="e.g. run-of-show.md"
-          autofocus
-        />
-        <button type="submit" class="btn btn-xs btn-cafe-primary">Create &amp; Edit</button>
-        <button type="button" class="btn btn-xs btn-ghost" @click="creatingNote = false">Cancel</button>
-      </form>
-
-      <!-- INLINE RENAME / MOVE BAR -->
-      <form v-if="movingItem" class="cafe-card fm-inline-form" @submit.prevent="submitMove">
-        <span class="text-xs font-medium">Move/Rename:</span>
-        <select v-model="moveTargetDir" class="fm-inline-select">
-          <option v-for="d in dirs" :key="d || '__r'" :value="d">
-            /{{ d || "workspace" }}
-          </option>
-        </select>
-        <input v-model="moveTargetName" type="text" class="fm-inline-input" />
-        <button type="submit" class="btn btn-xs btn-cafe-primary">Apply</button>
-        <button type="button" class="btn btn-xs btn-ghost" @click="movingItem = null">Cancel</button>
-      </form>
-
-      <!-- STATUS / ERROR BANNERS -->
-      <div v-if="statusMsg" class="fm-banner fm-banner-ok">{{ statusMsg }}</div>
-      <div v-if="errorMsg" class="fm-banner fm-banner-err">{{ errorMsg }}</div>
-
-      <!-- DROPZONE HINT + FILE LIST -->
-      <div class="cafe-card fm-list-card">
-        <div v-if="dragOver" class="fm-drop-overlay">
-          Drop files here to upload into <strong>/{{ currentPath || "uploads" }}</strong>
-        </div>
-
-        <div v-if="loading && items.length === 0" class="fm-empty">Loading workspace...</div>
-
-        <div v-else-if="items.length === 0" class="fm-empty">
-          <p class="mb-2">
-            {{
-              searchQuery.trim()
-                ? `No files match "${searchQuery.trim()}".`
-                : `This folder is empty. Drag & drop files anywhere here, click "+ Upload", or ask Professor L to write a brief or cut a VOD clip.`
-            }}
-          </p>
-          <div class="flex flex-wrap justify-center gap-2">
-            <button type="button" class="btn btn-xs btn-cafe-primary" @click="triggerUploadPicker">
-              Upload Files
-            </button>
-            <button
-              v-if="currentPath === 'clips' || !currentPath"
-              type="button"
-              class="btn btn-xs btn-cafe-secondary"
-              @click="emit('askPrompt', 'Scan my latest YouTube VOD for hype moments and cut the top raw clips (.mp4 + .srt) into my workspace clips folder.')"
-            >
-              Scan a VOD for Clips
-            </button>
+            <div class="fm-actions">
+              <input
+                v-model="searchQuery"
+                type="text"
+                class="fm-search"
+                placeholder="Search files..."
+                @input="onSearchInput"
+              />
+              <button
+                type="button"
+                class="btn btn-xs btn-otto-primary"
+                :disabled="uploading"
+                @click="triggerUploadPicker"
+              >
+                {{ uploading ? "Uploading..." : "+ Upload" }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-otto-secondary"
+                @click="creatingNote = !creatingNote; creatingFolder = false"
+              >
+                + Note
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-otto-secondary"
+                @click="creatingFolder = !creatingFolder; creatingNote = false"
+              >
+                + Folder
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div v-else class="fm-rows">
-          <div
-            v-for="entry in items"
-            :key="entry.relPath"
-            class="fm-row"
-            :class="{ selected: selectedFile?.relPath === entry.relPath }"
-          >
-            <button type="button" class="fm-row-main" @click="openEntry(entry)">
-              <span class="fm-icon">{{ fileIcon(entry) }}</span>
-              <div class="fm-meta">
-                <div class="fm-name">{{ entry.name }}</div>
-                <div class="fm-sub">
-                  <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
-                  <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
-                  <span>{{ formatTime(entry.updatedAt) }}</span>
+          <form v-if="creatingFolder" class="fm-inline-form" @submit.prevent="submitNewFolder">
+            <span class="text-xs font-mono">New folder in /{{ currentPath || "workspace" }}:</span>
+            <input v-model="newFolderName" type="text" class="fm-inline-input" placeholder="e.g. ep12-assets" autofocus />
+            <button type="submit" class="btn btn-xs btn-otto-primary">Create</button>
+            <button type="button" class="btn btn-xs btn-otto-secondary" @click="creatingFolder = false">Cancel</button>
+          </form>
+
+          <form v-if="creatingNote" class="fm-inline-form" @submit.prevent="submitNewNote">
+            <span class="text-xs font-mono">New note in /{{ currentPath || "scripts" }}:</span>
+            <input v-model="newNoteName" type="text" class="fm-inline-input" placeholder="e.g. run-of-show.md" autofocus />
+            <button type="submit" class="btn btn-xs btn-otto-primary">Create &amp; Edit</button>
+            <button type="button" class="btn btn-xs btn-otto-secondary" @click="creatingNote = false">Cancel</button>
+          </form>
+
+          <form v-if="movingItem" class="fm-inline-form" @submit.prevent="submitMove">
+            <span class="text-xs font-mono">Move/Rename:</span>
+            <select v-model="moveTargetDir" class="fm-inline-select">
+              <option v-for="d in dirs" :key="d || '__r'" :value="d">/{{ d || "workspace" }}</option>
+            </select>
+            <input v-model="moveTargetName" type="text" class="fm-inline-input" />
+            <button type="submit" class="btn btn-xs btn-otto-primary">Apply</button>
+            <button type="button" class="btn btn-xs btn-otto-secondary" @click="movingItem = null">Cancel</button>
+          </form>
+
+          <div v-if="statusMsg" class="fm-banner fm-banner-ok">{{ statusMsg }}</div>
+          <div v-if="errorMsg" class="fm-banner fm-banner-err">{{ errorMsg }}</div>
+
+          <div class="fm-list-wrap">
+            <div v-if="dragOver" class="fm-drop-overlay">
+              Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong>
+            </div>
+
+            <div v-if="loading && items.length === 0" class="fm-empty">Loading workspace...</div>
+
+            <div v-else-if="items.length === 0" class="fm-empty">
+              <p class="mb-3">
+                {{
+                  searchQuery.trim()
+                    ? `No files match "${searchQuery.trim()}".`
+                    : `This folder is empty. Drag & drop files here, click "+ Upload", or ask Otto to write a brief or cut a VOD clip.`
+                }}
+              </p>
+              <div class="flex flex-wrap justify-center gap-2">
+                <button type="button" class="btn btn-xs btn-otto-primary" @click="triggerUploadPicker">
+                  Upload Files
+                </button>
+                <button
+                  v-if="currentPath === 'clips' || !currentPath"
+                  type="button"
+                  class="btn btn-xs btn-otto-secondary"
+                  @click="emit('askPrompt', 'Scan my latest YouTube VOD for hype moments and cut the top raw clips (.mp4 + .srt) into my workspace clips folder.')"
+                >
+                  Scan VOD for Clips
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="fm-rows">
+              <div
+                v-for="entry in items"
+                :key="entry.relPath"
+                class="fm-row"
+                :class="{ selected: selectedFile?.relPath === entry.relPath }"
+              >
+                <button type="button" class="fm-row-main" @click="openEntry(entry)">
+                  <span class="fm-icon">{{ fileIcon(entry) }}</span>
+                  <div class="fm-meta">
+                    <div class="fm-name">{{ entry.name }}</div>
+                    <div class="fm-sub">
+                      <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
+                      <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
+                      <span>{{ formatTime(entry.updatedAt) }}</span>
+                    </div>
+                  </div>
+                </button>
+
+                <div class="fm-row-actions">
+                  <template v-if="!entry.isDir">
+                    <button type="button" class="btn btn-xs btn-otto-primary" @click="askOttoAbout(entry)">
+                      {{ askActionLabel(entry) }}
+                    </button>
+                    <a
+                      v-if="entry.matchedSrtRelPath"
+                      :href="fileUrl(entry.matchedSrtRelPath, true)"
+                      class="btn btn-xs btn-otto-secondary no-underline"
+                      title="Download paired .srt captions"
+                    >
+                      .srt ↓
+                    </a>
+                    <a
+                      :href="fileUrl(entry.relPath, true)"
+                      class="btn btn-xs btn-otto-secondary no-underline"
+                      title="Download file"
+                    >
+                      ↓
+                    </a>
+                  </template>
+                  <template v-else>
+                    <a :href="zipUrl(entry.relPath)" class="btn btn-xs btn-otto-secondary no-underline">
+                      ZIP ↓
+                    </a>
+                  </template>
+                  <button type="button" class="btn btn-xs btn-otto-secondary" @click="startMove(entry)">
+                    Move
+                  </button>
+                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="deleteEntry(entry)">
+                    ✕
+                  </button>
                 </div>
               </div>
-            </button>
-
-            <div class="fm-row-actions">
-              <template v-if="!entry.isDir">
-                <button
-                  type="button"
-                  class="btn btn-xs btn-cafe-primary"
-                  @click="askProfessorAbout(entry)"
-                >
-                  {{ askActionLabel(entry) }}
-                </button>
-                <a
-                  v-if="entry.matchedSrtRelPath"
-                  :href="fileUrl(entry.matchedSrtRelPath, true)"
-                  class="btn btn-xs btn-cafe-secondary no-underline"
-                  title="Download paired .srt captions"
-                >
-                  .srt ↓
-                </a>
-                <a
-                  :href="fileUrl(entry.relPath, true)"
-                  class="btn btn-xs btn-cafe-secondary no-underline"
-                  title="Download file"
-                >
-                  ↓
-                </a>
-              </template>
-              <template v-else>
-                <a
-                  :href="zipUrl(entry.relPath)"
-                  class="btn btn-xs btn-cafe-secondary no-underline"
-                  title="Download folder as ZIP"
-                >
-                  ZIP ↓
-                </a>
-              </template>
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost"
-                title="Rename or Move"
-                @click="startMove(entry)"
-              >
-                Move
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost text-error"
-                title="Delete"
-                @click="deleteEntry(entry)"
-              >
-                ✕
-              </button>
             </div>
           </div>
         </div>
       </div>
 
       <!-- INLINE PREVIEW & TIER 3 MARKDOWN/TEXT EDITOR -->
-      <div v-if="selectedFile" class="cafe-card fm-preview">
-        <div class="fm-preview-head">
-          <div class="min-w-0">
-            <div class="font-medium text-sm truncate">
-              {{ fileIcon(selectedFile) }} {{ selectedFile.relPath }}
-            </div>
-            <div class="text-[11px] font-mono opacity-65">
-              {{ formatBytes(selectedFile.sizeBytes) }} · {{ formatTime(selectedFile.updatedAt) }}
-            </div>
-          </div>
-
-          <div class="flex items-center gap-1.5 flex-wrap shrink-0">
-            <button
-              type="button"
-              class="btn btn-xs btn-cafe-primary"
-              @click="askProfessorAbout(selectedFile)"
-            >
-              {{ askActionLabel(selectedFile) }}
-            </button>
-            <button
-              v-if="selectedFile.editable"
-              type="button"
-              class="btn btn-xs btn-cafe-secondary"
-              @click="editMode = !editMode"
-            >
-              {{ editMode ? "Preview" : "Edit" }}
-            </button>
-            <button
-              v-if="selectedFile.editable && editMode"
-              type="button"
-              class="btn btn-xs btn-cafe-primary"
-              :disabled="textSaving || !isTextDirty"
-              @click="saveTextFile"
-            >
-              {{ textSaving ? "Saving..." : isTextDirty ? "Save*" : "Saved" }}
-            </button>
-            <a
-              :href="fileUrl(selectedFile.relPath, true)"
-              class="btn btn-xs btn-cafe-secondary no-underline"
-            >
-              Download ↓
-            </a>
+      <div v-if="selectedFile" class="otto-card">
+        <div class="otto-card-head">
+          <span>(Y)our preview · {{ selectedFile.name }}.</span>
+          <div class="otto-card-head-right">
             <button type="button" class="btn btn-xs btn-ghost" @click="selectedFile = null">✕</button>
           </div>
         </div>
 
-        <!-- IMAGE PREVIEW -->
-        <div v-if="selectedFile.kind === 'image'" class="fm-media-box">
-          <img
-            :src="fileUrl(selectedFile.relPath)"
-            :alt="selectedFile.name"
-            class="fm-img-preview"
-          />
-        </div>
-
-        <!-- VIDEO PREVIEW -->
-        <div v-else-if="selectedFile.kind === 'video'" class="fm-media-box">
-          <video
-            :key="selectedFile.relPath"
-            :src="fileUrl(selectedFile.relPath)"
-            controls
-            preload="metadata"
-            class="fm-video-preview"
-          ></video>
-          <div v-if="selectedFile.matchedSrtRelPath" class="mt-2 flex items-center gap-2 text-xs">
-            <span class="opacity-70">Paired subtitles ready for human editor:</span>
-            <a
-              :href="fileUrl(selectedFile.matchedSrtRelPath, true)"
-              class="btn btn-xs btn-cafe-secondary no-underline"
-            >
-              Download .srt ↓
-            </a>
+        <div class="otto-card-body">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="text-[11px] font-mono text-[var(--fg-muted)]">
+              /{{ selectedFile.relPath }} · {{ formatBytes(selectedFile.sizeBytes) }} · {{ formatTime(selectedFile.updatedAt) }}
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button type="button" class="btn btn-xs btn-otto-primary" @click="askOttoAbout(selectedFile)">
+                {{ askActionLabel(selectedFile) }}
+              </button>
+              <button
+                v-if="selectedFile.editable"
+                type="button"
+                class="btn btn-xs btn-otto-secondary"
+                @click="editMode = !editMode"
+              >
+                {{ editMode ? "Preview" : "Edit" }}
+              </button>
+              <button
+                v-if="selectedFile.editable && editMode"
+                type="button"
+                class="btn btn-xs btn-otto-primary"
+                :disabled="textSaving || !isTextDirty"
+                @click="saveTextFile"
+              >
+                {{ textSaving ? "Saving..." : isTextDirty ? "Save*" : "Saved" }}
+              </button>
+              <a :href="fileUrl(selectedFile.relPath, true)" class="btn btn-xs btn-otto-secondary no-underline">
+                Download ↓
+              </a>
+            </div>
           </div>
-        </div>
 
-        <!-- AUDIO PREVIEW -->
-        <div v-else-if="selectedFile.kind === 'audio'" class="fm-media-box">
-          <audio
-            :key="selectedFile.relPath"
-            :src="fileUrl(selectedFile.relPath)"
-            controls
-            class="w-full"
-          ></audio>
-        </div>
+          <div v-if="selectedFile.kind === 'image'" class="fm-media-box">
+            <img :src="fileUrl(selectedFile.relPath)" :alt="selectedFile.name" class="fm-img-preview" />
+          </div>
 
-        <!-- MARKDOWN / TEXT PREVIEW + INLINE EDITOR -->
-        <div v-else-if="selectedFile.kind === 'markdown' || selectedFile.kind === 'text'">
-          <div v-if="textLoading" class="text-xs opacity-65 py-4">Loading file contents...</div>
-          <textarea
-            v-else-if="editMode"
-            v-model="textContent"
-            class="fm-editor"
-            spellcheck="false"
-          ></textarea>
-          <div
-            v-else-if="selectedFile.kind === 'markdown'"
-            class="md-body fm-md-box"
-            v-html="renderedPreviewHtml"
-          ></div>
-          <pre v-else class="fm-code-box">{{ textContent }}</pre>
-        </div>
+          <div v-else-if="selectedFile.kind === 'video'" class="fm-media-box">
+            <video
+              :key="selectedFile.relPath"
+              :src="fileUrl(selectedFile.relPath)"
+              controls
+              preload="metadata"
+              class="fm-video-preview"
+            ></video>
+            <div v-if="selectedFile.matchedSrtRelPath" class="mt-2 flex items-center gap-2 text-xs font-mono">
+              <span class="text-[var(--fg-muted)]">Paired captions:</span>
+              <a :href="fileUrl(selectedFile.matchedSrtRelPath, true)" class="btn btn-xs btn-otto-secondary no-underline">
+                Download .srt ↓
+              </a>
+            </div>
+          </div>
 
-        <!-- BINARY FALLBACK -->
-        <div v-else class="text-xs opacity-75 py-3">
-          Preview unavailable for this file type. Use <strong>Download ↓</strong> or send it to Professor L.
+          <div v-else-if="selectedFile.kind === 'audio'" class="fm-media-box">
+            <audio :key="selectedFile.relPath" :src="fileUrl(selectedFile.relPath)" controls class="w-full"></audio>
+          </div>
+
+          <div v-else-if="selectedFile.kind === 'markdown' || selectedFile.kind === 'text'">
+            <div v-if="textLoading" class="text-xs font-mono text-[var(--fg-muted)] py-4">Loading...</div>
+            <textarea v-else-if="editMode" v-model="textContent" class="fm-editor" spellcheck="false"></textarea>
+            <div v-else-if="selectedFile.kind === 'markdown'" class="md-content fm-md-box" v-html="renderedPreviewHtml"></div>
+            <pre v-else class="fm-code-box">{{ textContent }}</pre>
+          </div>
+
+          <div v-else class="text-xs font-mono text-[var(--fg-muted)] py-2">
+            Preview unavailable. Use Download ↓ or send to Otto.
+          </div>
         </div>
       </div>
     </div>
@@ -786,93 +713,68 @@ defineExpose({ loadDirectory, navigateTo });
 </template>
 
 <style scoped>
-.cafe-card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-raised);
-}
 .fm-shell {
   display: grid;
-  grid-template-columns: 205px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 .fm-shell.is-dragover {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--fg);
   outline-offset: 4px;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
 }
-.fm-tree {
+.fm-tree-body {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.fm-tree-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.fm-tree-title {
-  font-family: var(--font-serif);
-  font-size: 15px;
-}
-.fm-storage-pill {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  padding: 2px 7px;
-  border-radius: 9999px;
-  background: var(--surface-inset);
-  color: var(--fg-muted);
+  gap: 10px;
 }
 .fm-tree-list {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-height: 320px;
+  max-height: 330px;
   overflow-y: auto;
 }
 .fm-dir-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   width: 100%;
   text-align: left;
   padding: 6px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg-muted);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
 }
 .fm-dir-btn:hover {
-  background: var(--surface-inset);
+  background: var(--surface-alt);
   color: var(--fg);
 }
 .fm-dir-btn.active {
-  background: var(--accent);
+  background: var(--fg);
   color: #ffffff;
 }
 .fm-tree-foot {
   border-top: 1px solid var(--border);
-  padding-top: 8px;
-  font-size: 11px;
+  padding-top: 10px;
   font-family: var(--font-mono);
+  font-size: 10.5px;
   color: var(--fg-muted);
 }
 
 .fm-main {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 .fm-toolbar {
-  padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -884,22 +786,22 @@ defineExpose({ loadDirectory, navigateTo });
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-  font-size: 12.5px;
   font-family: var(--font-mono);
+  font-size: 12px;
 }
 .fm-bc-btn {
   border: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--fg);
   font-family: inherit;
   font-size: inherit;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 6px;
 }
 .fm-bc-btn:hover {
-  background: var(--surface-inset);
+  background: var(--highlight-yellow);
 }
 .fm-actions {
   display: flex;
@@ -909,17 +811,22 @@ defineExpose({ loadDirectory, navigateTo });
 }
 .fm-search {
   width: 155px;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border: none;
-  border-radius: 9999px;
+  border-radius: var(--radius-input);
   background: var(--surface-inset);
-  box-shadow: var(--shadow-inset);
   color: var(--fg);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   outline: none;
+}
+.fm-search:focus {
+  box-shadow: var(--shadow-focus);
 }
 .fm-inline-form {
   padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-alt);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -927,13 +834,13 @@ defineExpose({ loadDirectory, navigateTo });
 }
 .fm-inline-input,
 .fm-inline-select {
-  padding: 5px 10px;
+  padding: 6px 12px;
   border: none;
-  border-radius: 8px;
-  background: var(--surface-inset);
-  box-shadow: var(--shadow-inset);
+  border-radius: var(--radius-input);
+  background: var(--surface);
   color: var(--fg);
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   outline: none;
 }
 .fm-inline-input {
@@ -942,41 +849,43 @@ defineExpose({ loadDirectory, navigateTo });
 }
 .fm-banner {
   padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 12px;
+  border-radius: 12px;
   font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 .fm-banner-ok {
-  background: rgba(16, 185, 129, 0.14);
-  color: #065f46;
+  background: var(--success-bg);
+  color: var(--success);
 }
 .fm-banner-err {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--error-bg);
   color: var(--error);
 }
-
-.fm-list-card {
+.fm-list-wrap {
   position: relative;
-  padding: 10px;
-  min-height: 180px;
+  min-height: 160px;
 }
 .fm-drop-overlay {
   position: absolute;
-  inset: 8px;
+  inset: 0;
   z-index: 10;
-  border-radius: 12px;
-  background: rgba(253, 246, 236, 0.94);
-  border: 2px dashed var(--accent);
+  border-radius: 14px;
+  background: rgba(249, 245, 162, 0.92);
+  border: 2px dashed var(--fg);
   display: grid;
   place-items: center;
-  font-size: 13.5px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   color: var(--fg);
 }
 .fm-empty {
   padding: 28px 16px;
   text-align: center;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--fg-muted);
+  background: var(--surface-alt);
+  border-radius: 14px;
 }
 .fm-rows {
   display: flex;
@@ -988,25 +897,23 @@ defineExpose({ loadDirectory, navigateTo });
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--bg);
-  transition: background var(--duration-fast) var(--ease-out);
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--surface-alt);
   flex-wrap: wrap;
 }
 .fm-row:hover {
-  background: var(--surface-inset);
+  background: var(--surface-inset-hover);
 }
 .fm-row.selected {
-  background: var(--surface-inset);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  background: var(--highlight-yellow);
 }
 .fm-row-main {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1;
-  min-width: 180px;
+  min-width: 170px;
   border: none;
   background: transparent;
   color: inherit;
@@ -1015,21 +922,22 @@ defineExpose({ loadDirectory, navigateTo });
   padding: 0;
 }
 .fm-icon {
-  font-size: 18px;
+  font-size: 17px;
   flex-shrink: 0;
 }
 .fm-meta {
   min-width: 0;
 }
 .fm-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--fg);
   word-break: break-word;
 }
 .fm-sub {
-  font-size: 11px;
   font-family: var(--font-mono);
+  font-size: 10.5px;
   color: var(--fg-muted);
 }
 .fm-row-actions {
@@ -1038,50 +946,33 @@ defineExpose({ loadDirectory, navigateTo });
   gap: 4px;
   flex-wrap: wrap;
 }
-
-.fm-preview {
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.fm-preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
 .fm-media-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--bg);
+  background: var(--surface-alt);
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-media);
 }
 .fm-img-preview {
   max-width: 100%;
-  max-height: 380px;
-  border-radius: 10px;
+  max-height: 360px;
+  border-radius: var(--radius-media);
   object-fit: contain;
 }
 .fm-video-preview {
   width: 100%;
-  max-height: 380px;
-  border-radius: 10px;
-  background: #1a110e;
+  max-height: 360px;
+  border-radius: var(--radius-media);
+  background: #141414;
 }
 .fm-editor {
   width: 100%;
-  min-height: 280px;
-  padding: 12px;
+  min-height: 260px;
+  padding: 14px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-inset);
-  box-shadow: var(--shadow-inset);
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -1089,19 +980,22 @@ defineExpose({ loadDirectory, navigateTo });
   resize: vertical;
   outline: none;
 }
+.fm-editor:focus {
+  box-shadow: var(--shadow-focus);
+}
 .fm-md-box {
-  max-height: 360px;
+  max-height: 350px;
   overflow-y: auto;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--bg);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-alt);
 }
 .fm-code-box {
   max-height: 340px;
   overflow: auto;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--bg);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-alt);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;

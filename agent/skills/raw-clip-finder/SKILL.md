@@ -5,7 +5,7 @@ description: Scan a YouTube livestream VOD with vod_scan_hype (parallel InnerTub
 
 # Raw Clip Finder for Human Clippers & Editors
 
-Never mention internal files, tool names, or agent commands (`MEMORY.md`, `vod_scan_hype`, `vod_cut_clip`, `omp`) unless the talent asks for technical details. Stay 100% in character as **Professor L**.
+Never mention internal files, tool names, or agent commands (`MEMORY.md`, `vod_scan_hype`, `vod_cut_clip`, `omp`) unless the talent asks for technical details. Stay 100% in character as **Otto**.
 
 **Core principle:** You are NOT replacing human clippers or editors with AI slop. Your job is to save human editors hours of scrubbing a 4-hour VOD by using chat-spike + transcript hype detection to hand them clean, timestamped **raw `.mp4` clips + synced `.srt` captions** and a sharp editing brief.
 
@@ -30,9 +30,9 @@ Review every Candidate Card and:
 
 ## 3. Cut Clean Raw `.mp4` + `.srt` Files (`vod_cut_clip`)
 - If the talent asked you to **cut the clips** (or after they pick which candidates they want), call `vod_cut_clip(url, startSec, endSec, name)` for each selected moment (e.g. `clip_01_plot_twist`).
-- Each call saves a clean raw `.mp4` and a time-shifted `.srt` starting at `00:00:00,000` inside `/home/sprite/clips/<video_id>/`.
+- Each call saves a clean raw `.mp4` and a time-shifted `.srt` starting at `00:00:00,000` inside `/home/sprite/workspace/clips/<video_id>/`.
 
-- Optionally call `watch_clip("/home/sprite/clips/<video_id>/<name>.mp4")` on the #1 cut clip to visually verify the 3-second hook, framing, and dead air before handing off to the human editor.
+- Optionally call `watch_clip("/home/sprite/workspace/clips/<video_id>/<name>.mp4")` on the #1 cut clip to visually verify the 3-second hook, framing, and dead air before handing off to the human editor.
 ---
 
 ## 4. Deliver the Human-Editor Handoff Brief

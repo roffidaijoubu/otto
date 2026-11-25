@@ -30,12 +30,17 @@ function formatTime(iso: string): string {
 
 <template>
   <div v-if="open" class="backdrop" @click="emit('close')"></div>
-  <aside v-if="open" class="sidebar">
-    <div class="sidebar-header">
-      <span class="sidebar-title">Conversations</span>
-      <button class="btn btn-xs btn-cafe-secondary" type="button" :disabled="busy" @click="emit('newChat')">
-        + New
-      </button>
+  <aside v-if="open" class="sidebar otto-card">
+    <div class="otto-card-head">
+      <span>(Y)our chats.</span>
+      <div class="otto-card-head-right">
+        <button class="btn btn-xs btn-otto-primary" type="button" :disabled="busy" @click="emit('newChat')">
+          + New
+        </button>
+        <button class="btn btn-xs btn-otto-secondary" type="button" @click="emit('close')">
+          ✕
+        </button>
+      </div>
     </div>
     <div class="session-list">
       <div v-if="sessions.length === 0" class="session-empty">No previous chats yet.</div>
@@ -57,59 +62,43 @@ function formatTime(iso: string): string {
 
 <style scoped>
 .backdrop {
-  display: block;
   position: fixed;
   inset: 0;
-  background: rgba(62, 39, 35, 0.25);
-  z-index: 35;
+  background: rgba(48, 48, 48, 0.25);
+  backdrop-filter: blur(2px);
+  z-index: 40;
 }
 .sidebar {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--sidebar-width);
-  max-width: 88vw;
-  border-left: 1px solid var(--border);
-  background: var(--bg);
-  box-shadow: var(--shadow-lg);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.sidebar-header {
-  height: var(--header-height);
-  flex-shrink: 0;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.sidebar-title {
-  font-family: var(--font-serif);
-  font-size: 17px;
-  color: var(--fg);
+  top: 66px;
+  right: 18px;
+  bottom: 18px;
+  width: min(92vw, 320px);
+  z-index: 50;
 }
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .session-empty {
-  padding: 18px 16px;
-  font-size: 13px;
+  padding: 20px 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--fg-muted);
 }
 .session-item {
   width: 100%;
   text-align: left;
+  padding: 10px 12px;
   border: none;
-  border-bottom: 1px solid var(--border);
-  border-left: 3px solid transparent;
-  background: transparent;
-  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface-alt);
+  color: var(--fg);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -117,26 +106,24 @@ function formatTime(iso: string): string {
   transition: background var(--duration-fast) var(--ease-out);
 }
 .session-item:hover:not(:disabled) {
-  background: var(--surface-alt);
+  background: var(--surface-inset-hover);
 }
 .session-item.active {
-  background: var(--surface-inset);
-  border-left-color: var(--accent);
+  background: var(--highlight-yellow);
   cursor: default;
 }
 .session-item-title {
-  font-size: 13.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 500;
   color: var(--fg);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .session-item-meta {
-  font-size: 11px;
   font-family: var(--font-mono);
+  font-size: 10.5px;
   color: var(--fg-muted);
 }
-
-
 </style>

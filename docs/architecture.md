@@ -33,12 +33,12 @@ flowchart LR
 
 Fly.io Sprites pause automatically after **~30 seconds of idle time** (warm suspend → cold stop), which keeps idle compute at **$0** — but also pauses any local Linux `cron` daemon inside the VM.
 
-To let Professor L be genuinely **proactive** (e.g., *"Remind me 1 hour before my collab stream on Dec 17 at 15:30 WIB, then pull the VOD afterward to cut raw clips"*), `lma` combines **Upstash QStash** with Fly.io's **`/.sprite/api.sock` Tasks API**:
+To let Otto be genuinely **proactive** (e.g., *"Remind me 1 hour before my collab stream on Dec 17 at 15:30 WIB, then pull the VOD afterward to cut raw clips"*), `lma` combines **Upstash QStash** with Fly.io's **`/.sprite/api.sock` Tasks API**:
 
 ```mermaid
 sequenceDiagram
     participant U as Streamer
-    participant L as Professor L (omp RPC)
+    participant L as Otto (omp RPC)
     participant Q as Upstash QStash (via Sprites Connector)
     participant W as web/server.ts (Port 8080)
     participant T as /.sprite/api.sock (Tasks API)
@@ -98,7 +98,7 @@ flowchart LR
 
 1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** Installed via `bash scripts/install-hooks.sh` into `.git/hooks/post-commit`, every code commit automatically snapshots live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`studio.db`/`workspace/`, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints.
 2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs 22 deterministic checks in ~15 seconds — TypeScript/Vite build, all 5 skill &amp; 9 extension symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
-3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Instead of flaky regex assertions, behavioral tests live as Markdown playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with a programmatic communication guide (`scripts/e2e/INDEX.md`) and a golden reference dossier (`scripts/e2e/expected-memory.md`). A completely blank-slate coding agent can restore `initialized:`, execute multi-turn conversations against Professor L, inspect raw JSONL tool calls, semantically grade the resulting `MEMORY.md` against `expected-memory.md`, and jump straight back to live state in seconds — making iteration dramatically faster and consistently reproducible.
+3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Instead of flaky regex assertions, behavioral tests live as Markdown playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with a programmatic communication guide (`scripts/e2e/INDEX.md`) and a golden reference dossier (`scripts/e2e/expected-memory.md`). A completely blank-slate coding agent can restore `initialized:`, execute multi-turn conversations against Otto, inspect raw JSONL tool calls, semantically grade the resulting `MEMORY.md` against `expected-memory.md`, and jump straight back to live state in seconds — making iteration dramatically faster and consistently reproducible.
 
 ---
 
@@ -111,7 +111,7 @@ flowchart LR
     UI["Mission Control UI<br/>(Files &amp; Clips · Studio DB · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
     S <-->|"web/lib/workspace.ts<br/>(realpath jail)"| WS["/home/sprite/workspace/<br/>clips · thumbnails · scripts · briefs · uploads · exports"]
     S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · metrics · custom_trackers"]
-    OMP["omp Agent (Professor L)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
+    OMP["omp Agent (Otto)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
     OMP <-->|"studio-db.ts &amp; qstash-scheduler.ts"| DB
 ```
 

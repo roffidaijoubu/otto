@@ -1,27 +1,66 @@
 <script setup lang="ts">
+import OttoMascot from "./OttoMascot.vue";
+
+export type StudioTab = "overview" | "schedule" | "files" | "database" | "dossier" | "connectors";
+
 defineProps<{
   statusState: "ready" | "busy" | "error";
   statusLabel: string;
   zeroLocalKeys: boolean | null;
   aiMediaDisabled: boolean | null;
   mobilePane: "dashboard" | "chat";
+  activeTab: StudioTab;
+  mascotColor: string;
+  counts: {
+    schedule: number;
+    files: number;
+    database: number;
+    connectors: number;
+  };
 }>();
 
 const emit = defineEmits<{
   "update:mobilePane": [pane: "dashboard" | "chat"];
+  "update:activeTab": [tab: StudioTab];
+  cycleMascotColor: [];
 }>();
+
+const tabs: Array<{ id: StudioTab; label: string; countKey?: "schedule" | "files" | "database" | "connectors" }> = [
+  { id: "overview", label: "Overview" },
+  { id: "schedule", label: "Schedule", countKey: "schedule" },
+  { id: "files", label: "Files & Clips", countKey: "files" },
+  { id: "database", label: "Studio DB", countKey: "database" },
+  { id: "dossier", label: "Dossier" },
+  { id: "connectors", label: "Connectors", countKey: "connectors" },
+];
 </script>
 
 <template>
-  <header class="header">
+  <header class="otto-header">
     <div class="header-left">
-      <div class="brand">
-        <div class="avatar">L</div>
-        <div>
-          <div class="brand-title">Professor L</div>
-          <div class="brand-sub">Studio Mission Control</div>
-        </div>
-      </div>
+      <button
+        type="button"
+        class="eyes-pill"
+        title="Otto Studio Overview"
+        aria-label="Otto Studio Overview"
+        @click="emit('update:activeTab', 'overview'); emit('update:mobilePane', 'dashboard')"
+      >
+        <OttoMascot :size="28" :state="statusState" eyes-only />
+      </button>
+
+      <nav class="nav-pill-bar" aria-label="Studio navigation">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          class="nav-pill-btn"
+          :class="{ active: activeTab === tab.id }"
+          @click="emit('update:activeTab', tab.id); emit('update:mobilePane', 'dashboard')"
+        >
+          <span>{{ tab.label }}</span>
+          <span v-if="tab.countKey" class="nav-count">{{ counts[tab.countKey] }}</span>
+        </button>
+      </nav>
     </div>
 
     <div class="mobile-switch">
@@ -31,7 +70,7 @@ const emit = defineEmits<{
         :class="{ active: mobilePane === 'dashboard' }"
         @click="emit('update:mobilePane', 'dashboard')"
       >
-        Mission Control
+        Studio
       </button>
       <button
         type="button"
@@ -39,151 +78,224 @@ const emit = defineEmits<{
         :class="{ active: mobilePane === 'chat' }"
         @click="emit('update:mobilePane', 'chat')"
       >
-        Co-Pilot
+        Otto Chat
       </button>
     </div>
 
-    <div class="header-actions">
-      <span v-if="zeroLocalKeys === true" class="guard-pill guard-ok">
+    <div class="header-right">
+      <span v-if="zeroLocalKeys === true" class="status-float-pill pill-ok">
         0 Keys in VM
       </span>
-      <span v-if="aiMediaDisabled === true" class="guard-pill guard-off">
+      <span v-if="aiMediaDisabled === true" class="status-float-pill pill-noai">
         No AI Art
       </span>
-      <span class="status-pill" :class="statusState">
-        <span class="status-dot" :class="statusState"></span>
+      <span class="status-float-pill" :class="`st-${statusState}`">
+        <span class="st-dot"></span>
         <span>{{ statusLabel }}</span>
       </span>
+      <button
+        type="button"
+        class="mascot-btn"
+        title="Click to switch Otto's swatch color"
+        aria-label="Switch Otto swatch color"
+        @click="emit('cycleMascotColor')"
+      >
+        <OttoMascot :size="30" :color="mascotColor" :state="statusState" />
+      </button>
     </div>
   </header>
 </template>
 
 <style scoped>
-.header {
+.otto-header {
   height: var(--header-height);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  padding: 10px 18px 4px;
+  gap: 10px;
+  background: transparent;
 }
 .header-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
+  min-width: 0;
 }
-.brand {
+.eyes-pill {
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.eyes-pill:hover {
+  transform: translateY(-1px);
+  background: #ffffff;
+}
+.nav-pill-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-circle);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-serif);
-  font-size: 18px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  box-shadow: var(--shadow-raised-sm);
+.nav-pill-bar::-webkit-scrollbar {
+  display: none;
 }
-.brand-title {
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: 20px;
-  line-height: 1.1;
-  color: var(--fg);
-}
-.brand-sub {
-  font-size: 11px;
+.nav-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--fg-muted);
   font-family: var(--font-mono);
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-circle);
   font-size: 11.5px;
-  font-family: var(--font-mono);
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.nav-pill-btn:hover {
+  color: var(--fg);
+  background: var(--surface-alt);
+}
+.nav-pill-btn.active {
+  background: var(--fg);
+  color: #ffffff;
   font-weight: 500;
 }
-.status-pill.ready {
-  background: var(--success-bg);
-  color: var(--success);
+.nav-count {
+  font-size: 10px;
+  opacity: 0.72;
 }
-.status-pill.busy {
-  background: var(--warning-bg);
-  color: var(--warning);
+.nav-pill-btn.active .nav-count {
+  opacity: 0.88;
 }
-.status-pill.error {
-  background: var(--error-bg);
-  color: var(--error);
-}
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-circle);
-}
-.status-dot.ready { background: var(--success); }
-.status-dot.busy { background: var(--warning); }
-.status-dot.error { background: var(--error); }
-.guard-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: var(--radius-circle);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-.guard-ok {
-  background: var(--success-bg);
-  color: var(--success);
-}
-.guard-off {
-  background: var(--error-bg);
-  color: var(--error);
-}
+
 .mobile-switch {
   display: none;
-  gap: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-pill);
   padding: 3px;
-  border-radius: var(--radius-circle);
-  background: var(--surface-inset);
+  box-shadow: var(--shadow-pill);
 }
 .mobile-tab {
   border: none;
-  border-radius: var(--radius-circle);
   background: transparent;
   color: var(--fg-muted);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 500;
-  padding: 4px 10px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .mobile-tab.active {
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--fg);
+  color: #ffffff;
 }
 
-@media (max-width: 1024px) {
-  .mobile-switch { display: inline-flex; }
-  .guard-pill { display: none; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
-@media (max-width: 768px) {
-  .header { padding: 0 12px; }
-  .brand-sub, .status-pill { display: none; }
+.status-float-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-pill);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.pill-ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.pill-noai {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.st-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: #16a34a;
+}
+.st-busy {
+  background: var(--highlight-yellow);
+  color: var(--fg);
+}
+.st-busy .st-dot {
+  background: #ca8a04;
+}
+.st-error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.st-error .st-dot {
+  background: #dc2626;
+}
+.mascot-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  box-shadow: var(--shadow-pill);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.mascot-btn:hover {
+  transform: scale(1.06);
+}
+
+@media (max-width: 1140px) {
+  .pill-ok,
+  .pill-noai {
+    display: none;
+  }
+}
+@media (max-width: 1024px) {
+  .nav-pill-bar {
+    display: none;
+  }
+  .mobile-switch {
+    display: inline-flex;
+  }
+}
+@media (max-width: 640px) {
+  .otto-header {
+    padding: 8px 10px 4px;
+  }
+  .status-float-pill {
+    display: none;
+  }
 }
 </style>

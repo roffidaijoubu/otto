@@ -44,7 +44,7 @@ const allRequiredDone = computed(
       <div class="todo-head" @click="collapsed = !collapsed">
         <div class="todo-head-left">
           <span class="todo-chevron">{{ collapsed ? "▸" : "▾" }}</span>
-          <span class="todo-title">Checklist</span>
+          <span class="todo-title">(Y)our checklist.</span>
           <span class="todo-count">{{ doneCount }}/{{ totalCount }}</span>
           <span v-if="allRequiredDone" class="todo-ready">Ready</span>
         </div>
@@ -92,84 +92,79 @@ const allRequiredDone = computed(
 
 <style scoped>
 .todo-wrap {
-  max-width: var(--max-width);
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 16px 8px;
+  padding: 0 14px 8px;
+  flex-shrink: 0;
 }
 .todo-card {
-  background: var(--surface);
+  background: var(--surface-alt);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-raised-sm);
+  border-radius: 14px;
   overflow: hidden;
 }
 .todo-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 7px 12px;
   cursor: pointer;
   user-select: none;
-  background: var(--surface-alt);
 }
 .todo-head-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg);
 }
 .todo-chevron {
-  font-size: 11px;
   color: var(--fg-muted);
 }
 .todo-title {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--fg);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 500;
 }
 .todo-count {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: 10.5px;
   color: var(--fg-muted);
 }
 .todo-ready {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
   padding: 1px 7px;
-  border-radius: var(--radius-circle);
+  border-radius: var(--radius-pill);
   background: var(--success-bg);
   color: var(--success);
+  font-size: 10px;
+  font-weight: 600;
 }
 .todo-dismiss {
   border: none;
   background: transparent;
   color: var(--fg-muted);
-  font-size: 11px;
   cursor: pointer;
-  padding: 2px 5px;
-  border-radius: 6px;
+  font-size: 11px;
 }
 .todo-dismiss:hover {
-  background: var(--surface);
   color: var(--fg);
 }
 .todo-body {
-  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 8px 12px 10px;
+  max-height: 150px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
-  overflow-y: auto;
+  gap: 6px;
 }
 .todo-phase-name {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--fg-muted);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .todo-list {
   list-style: none;
@@ -177,49 +172,41 @@ const allRequiredDone = computed(
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .todo-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  line-height: 1.35;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--fg);
 }
-.todo-item.is-done .todo-text {
+.todo-item.is-done {
+  color: var(--fg-muted);
   text-decoration: line-through;
-  opacity: 0.6;
+}
+.todo-item.is-active .todo-icon {
+  color: var(--fg);
 }
 .todo-item.is-done .todo-icon {
   color: var(--success);
-  font-weight: 700;
-}
-.todo-item.is-active .todo-icon {
-  color: var(--accent);
-}
-.todo-item.is-optional:not(.is-done) .todo-text {
-  color: var(--fg-muted);
 }
 .todo-icon {
-  width: 14px;
-  text-align: center;
+  flex-shrink: 0;
   font-size: 11px;
   color: var(--fg-muted);
-  flex-shrink: 0;
 }
 .todo-text {
   flex: 1;
   min-width: 0;
 }
 .todo-opt-badge {
-  font-family: var(--font-mono);
-  font-size: 10px;
   padding: 1px 6px;
-  border-radius: var(--radius-circle);
-  background: var(--surface-alt);
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--highlight-yellow);
+  color: var(--fg);
+  font-size: 9.5px;
   flex-shrink: 0;
 }
 </style>

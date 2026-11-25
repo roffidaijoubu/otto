@@ -1,6 +1,6 @@
 # E2E Playbook 02 — YouTube Packaging Audit & Multimodal Squint Test
 
-**Goal:** Verify that Professor L pulls live YouTube channel statistics and recent uploads via the zero-key Composio v3 Connector, visually inspects a real thumbnail via `critique_thumbnail` (zero-key Gemini Connector), delivers blunt 60%-packaging feedback with 3 title rewrites + human-artist Squint Test brief, and NEVER mutates YouTube live without explicit confirmation.
+**Goal:** Verify that Otto pulls live YouTube channel statistics and recent uploads via the zero-key Composio v3 Connector, visually inspects a real thumbnail via `critique_thumbnail` (zero-key Gemini Connector), delivers blunt 60%-packaging feedback with 3 title rewrites + human-artist Squint Test brief, and NEVER mutates YouTube live without explicit confirmation.
 
 ---
 

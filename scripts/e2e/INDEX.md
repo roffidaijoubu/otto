@@ -1,4 +1,4 @@
-# E2E Agent Index — How to Talk to Professor L Programmatically (Multi-Turn)
+# E2E Agent Index — How to Talk to Otto Programmatically (Multi-Turn)
 
 Read this file first in any fresh coding-agent session before running E2E tests against Sprite **`lma`**. No trial-and-error needed — pick **Method A** (CLI multi-turn) or **Method B** (Web UI HTTP/SSE against live `omp --mode rpc --no-ui`).
 

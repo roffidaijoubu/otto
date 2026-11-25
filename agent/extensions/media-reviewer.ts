@@ -286,7 +286,7 @@ export default function (pi: ExtensionAPI) {
       }
       const titleLine = params.videoTitle ? `Paired video title: "${params.videoTitle}"\n\n` : "";
       const prompt =
-        `${titleLine}Critique this YouTube thumbnail using Professor L's blunt packaging playbook and the Michael Reeves Squint Test:\n` +
+        `${titleLine}Critique this YouTube thumbnail using Otto's blunt packaging playbook and the Michael Reeves Squint Test:\n` +
         `1. Squint Test Verdict (Pass / Weak / Fail): Does ONE unmistakable focal point read instantly at tiny mobile size?\n` +
         `2. Text Audit: Count the words, check contrast/readability, and flag if it repeats the title.\n` +
         `3. Visual Clutter & Hierarchy: What distracts the eye?\n` +

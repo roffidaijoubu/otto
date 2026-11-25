@@ -1,55 +1,70 @@
-/* CafeBlend Studio Design Tokens (from DESIGN.md) */
+/* Otto Studio Bento OS Design Tokens (from DESIGN.md) */
 :root {
-  /* Palette (Warm Coffee & Cream) */
-  --bg: #fdf6ec;
+  /* Core Monochrome Palette */
+  --fg: #303030;
+  --fg-strong: #000000;
+  --fg-muted: #808080;
+  --fg-subtle: #a3a3a3;
   --surface: #ffffff;
-  --surface-alt: #faf0e1;
-  --surface-inset: #f0e6d6;
-  --surface-inset-hover: #ebe0d0;
-  --fg: #3e2723;
-  --fg-muted: #6d4c41;
-  --border: #e8ddd0;
-  --border-strong: #d5c9b8;
+  --surface-alt: #f2f2f2;
+  --surface-inset: #ededed;
+  --surface-inset-hover: #e5e5e5;
+  --border: #ededed;
+  --border-strong: #d9d9d9;
 
-  /* Interactive / Accent */
-  --accent: #8b5e3c;
-  --accent-hover: #6b4226;
-  --accent-secondary: #c4956a;
+  /* Atmospheric Studio Canvas & Tints */
+  --bg: #dbdbdb;
+  --bg-flat: #dbdbdb;
+  --bg-canvas:
+    radial-gradient(circle at 10% 8%, #cfd5df 0%, rgba(207, 213, 223, 0) 48%),
+    radial-gradient(circle at 94% 10%, #dc6b46 0%, rgba(220, 107, 70, 0) 52%),
+    radial-gradient(circle at 90% 92%, #df7a59 0%, rgba(223, 122, 89, 0) 50%),
+    radial-gradient(circle at 8% 92%, #e59d81 0%, rgba(229, 157, 129, 0) 52%),
+    linear-gradient(135deg, #d7d5d6 0%, #dcd4d2 48%, #e6b29a 100%);
+  --surface-sand: #e2ceb8;
+  --surface-slate: #6a728e;
+  --surface-sky: #b8dcfa;
+
+  /* Interactive & Highlighter Accents */
+  --accent: #303030;
+  --accent-hover: #141414;
   --accent-fg: #ffffff;
+  --highlight-yellow: #f9f5a2;
+  --highlight-cyan: #c7f6ff;
 
-  /* Semantic Status (Pill badges & indicators) */
-  --success: #059669;
-  --success-bg: #dcfce7;
-  --warning: #d97706;
-  --warning-bg: #fef3c7;
-  --error: #ef4444;
-  --error-bg: #fee2e2;
-  --info: #6366f1;
-  --info-bg: #ede9fe;
+  /* Restrained Semantic Status */
+  --success: #166534;
+  --success-bg: #e6f7ee;
+  --warning: #854d0e;
+  --warning-bg: #f9f5a2;
+  --error: #991b1b;
+  --error-bg: #fde8e8;
+  --info: #303030;
+  --info-bg: #c7f6ff;
 
   /* Typography */
-  --font-serif: "DM Serif Display", Georgia, serif;
-  --font-sans: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, sans-serif;
 
   /* Layout */
   --max-width: 820px;
-  --header-height: 60px;
-  --sidebar-width: 272px;
+  --header-height: 58px;
+  --sidebar-width: 280px;
 
   /* Shape */
-  --radius-sm: 6px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-circle: 9999px;
+  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-card: 20px;
+  --radius-media: 10px;
+  --radius-input: 25px;
+  --radius-pill: 9999px;
 
-  /* Neumorphic Elevation (warm tones on #FDF6EC) */
-  --shadow-raised: 6px 6px 12px #d5c9b8, -6px -6px 12px #ffffff;
-  --shadow-raised-sm: 3px 3px 7px #d5c9b8, -3px -3px 7px #ffffff;
-  --shadow-inset: inset 4px 4px 8px #d5c9b8, inset -4px -4px 8px #ffffff;
-  --shadow-md: 0 4px 12px rgba(62, 39, 35, 0.08);
-  --shadow-lg: 0 8px 24px rgba(62, 39, 35, 0.12);
-  --shadow-focus: 0 0 0 3px rgba(139, 94, 60, 0.25);
+  /* Clean Soft Floating Shadows */
+  --shadow-card: 0 3px 6px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-pill: 0 1px 4px rgba(0, 0, 0, 0.14);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.16);
+  --shadow-focus: 0 0 0 2px #303030;
 
   /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

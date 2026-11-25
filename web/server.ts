@@ -224,55 +224,79 @@ const LOGIN_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Professor L — Sign In</title>
+  <title>Otto — Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Mono:wght@400;500&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; }
     body {
-      margin: 0; min-height: 100dvh; background: #fdf6ec; color: #3e2723;
-      font-family: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0; min-height: 100dvh; color: #303030;
+      background-color: #dbdbdb;
+      background-image:
+        radial-gradient(circle at 10% 8%, #cfd5df 0%, rgba(207,213,223,0) 48%),
+        radial-gradient(circle at 94% 10%, #dc6b46 0%, rgba(220,107,70,0) 52%),
+        radial-gradient(circle at 90% 92%, #df7a59 0%, rgba(223,122,89,0) 50%),
+        radial-gradient(circle at 8% 92%, #e59d81 0%, rgba(229,157,129,0) 52%),
+        linear-gradient(135deg, #d7d5d6 0%, #dcd4d2 48%, #e6b29a 100%);
+      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
       display: grid; place-items: center; padding: 16px;
     }
     .card {
-      width: min(92vw, 380px); padding: 28px; background: #ffffff;
-      border-radius: 16px; box-shadow: 6px 6px 12px #d5c9b8, -6px -6px 12px #ffffff;
+      width: min(92vw, 390px); background: #ffffff;
+      border-radius: 20px; box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+      overflow: hidden;
     }
-    .avatar {
-      width: 40px; height: 40px; border-radius: 9999px; background: #8b5e3c; color: #ffffff;
-      display: grid; place-items: center; font-family: "DM Serif Display", Georgia, serif;
-      font-size: 20px; margin-bottom: 14px; box-shadow: 3px 3px 7px #d5c9b8, -3px -3px 7px #ffffff;
+    .head {
+      text-align: center; padding: 9px 16px;
+      border-bottom: 1px solid #ededed;
+      font-family: "IBM Plex Mono", monospace; font-size: 11px; color: #303030;
     }
+    .body { padding: 26px 26px 28px; text-align: center; }
+    .mascot { margin: 0 auto 14px; display: block; }
     h1 {
-      margin: 0 0 6px 0; font-family: "DM Serif Display", Georgia, serif;
-      font-weight: 400; font-size: 26px; color: #3e2723;
+      margin: 0 0 8px 0; font-weight: 400; font-size: 24px;
+      letter-spacing: -0.02em; color: #303030; line-height: 1.25;
     }
-    p { margin: 0 0 18px 0; font-size: 13.5px; color: #6d4c41; line-height: 1.5; }
+    .mark { background: #f9f5a2; padding: 0 2px; }
+    p {
+      margin: 0 0 18px 0; font-family: "IBM Plex Mono", monospace;
+      font-size: 11.5px; color: #808080; line-height: 1.5;
+    }
     input {
-      width: 100%; padding: 11px 14px; border: none; border-radius: 12px;
-      background: #f0e6d6; box-shadow: inset 4px 4px 8px #d5c9b8, inset -4px -4px 8px #ffffff;
-      color: #3e2723; font-family: "Work Sans", sans-serif; font-size: 14px;
-      margin-bottom: 14px; outline: none;
+      width: 100%; padding: 11px 16px; border: none; border-radius: 25px;
+      background: #ededed; color: #303030;
+      font-family: "IBM Plex Mono", monospace; font-size: 13px;
+      margin-bottom: 12px; outline: none; text-align: center;
     }
-    input:focus { box-shadow: inset 4px 4px 8px #d5c9b8, inset -4px -4px 8px #ffffff, 0 0 0 3px rgba(139,94,60,0.25); }
+    input:focus { box-shadow: 0 0 0 2px #303030; }
     button {
-      width: 100%; padding: 11px 16px; border: none; border-radius: 12px; background: #8b5e3c;
-      color: #ffffff; font-family: "Work Sans", sans-serif; font-size: 14px; font-weight: 600;
-      cursor: pointer; box-shadow: 3px 3px 7px #d5c9b8, -3px -3px 7px #ffffff;
+      width: 100%; padding: 11px 16px; border: none; border-radius: 9999px;
+      background: #303030; color: #ffffff;
+      font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 500;
+      cursor: pointer;
     }
-    button:hover { background: #6b4226; }
-    .err { color: #ef4444; font-family: "IBM Plex Mono", monospace; font-size: 12px; margin-top: 10px; }
+    button:hover { background: #141414; }
+    .err { color: #991b1b; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <form class="card" id="f">
-    <div class="avatar">L</div>
-    <h1>Professor L</h1>
-    <p>Enter your passcode to open this private talent studio.</p>
-    <input type="password" id="pw" placeholder="Passcode" autocomplete="current-password" autofocus required />
-    <button type="submit">Unlock Studio</button>
-    <div class="err" id="err"></div>
+    <div class="head">(Y)our studio.</div>
+    <div class="body">
+      <svg class="mascot" width="56" height="56" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Otto mascot">
+        <circle cx="24" cy="24" r="21.5" fill="#303030" />
+        <ellipse cx="17.8" cy="22.8" rx="4.4" ry="6" fill="#FFFFFF" />
+        <ellipse cx="30.2" cy="22.8" rx="4.4" ry="6" fill="#FFFFFF" />
+        <circle cx="18.4" cy="23" r="2.15" fill="#141414" />
+        <circle cx="30.8" cy="23" r="2.15" fill="#141414" />
+      </svg>
+      <h1>Otto is <span class="mark">(y)</span>our stream manager.</h1>
+      <p>Enter your passcode to unlock this private Sprite studio.</p>
+      <input type="password" id="pw" placeholder="Input your passcode." autocomplete="current-password" autofocus required />
+      <button type="submit">Unlock Studio</button>
+      <div class="err" id="err"></div>
+    </div>
   </form>
   <script>
     document.getElementById("f").addEventListener("submit", async (e) => {
@@ -792,7 +816,7 @@ class OmpRpcBridge {
 
   async prompt(message: string) {
     if (this.busy) {
-      throw new Error("Professor L is still responding. Wait or click Stop.");
+      throw new Error("Otto is still responding. Wait or click Stop.");
     }
     this.busy = true;
     this.activity = "Thinking...";
@@ -901,9 +925,9 @@ function buildCalendarIcs(events: ServerCalendarEvent[]): string {
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//LMA Professor L//Stream Ops Schedule//EN",
+    "PRODID:-//LMA Otto//Stream Ops Schedule//EN",
     "CALSCALE:GREGORIAN",
-    "X-WR-CALNAME:Professor L Stream Schedule",
+    "X-WR-CALNAME:Otto Stream Schedule",
   ];
   const dtStamp = formatIcsUtc(new Date().toISOString()) || "20260101T000000Z";
   for (const evt of events) {
@@ -2030,4 +2054,4 @@ Bun.serve({
   },
 });
 
-console.log(`[lma-web] Professor L Web Chat UI listening on http://0.0.0.0:${PORT}`);
+console.log(`[lma-web] Otto Studio Web UI listening on http://0.0.0.0:${PORT}`);

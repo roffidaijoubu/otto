@@ -3,11 +3,11 @@
 > If `WORKSTATION.md` exists in the repo root (gitignored; copy from [`WORKSTATION.md.example`](WORKSTATION.md.example)), read it first for private workstation, git identity, and Fly.io org bindings.
 
 ## Project Overview
-**LMA (`lma` — Livestreamer Manager Agent)** is a **Fly.io Hacksgiving 2026** personal Talent Manager & Ops Agent for indie livestreamers and VTubers (**Professor L**), running persistently inside a Fly.io Sprite with **zero outbound API keys in the VM or repository**.
+**LMA (`lma` — Livestreamer Manager Agent)** is a **Fly.io Hacksgiving 2026** personal Talent Manager & Ops Agent for indie livestreamers and VTubers (**Otto**), running persistently inside a Fly.io Sprite with **zero outbound API keys in the VM or repository**.
 
 - **Agent Runtime:** `omp` (`@oh-my-pi/pi-coding-agent`) running as a persistent `--mode rpc --no-ui` subprocess supervised by Bun (`web/server.ts`), paired with Mnemopi SQLite memory + structured `~/.omp/agent/MEMORY.md` talent dossier.
 - **Architecture Deep Dive:** Read [`docs/architecture.md`](docs/architecture.md) for why we chose `omp` RPC, how **Upstash QStash + `/.sprite/api.sock` Tasks API** powers proactive wake-ups on a $0-idle sleeping Sprite, and how zero-key Sprites Connectors auto-discover at runtime.
-- **Visual Design System:** Read [`DESIGN.md`](DESIGN.md) (*CafeBlend Studio*, implemented via Tailwind CSS v4 + DaisyUI v5 in `web/src/styles/daisy.css`).
+- **Visual Design System:** Read [`DESIGN.md`](DESIGN.md) (*Otto Studio Bento OS*, implemented via Tailwind CSS v4 + DaisyUI v5 in `web/src/styles/daisy.css`).
 
 ---
 
@@ -15,7 +15,7 @@
 1. **Strictly NO AI-generated images or video.** Never generate or recommend AI thumbnails, AI art, AI rigging, or AI video edits — enforced at both prompt level (`agent/APPEND_SYSTEM.md`) and tool-permission level (`generate_image: deny` in `agent/config.yml`).
 2. **Zero Raw API Keys in Repo or Sprite VM.** All external APIs (Gemini, Exa, Firecrawl, Composio v3 YouTube, Buffer X/TikTok/IG, Upstash QStash) route through `https://api.sprites.dev/v1/gateway/...` and auto-discover their `gateway_base_url` via `GET /v1/gateway/list` at runtime. Never hardcode connector IDs or secrets.
 3. **Draft-First & Human-Approval Guardrails.** Social posts (`buffer_create_post`) default to `saveToDraft: true`; YouTube mutations (`YOUTUBE_UPDATE_VIDEO`, `YOUTUBE_UPDATE_THUMBNAIL`) require explicit human confirmation.
-4. **Zero Fourth-Wall Breaks.** Professor L speaks like a real tough-love talent manager — never expose raw tool slugs, file paths, or VM internals to the talent unless explicitly asked.
+4. **Zero Fourth-Wall Breaks.** Otto speaks like a real tough-love talent manager — never expose raw tool slugs, file paths, or VM internals to the talent unless explicitly asked.
 
 ---
 
@@ -26,12 +26,12 @@ Do **not** turn `/home/sprite/.omp/` directly into a git repo (it holds runtime 
 lma/
 ├── AGENTS.md                   # Public agentic engineering guide (this file)
 ├── WORKSTATION.md.example      # Template for private local bindings (copy to gitignored WORKSTATION.md)
-├── DESIGN.md                   # CafeBlend Studio design system tokens & rules
+├── DESIGN.md                   # Otto Studio Bento OS design system tokens & rules
 ├── README.md                   # Project overview + 1-prompt agent-first setup
 ├── setup.sh                    # Idempotent Sprite bootstrap (omp, ffmpeg, yt-dlp, web build, lma-web service)
 ├── docs/                       # Human architecture deep dive (architecture.md) + agent-first setup guides (setup/)
 ├── agent/
-│   ├── APPEND_SYSTEM.md        # Professor L persona, guardrails, cutoff-proof VM & tool map
+│   ├── APPEND_SYSTEM.md        # Otto persona, guardrails, cutoff-proof VM & tool map
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template

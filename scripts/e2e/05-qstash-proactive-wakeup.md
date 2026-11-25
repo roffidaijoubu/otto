@@ -1,6 +1,6 @@
 # E2E Playbook 05 — Proactive Self-Scheduling Wake-Up (Upstash QStash + Tasks API)
 
-**Goal:** Verify that Professor L can schedule his own future wake-up via the zero-key Upstash QStash Custom API Connector, that unsigned `POST /api/wakeup` requests are rejected (`401`), and that QStash's cryptographically signed webhook wakes the Sprite, acquires the `/.sprite/api.sock` Tasks API hold, and triggers a proactive message visible in Web Chat UI (`/api/messages`).
+**Goal:** Verify that Otto can schedule his own future wake-up via the zero-key Upstash QStash Custom API Connector, that unsigned `POST /api/wakeup` requests are rejected (`401`), and that QStash's cryptographically signed webhook wakes the Sprite, acquires the `/.sprite/api.sock` Tasks API hold, and triggers a proactive message visible in Web Chat UI (`/api/messages`).
 
 ---
 
@@ -15,7 +15,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://<your-sprite>.sprites.
 ```
 Expected: **`401`**
 
-### 2. Ask Professor L to Schedule a 10-Second Wake-Up
+### 2. Ask Otto to Schedule a 10-Second Wake-Up
 ```bash
 sprite exec -- omp --tools schedule_wakeup -p "Schedule a one-shot wake-up in 10 seconds labeled 'E2E Wakeup Check' with prompt: 'Reply with just: PROACTIVE_WAKEUP_E2E_OK'" --no-session
 ```
@@ -34,4 +34,4 @@ rm -f /tmp/w_ck.txt
 ### 4. Semantic Pass Criteria
 - [ ] Unsigned `POST /api/wakeup` returned `401`.
 - [ ] `schedule_wakeup` returned a valid QStash `messageId` (zero local QStash tokens inside VM).
-- [ ] `/api/messages` contains `[SCHEDULED WAKE-UP: E2E Wakeup Check]` followed by Professor L's proactive reply **`PROACTIVE_WAKEUP_E2E_OK`**.
+- [ ] `/api/messages` contains `[SCHEDULED WAKE-UP: E2E Wakeup Check]` followed by Otto's proactive reply **`PROACTIVE_WAKEUP_E2E_OK`**.

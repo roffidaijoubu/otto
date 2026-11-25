@@ -1,6 +1,6 @@
 # Agentic E2E Test Playbooks (`scripts/e2e/`)
 
-Because **Professor L** is a conversational AI agent, his responses are non-deterministic and cannot be verified with brittle exact-string assertions. Instead, these Markdown playbooks are **agentic test instructions** meant to be executed by a coding agent (`omp`) on the local workstation against the live Fly.io Sprite (`lma`).
+Because **Otto** is a conversational AI agent, his responses are non-deterministic and cannot be verified with brittle exact-string assertions. Instead, these Markdown playbooks are **agentic test instructions** meant to be executed by a coding agent (`omp`) on the local workstation against the live Fly.io Sprite (`lma`).
 
 ---
 

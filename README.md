@@ -1,7 +1,7 @@
 <h1 align="center">LMA — Livestreamer Manager Agent</h1>
 
 <p align="center">
-  <b><code>lma</code> (Livestreamer Manager Agent) puts Professor L — a persistent personal Talent Manager &amp; Ops Agent for indie livestreamers &amp; VTubers — inside a Fly.io Sprite with zero outbound API keys and strictly zero AI-generated art or video.</b>
+  <b><code>lma</code> (Livestreamer Manager Agent) puts Otto — a persistent personal Talent Manager &amp; Ops Agent for indie livestreamers &amp; VTubers — inside a Fly.io Sprite with zero outbound API keys and strictly zero AI-generated art or video.</b>
   <br>
   Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a> on <a href="https://sprites.dev">Sprites</a>, <a href="https://github.com/can1357/oh-my-pi">omp</a>, and Sprites Connectors.
 </p>
@@ -14,9 +14,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/mission-control-dashboard.png" alt="LMA Studio Mission Control — CafeBlend Web UI" width="100%">
+  <img src="docs/assets/mission-control-dashboard.png" alt="LMA Otto Studio Bento OS — Web UI" width="100%">
   <br>
-  <sub><b>Studio Mission Control</b> (CafeBlend theme): at-a-glance KPI strip, 2-way Google Calendar + QStash wake-ups, auto-bootstrapped Talent Dossier, Raw Clips Shelf, Zero-Key Connectors, and docked Professor L Co-Pilot Chat. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
+  <sub><b>Otto Studio Bento OS</b>: personal creative-studio desktop with live next-stream countdown, 2-way Google Calendar + QStash wake-ups, auto-bootstrapped Talent Dossier, Unified 2-way Workspace &amp; Clips, Unified SQLite Studio DB, Zero-Key Connectors, and docked Otto Co-Pilot Chat. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
 </p>
 
 <br>
@@ -64,9 +64,9 @@ flowchart LR
 
 - **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw `.mp4`/`.srt` material for human artists and clippers — never replaces them.
 - **Zero outbound API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Google Calendar, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo.
-- **Unified 2-Way Studio Workspace + Unified SQLite Studio DB:** Both Mission Control and Professor L share `/home/sprite/workspace/` (full file manager with drag-drop &amp; chat `📎` uploads, unified VOD `clips/`, inline image/video/audio/Markdown preview &amp; editor, folder ZIP downloads, and 1-click *Squint Test* / *Review Clip*) and `~/.omp/agent/studio.db` (SQLite WAL storing Schedule + Google Calendar sync, 3+1 Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics History, and Custom Trackers — with live SSE auto-refresh).
+- **Unified 2-Way Studio Workspace + Unified SQLite Studio DB:** Both Mission Control and Otto share `/home/sprite/workspace/` (full file manager with drag-drop &amp; chat `📎` uploads, unified VOD `clips/`, inline image/video/audio/Markdown preview &amp; editor, folder ZIP downloads, and 1-click *Squint Test* / *Review Clip*) and `~/.omp/agent/studio.db` (SQLite WAL storing Schedule + Google Calendar sync, 3+1 Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics History, and Custom Trackers — with live SSE auto-refresh).
 - **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining `MEMORY.md` (Talent Dossier), `studio.db` (structured ops data), `workspace/` (shared files/media), and **Mnemopi** SQLite conversational memory across sessions.
-- **Professor L coaching playbook:** Grounded in Ludwig's *Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
+- **Tough-love streamer coaching playbook:** Inspired by Ludwig's *Professor L / Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
 <br>
 
 ---
@@ -107,7 +107,7 @@ sprite create --skip-console lma && sprite use lma
 sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma && bash ~/lma/setup.sh"
 #    (setup.sh prints your auto-generated Web Chat UI passcode stored in ~/.config/lma/web.env)
 
-# 4. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
+# 4. Open Otto Studio Web UI at https://<your-sprite>.sprites.app
 #    (or chat directly from your terminal via: sprite console && omp)
 ```
 
@@ -140,7 +140,7 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 
 | Path | Purpose |
 | :--- | :--- |
-| `agent/APPEND_SYSTEM.md` | Professor L persona, 4-lecture playbook, non-negotiable rules, and memory protocol |
+| `agent/APPEND_SYSTEM.md` | Otto persona, 4-lecture coaching playbook, non-negotiable rules, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
 | `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
 | `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, 3+1 Pipeline, Contacts, Metrics &amp; Custom Trackers |
@@ -151,7 +151,7 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 ### Why Fly.io Sprites Made Building `lma` 10× Faster
 Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
 - Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, clean Mnemopi SQLite, rebuilt `web/`).
-- Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Professor L's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
+- Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Otto's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
 
 > **For judges &amp; engineers:** Read the full [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how proactive wake-ups survive 30s auto-sleep, and our defense-in-depth security model.
 <br>
@@ -162,11 +162,11 @@ Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Ups
 
 Built actively during **Fly.io Hacksgiving 2026**:
 
-- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + one-time OAuth auto-bootstrap) &amp; Mission Control-first CafeBlend Studio UI (with live `omp` Todo checklist &amp; docked Co-Pilot Chat)
+- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + one-time OAuth auto-bootstrap) &amp; **Otto Studio Bento OS** Web UI (pure-SVG Otto mascot, live stream countdown, live `omp` Todo checklist &amp; docked Co-Pilot Chat)
 - ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, inline preview &amp; Markdown editor, folder ZIP export, and 1-click *Squint Test* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db` powering Schedule, 3+1 Content Pipeline, Contacts, Metrics History &amp; Custom Trackers with live SSE refresh)
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export)
-- ✅ Professor L persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
-- ⚠️ Final UI redesign &amp; Hacksgiving demo video — next up!
+- ✅ Otto persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
+- ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
 <br>
 
 ---
@@ -174,7 +174,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ## Built By &amp; Acknowledgements
 
 - **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
-- **Coaching Framework Acknowledgement:** The **Professor L** coaching persona and creator playbook in `lma` (Homework #1, segment-first recording sessions, 60% YouTube packaging &amp; Michael Reeves' Squint Test, the 4 Ps intro, 3+1 experiment rule, zero-friction collabs, and anti-burnout guardrails) are inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
+- **Coaching Framework Acknowledgement:** **Otto**'s coaching playbook in `lma` (Homework #1, segment-first recording sessions, 60% YouTube packaging &amp; Michael Reeves' Squint Test, the 4 Ps intro, 3+1 experiment rule, zero-friction collabs, and anti-burnout guardrails) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
 

@@ -2,7 +2,7 @@
 
 > **Audience:** AI coding agent setting up `lma` for a user. Execute CLI steps directly; only ask the human for Upstash QStash credentials if not already in `.env`.
 
-Because Fly.io Sprites sleep at $0 when idle, `lma` uses **Upstash QStash** (free tier: 1,000 messages/day) so Professor L can autonomously schedule future one-shot or recurring wake-up jobs. When the scheduled time hits, QStash sends a cryptographically signed `POST /api/wakeup` request that wakes the Sprite in <1s and injects the scheduled prompt into Professor L.
+Because Fly.io Sprites sleep at $0 when idle, `lma` uses **Upstash QStash** (free tier: 1,000 messages/day) so Otto can autonomously schedule future one-shot or recurring wake-up jobs. When the scheduled time hits, QStash sends a cryptographically signed `POST /api/wakeup` request that wakes the Sprite in <1s and injects the scheduled prompt into Otto.
 
 ---
 
@@ -57,7 +57,7 @@ Because QStash must reach `https://<sprite>.sprites.app/api/wakeup`, configure:
 
 ## 5. Verify End-to-End
 
-Ask Professor L in the Web Chat UI:
+Ask Otto in the Web Chat UI:
 > *"Schedule a wake-up 30 seconds from now to remind me to check my microphone."*
 
-Confirm QStash delivers the signed `POST /api/wakeup` and Professor L posts the proactive reminder automatically in the chat.
+Confirm QStash delivers the signed `POST /api/wakeup` and Otto posts the proactive reminder automatically in the chat.

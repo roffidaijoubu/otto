@@ -87,7 +87,6 @@ const trackers = ref<CustomTracker[]>([]);
 const activeTrackerSlug = ref<string | null>(null);
 const activeTrackerItems = ref<CustomTrackerItem[]>([]);
 
-// Quick-add forms
 const newPipeTitle = ref("");
 const newPipeFormat = ref<ContentPipelineItem["format"]>("stream");
 const newPipePillar = ref<ContentPipelineItem["pillar"]>("core");
@@ -349,376 +348,348 @@ defineExpose({ fetchAllDb });
 
 <template>
   <div class="db-shell">
-    <!-- SUB-TABS + LIVE 3+1 RATIO BAR -->
-    <div class="cafe-card db-header">
-      <div class="db-subtabs">
-        <button type="button" class="db-tab" :class="{ active: subTab === 'pipeline' }" @click="subTab = 'pipeline'">
-          3+1 Pipeline ({{ activePipeline.length }})
-        </button>
-        <button type="button" class="db-tab" :class="{ active: subTab === 'contacts' }" @click="subTab = 'contacts'">
-          Contacts ({{ contacts.length }})
-        </button>
-        <button type="button" class="db-tab" :class="{ active: subTab === 'metrics' }" @click="subTab = 'metrics'">
-          Metrics ({{ metrics.length }})
-        </button>
-        <button type="button" class="db-tab" :class="{ active: subTab === 'trackers' }" @click="subTab = 'trackers'">
-          Custom Trackers ({{ trackers.length }})
-        </button>
-      </div>
-
-      <div class="db-ratio-pill" title="Professor L's 3+1 Rule: 3 Core formats + 1 Experiment">
-        <span>3+1 Ratio:</span>
-        <strong>{{ coreCount }} Core</strong>
-        <span>/</span>
-        <strong>{{ experimentCount }} Exp ({{ experimentPct }}%)</strong>
-      </div>
-    </div>
-
-    <div v-if="errorMsg" class="text-xs text-error font-mono">{{ errorMsg }}</div>
-
-    <!-- TAB 1: 3+1 CONTENT PIPELINE -->
-    <div v-if="subTab === 'pipeline'" class="cafe-card db-panel">
-      <div class="db-panel-head">
-        <div>
-          <div class="db-title">3+1 Content Pipeline</div>
-          <div class="db-sub">Shared live with Professor L — track Core vs Experiment streams, videos &amp; packaging.</div>
-        </div>
-        <button
-          type="button"
-          class="btn btn-xs btn-cafe-secondary"
-          @click="emit('askPrompt', 'Review my 3+1 Content Pipeline in the Studio Database, check my Core vs Experiment ratio, and tell me which idea we should sharpen next.')"
-        >
-          Audit 3+1 with L
-        </button>
-      </div>
-
-      <form class="db-form" @submit.prevent="addPipeline">
-        <input v-model="newPipeTitle" type="text" class="db-input flex-1" placeholder="New stream or video concept..." required />
-        <select v-model="newPipeFormat" class="db-select">
-          <option value="stream">Stream</option>
-          <option value="video">YouTube Video</option>
-          <option value="short">Short / Clip</option>
-          <option value="collab">Collab</option>
-        </select>
-        <select v-model="newPipePillar" class="db-select">
-          <option value="core">3x Core</option>
-          <option value="experiment">+1 Experiment</option>
-        </select>
-        <input v-model="newPipeHook" type="text" class="db-input" placeholder="Hook / angle (optional)" />
-        <button type="submit" class="btn btn-sm btn-cafe-primary">+ Add</button>
-      </form>
-
-      <div v-if="pipeline.length === 0" class="db-empty">
-        No content ideas logged yet. Add one above or brainstorm a $1 / $1,000 / $100,000 idea with Professor L.
-      </div>
-
-      <div v-else class="db-cards">
-        <div v-for="item in pipeline" :key="item.id" class="db-row-card">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="chip-pill" :class="item.pillar === 'experiment' ? 'chip-warn' : 'chip-accent'">
-                {{ item.pillar === "experiment" ? "+1 EXP" : "CORE" }}
-              </span>
-              <span class="chip-pill chip-muted">{{ item.format.toUpperCase() }}</span>
-              <span class="font-semibold text-sm">{{ item.title }}</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <select
-                :value="item.status"
-                class="db-mini-select"
-                @change="patchPipeline(item.id, { status: ($event.target as HTMLSelectElement).value as ContentPipelineItem['status'] })"
-              >
-                <option value="idea">Idea</option>
-                <option value="prepping">Prepping</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="live">Live</option>
-                <option value="editing">Editing</option>
-                <option value="published">Published</option>
-                <option value="dropped">Dropped</option>
-              </select>
-              <button
-                type="button"
-                class="btn btn-xs btn-cafe-secondary"
-                @click="emit('askPrompt', `Let's sharpen the packaging, 4 Ps intro, and thumbnail brief for my ${item.pillar} ${item.format} idea '${item.title}' (DB id: ${item.id}).`)"
-              >
-                Prep
-              </button>
-              <button type="button" class="btn btn-xs btn-ghost text-error" @click="removePipeline(item.id)">✕</button>
-            </div>
-          </div>
-
-          <div v-if="item.hook" class="text-xs opacity-80 mt-1">Hook: {{ item.hook }}</div>
-          <div v-if="item.notes" class="text-xs opacity-70 mt-0.5">{{ item.notes }}</div>
-
-          <div v-if="item.thumbnailPath || item.scriptPath" class="flex flex-wrap gap-1.5 mt-1.5">
-            <button
-              v-if="item.thumbnailPath"
-              type="button"
-              class="btn btn-xs btn-cafe-secondary"
-              @click="emit('openWorkspacePath', item.thumbnailPath.includes('/') ? item.thumbnailPath.slice(0, item.thumbnailPath.lastIndexOf('/')) : '')"
-            >
-              🖼 {{ item.thumbnailPath }}
-            </button>
-            <button
-              v-if="item.scriptPath"
-              type="button"
-              class="btn btn-xs btn-cafe-secondary"
-              @click="emit('openWorkspacePath', item.scriptPath.includes('/') ? item.scriptPath.slice(0, item.scriptPath.lastIndexOf('/')) : '')"
-            >
-              📝 {{ item.scriptPath }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 2: CONTACTS ROLODEX -->
-    <div v-else-if="subTab === 'contacts'" class="cafe-card db-panel">
-      <div class="db-panel-head">
-        <div>
-          <div class="db-title">Human Team &amp; Collab Rolodex</div>
-          <div class="db-sub">Human thumbnail artists, clippers, editors, riggers, collabs &amp; sponsors.</div>
+    <div class="otto-card">
+      <div class="otto-card-head">
+        <span>(Y)our studio database.</span>
+        <div class="otto-card-head-right">
+          <span class="otto-chip otto-chip-yellow" title="Otto's 3+1 Rule: 3 Core formats + 1 Experiment">
+            3+1: {{ coreCount }} Core / {{ experimentCount }} Exp ({{ experimentPct }}%)
+          </span>
         </div>
       </div>
 
-      <form class="db-form" @submit.prevent="addContact">
-        <input v-model="newContactName" type="text" class="db-input" placeholder="Name" required />
-        <select v-model="newContactRole" class="db-select">
-          <option value="artist">Artist</option>
-          <option value="clipper">Clipper</option>
-          <option value="editor">Editor</option>
-          <option value="rigger">Rigger</option>
-          <option value="collab">Collab</option>
-          <option value="sponsor">Sponsor</option>
-          <option value="mod">Mod</option>
-        </select>
-        <input v-model="newContactHandle" type="text" class="db-input" placeholder="@handle / email" />
-        <input v-model="newContactPlatform" type="text" class="db-input" placeholder="Platform (X, VGen, YT)" />
-        <input v-model="newContactNotes" type="text" class="db-input flex-1" placeholder="Rates, vibe, notes" />
-        <button type="submit" class="btn btn-sm btn-cafe-primary">+ Add</button>
-      </form>
-
-      <div v-if="contacts.length === 0" class="db-empty">
-        No contacts saved yet. Add your go-to human thumbnail artist, clipper, or dream collab partners.
-      </div>
-
-      <div v-else class="db-cards">
-        <div v-for="c in contacts" :key="c.id" class="db-row-card">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="chip-pill chip-accent">{{ c.role.toUpperCase() }}</span>
-              <span class="font-semibold text-sm">{{ c.name }}</span>
-              <span v-if="c.handle" class="text-xs font-mono opacity-75">{{ c.handle }}</span>
-              <span v-if="c.platform" class="chip-pill chip-muted">{{ c.platform }}</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <select
-                :value="c.status"
-                class="db-mini-select"
-                @change="patchContact(c.id, { status: ($event.target as HTMLSelectElement).value as StudioContact['status'] })"
-              >
-                <option value="prospect">Prospect</option>
-                <option value="pitched">Pitched</option>
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-              </select>
-              <button
-                type="button"
-                class="btn btn-xs btn-cafe-secondary"
-                @click="emit('askPrompt', `Draft a clear, zero-friction ${c.role === 'collab' ? 'collab pitch' : 'brief / outreach message'} for ${c.name} (${c.role}${c.handle ? ', ' + c.handle : ''}).`)"
-              >
-                Draft Outreach
-              </button>
-              <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeContact(c.id)">✕</button>
-            </div>
-          </div>
-          <div v-if="c.notes" class="text-xs opacity-75 mt-1">{{ c.notes }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 3: CHANNEL METRICS HISTORY -->
-    <div v-else-if="subTab === 'metrics'" class="cafe-card db-panel">
-      <div class="db-panel-head">
-        <div>
-          <div class="db-title">Channel Metrics History</div>
-          <div class="db-sub">Log growth snapshots (or let Professor L log them during YouTube audits).</div>
-        </div>
-        <button
-          type="button"
-          class="btn btn-xs btn-cafe-secondary"
-          @click="emit('askPrompt', 'Check my live YouTube stats, log a fresh Channel Metrics snapshot into the Studio Database, and compare against my previous snapshots.')"
-        >
-          Log Live YT Snapshot
-        </button>
-      </div>
-
-      <form class="db-form" @submit.prevent="addMetric">
-        <input v-model="newMetricDate" type="date" class="db-input" />
-        <input v-model="newMetricSubs" type="number" class="db-input w-24" placeholder="Subs" />
-        <input v-model="newMetricViews" type="number" class="db-input w-28" placeholder="Views" />
-        <input v-model="newMetricCcv" type="number" class="db-input w-24" placeholder="Avg CCV" />
-        <input v-model="newMetricCtr" type="number" step="0.1" class="db-input w-24" placeholder="CTR %" />
-        <input v-model="newMetricNotes" type="text" class="db-input flex-1" placeholder="Notes" />
-        <button type="submit" class="btn btn-sm btn-cafe-primary">+ Log</button>
-      </form>
-
-      <div v-if="metrics.length === 0" class="db-empty">
-        No metrics snapshots logged yet. Click <strong>Log Live YT Snapshot</strong> to record your baseline!
-      </div>
-
-      <div v-else class="overflow-x-auto">
-        <table class="db-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Platform</th>
-              <th>Subs</th>
-              <th>Views</th>
-              <th>Avg CCV</th>
-              <th>CTR %</th>
-              <th>Notes</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in metrics" :key="m.id">
-              <td class="font-mono">{{ m.recordedAt }}</td>
-              <td>{{ m.platform }}</td>
-              <td class="font-mono">{{ m.subscribers?.toLocaleString() ?? "—" }}</td>
-              <td class="font-mono">{{ m.totalViews?.toLocaleString() ?? "—" }}</td>
-              <td class="font-mono">{{ m.avgCcv?.toLocaleString() ?? "—" }}</td>
-              <td class="font-mono">{{ m.avgCtr !== null ? `${m.avgCtr}%` : "—" }}</td>
-              <td>{{ m.notes || "—" }}</td>
-              <td>
-                <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeMetric(m.id)">✕</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- TAB 4: CUSTOM TRACKERS -->
-    <div v-else class="cafe-card db-panel">
-      <div class="db-panel-head">
-        <div>
-          <div class="db-title">Custom Studio Trackers</div>
-          <div class="db-sub">Flexible collections created by you or Professor L on the fly (e.g. Game Backlog, Series Plan).</div>
-        </div>
-        <button type="button" class="btn btn-xs btn-cafe-primary" @click="creatingTracker = !creatingTracker">
-          {{ creatingTracker ? "Cancel" : "+ New Tracker" }}
-        </button>
-      </div>
-
-      <form v-if="creatingTracker" class="db-form" @submit.prevent="createTracker">
-        <input v-model="newTrackerName" type="text" class="db-input" placeholder="Tracker name (e.g. Game Backlog)" required />
-        <input v-model="newTrackerCols" type="text" class="db-input flex-1" placeholder="Extra columns (comma-separated: genre, hours, priority)" />
-        <input v-model="newTrackerDesc" type="text" class="db-input flex-1" placeholder="Short description (optional)" />
-        <button type="submit" class="btn btn-sm btn-cafe-primary">Create</button>
-      </form>
-
-      <div v-if="trackers.length === 0" class="db-empty">
-        No custom trackers yet. Click <strong>+ New Tracker</strong> or ask Professor L in chat to spin up a tracker for anything!
-      </div>
-
-      <template v-else>
-        <div class="flex flex-wrap gap-1.5">
-          <button
-            v-for="t in trackers"
-            :key="t.slug"
-            type="button"
-            class="db-tab"
-            :class="{ active: activeTrackerSlug === t.slug }"
-            @click="activeTrackerSlug = t.slug"
-          >
-            {{ t.name }} ({{ t.itemCount ?? 0 }})
+      <div class="otto-card-body">
+        <div class="db-subtabs">
+          <button type="button" class="db-tab" :class="{ active: subTab === 'pipeline' }" @click="subTab = 'pipeline'">
+            3+1 Pipeline ({{ activePipeline.length }})
+          </button>
+          <button type="button" class="db-tab" :class="{ active: subTab === 'contacts' }" @click="subTab = 'contacts'">
+            Contacts ({{ contacts.length }})
+          </button>
+          <button type="button" class="db-tab" :class="{ active: subTab === 'metrics' }" @click="subTab = 'metrics'">
+            Metrics ({{ metrics.length }})
+          </button>
+          <button type="button" class="db-tab" :class="{ active: subTab === 'trackers' }" @click="subTab = 'trackers'">
+            Custom Trackers ({{ trackers.length }})
           </button>
         </div>
 
-        <div v-if="activeTracker" class="space-y-3 mt-2">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="text-xs opacity-75">{{ activeTracker.description || `Slug: ${activeTracker.slug}` }}</div>
-            <div class="flex items-center gap-1.5">
-              <button
-                type="button"
-                class="btn btn-xs btn-cafe-secondary"
-                @click="emit('askPrompt', `Review my custom tracker '${activeTracker.name}' (slug: ${activeTracker.slug}) in the Studio Database and suggest priorities.`)"
-              >
-                Ask L
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost text-error"
-                @click="removeTracker(activeTracker.slug)"
-              >
-                Delete Tracker
-              </button>
-            </div>
+        <div v-if="errorMsg" class="text-xs text-error font-mono">{{ errorMsg }}</div>
+
+        <!-- TAB 1: 3+1 CONTENT PIPELINE -->
+        <div v-if="subTab === 'pipeline'" class="space-y-3">
+          <div class="db-panel-head">
+            <div class="db-sub">Shared live with Otto — track Core vs Experiment streams, videos &amp; packaging.</div>
+            <button
+              type="button"
+              class="btn btn-xs btn-otto-secondary"
+              @click="emit('askPrompt', 'Review my 3+1 Content Pipeline in the Studio Database, check my Core vs Experiment ratio, and tell me which idea we should sharpen next.')"
+            >
+              Audit 3+1 with Otto
+            </button>
           </div>
 
-          <form class="db-form" @submit.prevent="addCustomItem">
-            <input v-model="newCustomTitle" type="text" class="db-input flex-1" placeholder="Item title..." required />
-            <input v-model="newCustomStatus" type="text" class="db-input w-28" placeholder="Status" />
-            <input
-              v-for="col in activeTracker.columns"
-              :key="col"
-              v-model="newCustomData[col]"
-              type="text"
-              class="db-input"
-              :placeholder="col"
-            />
-            <button type="submit" class="btn btn-sm btn-cafe-primary">+ Add Row</button>
+          <form class="db-form" @submit.prevent="addPipeline">
+            <input v-model="newPipeTitle" type="text" class="db-input flex-1" placeholder="New stream or video concept..." required />
+            <select v-model="newPipeFormat" class="db-select">
+              <option value="stream">Stream</option>
+              <option value="video">YouTube Video</option>
+              <option value="short">Short / Clip</option>
+              <option value="collab">Collab</option>
+            </select>
+            <select v-model="newPipePillar" class="db-select">
+              <option value="core">3x Core</option>
+              <option value="experiment">+1 Experiment</option>
+            </select>
+            <input v-model="newPipeHook" type="text" class="db-input" placeholder="Hook / angle (optional)" />
+            <button type="submit" class="btn btn-sm btn-otto-primary">+ Add</button>
           </form>
 
-          <div v-if="activeTrackerItems.length === 0" class="db-empty">No rows in {{ activeTracker.name }} yet.</div>
+          <div v-if="pipeline.length === 0" class="db-empty">
+            No content ideas logged yet. Add one above or brainstorm a $1 / $1,000 / $100,000 idea with Otto.
+          </div>
+
+          <div v-else class="db-cards">
+            <div v-for="item in pipeline" :key="item.id" class="db-row-card">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="otto-chip" :class="item.pillar === 'experiment' ? 'otto-chip-cyan' : 'otto-chip-ink'">
+                    {{ item.pillar === "experiment" ? "+1 EXP" : "CORE" }}
+                  </span>
+                  <span class="otto-chip otto-chip-neutral">{{ item.format }}</span>
+                  <span class="font-medium text-sm">{{ item.title }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <select
+                    :value="item.status"
+                    class="db-mini-select"
+                    @change="patchPipeline(item.id, { status: ($event.target as HTMLSelectElement).value as ContentPipelineItem['status'] })"
+                  >
+                    <option value="idea">Idea</option>
+                    <option value="prepping">Prepping</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="live">Live</option>
+                    <option value="editing">Editing</option>
+                    <option value="published">Published</option>
+                    <option value="dropped">Dropped</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-otto-secondary"
+                    @click="emit('askPrompt', `Let's sharpen the packaging, 4 Ps intro, and thumbnail brief for my ${item.pillar} ${item.format} idea '${item.title}' (DB id: ${item.id}).`)"
+                  >
+                    Prep
+                  </button>
+                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removePipeline(item.id)">✕</button>
+                </div>
+              </div>
+
+              <div v-if="item.hook" class="text-xs text-[var(--fg-muted)] mt-1">Hook: {{ item.hook }}</div>
+              <div v-if="item.notes" class="text-xs text-[var(--fg-muted)] mt-0.5">{{ item.notes }}</div>
+
+              <div v-if="item.thumbnailPath || item.scriptPath" class="flex flex-wrap gap-1.5 mt-1.5">
+                <button
+                  v-if="item.thumbnailPath"
+                  type="button"
+                  class="btn btn-xs btn-otto-secondary"
+                  @click="emit('openWorkspacePath', item.thumbnailPath.includes('/') ? item.thumbnailPath.slice(0, item.thumbnailPath.lastIndexOf('/')) : '')"
+                >
+                  🖼 {{ item.thumbnailPath }}
+                </button>
+                <button
+                  v-if="item.scriptPath"
+                  type="button"
+                  class="btn btn-xs btn-otto-secondary"
+                  @click="emit('openWorkspacePath', item.scriptPath.includes('/') ? item.scriptPath.slice(0, item.scriptPath.lastIndexOf('/')) : '')"
+                >
+                  📝 {{ item.scriptPath }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: CONTACTS ROLODEX -->
+        <div v-else-if="subTab === 'contacts'" class="space-y-3">
+          <div class="db-sub">Human thumbnail artists, clippers, editors, riggers, collabs &amp; sponsors.</div>
+
+          <form class="db-form" @submit.prevent="addContact">
+            <input v-model="newContactName" type="text" class="db-input" placeholder="Name" required />
+            <select v-model="newContactRole" class="db-select">
+              <option value="artist">Artist</option>
+              <option value="clipper">Clipper</option>
+              <option value="editor">Editor</option>
+              <option value="rigger">Rigger</option>
+              <option value="collab">Collab</option>
+              <option value="sponsor">Sponsor</option>
+              <option value="mod">Mod</option>
+            </select>
+            <input v-model="newContactHandle" type="text" class="db-input" placeholder="@handle / email" />
+            <input v-model="newContactPlatform" type="text" class="db-input" placeholder="Platform (X, VGen, YT)" />
+            <input v-model="newContactNotes" type="text" class="db-input flex-1" placeholder="Rates, vibe, notes" />
+            <button type="submit" class="btn btn-sm btn-otto-primary">+ Add</button>
+          </form>
+
+          <div v-if="contacts.length === 0" class="db-empty">
+            No contacts saved yet. Add your go-to human thumbnail artist, clipper, or collab partners.
+          </div>
+
+          <div v-else class="db-cards">
+            <div v-for="c in contacts" :key="c.id" class="db-row-card">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="otto-chip otto-chip-ink">{{ c.role }}</span>
+                  <span class="font-medium text-sm">{{ c.name }}</span>
+                  <span v-if="c.handle" class="text-xs font-mono text-[var(--fg-muted)]">{{ c.handle }}</span>
+                  <span v-if="c.platform" class="otto-chip otto-chip-neutral">{{ c.platform }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <select
+                    :value="c.status"
+                    class="db-mini-select"
+                    @change="patchContact(c.id, { status: ($event.target as HTMLSelectElement).value as StudioContact['status'] })"
+                  >
+                    <option value="prospect">Prospect</option>
+                    <option value="pitched">Pitched</option>
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-otto-secondary"
+                    @click="emit('askPrompt', `Draft a clear, zero-friction ${c.role === 'collab' ? 'collab pitch' : 'brief / outreach message'} for ${c.name} (${c.role}${c.handle ? ', ' + c.handle : ''}).`)"
+                  >
+                    Draft Outreach
+                  </button>
+                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeContact(c.id)">✕</button>
+                </div>
+              </div>
+              <div v-if="c.notes" class="text-xs text-[var(--fg-muted)] mt-1">{{ c.notes }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: CHANNEL METRICS HISTORY -->
+        <div v-else-if="subTab === 'metrics'" class="space-y-3">
+          <div class="db-panel-head">
+            <div class="db-sub">Log growth snapshots (or let Otto record them during YouTube audits).</div>
+            <button
+              type="button"
+              class="btn btn-xs btn-otto-secondary"
+              @click="emit('askPrompt', 'Check my live YouTube stats, log a fresh Channel Metrics snapshot into the Studio Database, and compare against my previous snapshots.')"
+            >
+              Log Live YT Snapshot
+            </button>
+          </div>
+
+          <form class="db-form" @submit.prevent="addMetric">
+            <input v-model="newMetricDate" type="date" class="db-input" />
+            <input v-model="newMetricSubs" type="number" class="db-input w-24" placeholder="Subs" />
+            <input v-model="newMetricViews" type="number" class="db-input w-28" placeholder="Views" />
+            <input v-model="newMetricCcv" type="number" class="db-input w-24" placeholder="Avg CCV" />
+            <input v-model="newMetricCtr" type="number" step="0.1" class="db-input w-24" placeholder="CTR %" />
+            <input v-model="newMetricNotes" type="text" class="db-input flex-1" placeholder="Notes" />
+            <button type="submit" class="btn btn-sm btn-otto-primary">+ Log</button>
+          </form>
+
+          <div v-if="metrics.length === 0" class="db-empty">
+            No metrics snapshots logged yet. Click <strong>Log Live YT Snapshot</strong> to record your baseline.
+          </div>
 
           <div v-else class="overflow-x-auto">
             <table class="db-table">
               <thead>
                 <tr>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th v-for="col in activeTracker.columns" :key="col">{{ col }}</th>
+                  <th>Date</th>
+                  <th>Platform</th>
+                  <th>Subs</th>
+                  <th>Views</th>
+                  <th>Avg CCV</th>
+                  <th>CTR %</th>
+                  <th>Notes</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in activeTrackerItems" :key="row.id">
-                  <td class="font-medium">{{ row.title }}</td>
-                  <td><span class="chip-pill chip-muted">{{ row.status }}</span></td>
-                  <td v-for="col in activeTracker.columns" :key="col">{{ row.data[col] || "—" }}</td>
+                <tr v-for="m in metrics" :key="m.id">
+                  <td>{{ m.recordedAt }}</td>
+                  <td>{{ m.platform }}</td>
+                  <td>{{ m.subscribers?.toLocaleString() ?? "—" }}</td>
+                  <td>{{ m.totalViews?.toLocaleString() ?? "—" }}</td>
+                  <td>{{ m.avgCcv?.toLocaleString() ?? "—" }}</td>
+                  <td>{{ m.avgCtr !== null ? `${m.avgCtr}%` : "—" }}</td>
+                  <td>{{ m.notes || "—" }}</td>
                   <td>
-                    <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeCustomItem(row.id)">✕</button>
+                    <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeMetric(m.id)">✕</button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-      </template>
+
+        <!-- TAB 4: CUSTOM TRACKERS -->
+        <div v-else class="space-y-3">
+          <div class="db-panel-head">
+            <div class="db-sub">Flexible trackers created by you or Otto on the fly (e.g. Game Backlog, Series Plan).</div>
+            <button type="button" class="btn btn-xs btn-otto-primary" @click="creatingTracker = !creatingTracker">
+              {{ creatingTracker ? "Cancel" : "+ New Tracker" }}
+            </button>
+          </div>
+
+          <form v-if="creatingTracker" class="db-form" @submit.prevent="createTracker">
+            <input v-model="newTrackerName" type="text" class="db-input" placeholder="Tracker name (e.g. Game Backlog)" required />
+            <input v-model="newTrackerCols" type="text" class="db-input flex-1" placeholder="Extra columns (genre, hours, priority)" />
+            <input v-model="newTrackerDesc" type="text" class="db-input flex-1" placeholder="Short description (optional)" />
+            <button type="submit" class="btn btn-sm btn-otto-primary">Create</button>
+          </form>
+
+          <div v-if="trackers.length === 0" class="db-empty">
+            No custom trackers yet. Click <strong>+ New Tracker</strong> or ask Otto in chat to spin up a tracker for anything.
+          </div>
+
+          <template v-else>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="t in trackers"
+                :key="t.slug"
+                type="button"
+                class="db-tab"
+                :class="{ active: activeTrackerSlug === t.slug }"
+                @click="activeTrackerSlug = t.slug"
+              >
+                {{ t.name }} ({{ t.itemCount ?? 0 }})
+              </button>
+            </div>
+
+            <div v-if="activeTracker" class="space-y-3">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="text-xs font-mono text-[var(--fg-muted)]">{{ activeTracker.description || `slug: ${activeTracker.slug}` }}</div>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-otto-secondary"
+                    @click="emit('askPrompt', `Review my custom tracker '${activeTracker.name}' (slug: ${activeTracker.slug}) in the Studio Database and suggest priorities.`)"
+                  >
+                    Ask Otto
+                  </button>
+                  <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeTracker(activeTracker.slug)">
+                    Delete Tracker
+                  </button>
+                </div>
+              </div>
+
+              <form class="db-form" @submit.prevent="addCustomItem">
+                <input v-model="newCustomTitle" type="text" class="db-input flex-1" placeholder="Item title..." required />
+                <input v-model="newCustomStatus" type="text" class="db-input w-28" placeholder="Status" />
+                <input
+                  v-for="col in activeTracker.columns"
+                  :key="col"
+                  v-model="newCustomData[col]"
+                  type="text"
+                  class="db-input"
+                  :placeholder="col"
+                />
+                <button type="submit" class="btn btn-sm btn-otto-primary">+ Add Row</button>
+              </form>
+
+              <div v-if="activeTrackerItems.length === 0" class="db-empty">No rows in {{ activeTracker.name }} yet.</div>
+
+              <div v-else class="overflow-x-auto">
+                <table class="db-table">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Status</th>
+                      <th v-for="col in activeTracker.columns" :key="col">{{ col }}</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in activeTrackerItems" :key="row.id">
+                      <td class="font-medium">{{ row.title }}</td>
+                      <td><span class="otto-chip otto-chip-neutral">{{ row.status }}</span></td>
+                      <td v-for="col in activeTracker.columns" :key="col">{{ row.data[col] || "—" }}</td>
+                      <td>
+                        <button type="button" class="btn btn-xs btn-ghost text-error" @click="removeCustomItem(row.id)">✕</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.cafe-card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-raised);
-}
 .db-shell {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.db-header {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 16px;
 }
 .db-subtabs {
   display: flex;
@@ -727,48 +698,31 @@ defineExpose({ fetchAllDb });
 }
 .db-tab {
   border: none;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--surface-alt);
   color: var(--fg-muted);
   cursor: pointer;
 }
-.db-tab.active {
-  background: var(--accent);
-  color: #ffffff;
-}
-.db-ratio-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-family: var(--font-mono);
-  padding: 4px 10px;
-  border-radius: 9999px;
-  background: var(--surface-inset);
+.db-tab:hover {
   color: var(--fg);
 }
-.db-panel {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.db-tab.active {
+  background: var(--fg);
+  color: #ffffff;
 }
 .db-panel-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
 }
-.db-title {
-  font-family: var(--font-serif);
-  font-size: 18px;
-}
 .db-sub {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--fg-muted);
 }
 .db-form {
@@ -779,31 +733,36 @@ defineExpose({ fetchAllDb });
 }
 .db-input,
 .db-select {
-  padding: 7px 10px;
+  padding: 7px 12px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-input);
   background: var(--surface-inset);
-  box-shadow: var(--shadow-inset);
   color: var(--fg);
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   outline: none;
 }
+.db-input:focus,
+.db-select:focus {
+  box-shadow: var(--shadow-focus);
+}
 .db-mini-select {
-  padding: 3px 7px;
+  padding: 3px 9px;
   border: none;
-  border-radius: 8px;
-  background: var(--surface-inset);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   color: var(--fg);
-  font-size: 11.5px;
   font-family: var(--font-mono);
+  font-size: 11px;
 }
 .db-empty {
   padding: 20px;
   text-align: center;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--fg-muted);
-  background: var(--bg);
-  border-radius: 12px;
+  background: var(--surface-alt);
+  border-radius: 14px;
 }
 .db-cards {
   display: flex;
@@ -811,14 +770,15 @@ defineExpose({ fetchAllDb });
   gap: 8px;
 }
 .db-row-card {
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--bg);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface-alt);
 }
 .db-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 .db-table th,
 .db-table td {
@@ -827,30 +787,9 @@ defineExpose({ fetchAllDb });
   border-bottom: 1px solid var(--border);
 }
 .db-table th {
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--fg-muted);
-}
-.chip-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: 9999px;
-  font-size: 10.5px;
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-.chip-accent {
-  background: rgba(139, 94, 60, 0.14);
-  color: var(--accent);
-}
-.chip-warn {
-  background: rgba(245, 158, 11, 0.16);
-  color: #92400e;
-}
-.chip-muted {
-  background: var(--surface-inset);
   color: var(--fg-muted);
 }
 </style>

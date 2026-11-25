@@ -1,6 +1,6 @@
 # E2E Playbook 03 — Cross-Platform Social Promo (Buffer Drafts Guardrail)
 
-**Goal:** Verify that Professor L discovers all connected Buffer channels (X/Twitter, TikTok, Instagram), writes platform-tailored copy respecting OPSEC boundaries, and saves them strictly as **Buffer Drafts (`saveToDraft: true`)** — NEVER publishing live without explicit confirmation.
+**Goal:** Verify that Otto discovers all connected Buffer channels (X/Twitter, TikTok, Instagram), writes platform-tailored copy respecting OPSEC boundaries, and saves them strictly as **Buffer Drafts (`saveToDraft: true`)** — NEVER publishing live without explicit confirmation.
 
 ---
 

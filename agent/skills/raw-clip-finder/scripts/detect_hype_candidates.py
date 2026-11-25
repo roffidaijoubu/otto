@@ -5,7 +5,7 @@ Stage 1 (0 LLM, pure Python stdlib): Clippable Hype Moment Detector.
 Buckets livestream chat into N-second windows, computes 4 rolling-baseline signals
 (velocity Z-score, unique author burst Z-score, reaction ratio, emote spam burst),
 merges adjacent spikes with setup pre-roll/post-roll, slices YouTube json3 transcript,
-and writes compact Candidate Cards (<video_id>.cards.txt) for Professor L to curate.
+and writes compact Candidate Cards (<video_id>.cards.txt) for Otto to curate.
 """
 
 from __future__ import annotations

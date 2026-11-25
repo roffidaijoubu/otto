@@ -5,7 +5,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OMP_AGENT_DIR="${HOME}/.omp/agent"
 OMP_PKG_VERSION="19.1.1"
 
-echo "==> Setting up lma (Professor L Livestreamer Manager Agent) on Sprite..."
+echo "==> Setting up lma (Otto Livestreamer Manager Agent) on Sprite..."
 
 # 0. Preflight check for required base tools
 if ! command -v python3 >/dev/null 2>&1; then

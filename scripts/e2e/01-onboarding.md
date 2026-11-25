@@ -1,6 +1,6 @@
 # E2E Playbook 01 — 2-Phase Onboarding & Persistent Memory Accuracy
 
-**Goal:** Verify that from a completely blank `initialized:` checkpoint, Professor L automatically researches the talent via zero-key connectors, respects zero-fourth-wall persona, fact-checks OPSEC boundaries, persists an accurate dossier to `/home/sprite/.omp/agent/MEMORY.md`, and guides Homework #1.
+**Goal:** Verify that from a completely blank `initialized:` checkpoint, Otto automatically researches the talent via zero-key connectors, respects zero-fourth-wall persona, fact-checks OPSEC boundaries, persists an accurate dossier to `/home/sprite/.omp/agent/MEMORY.md`, and guides Homework #1.
 
 **Reference Baseline:** `scripts/e2e/expected-memory.md`
 
@@ -15,22 +15,22 @@
 ### 2. Turn 1 — Introduce Talent Handle
 Run inside `/home/sprite/e2e-onboarding`:
 ```bash
-sprite exec -- bash -c 'mkdir -p /home/sprite/e2e-onboarding && cd /home/sprite/e2e-onboarding && omp -p "Assalamualaikum Prof! I am Roffi Daijoubu (@Roffi_Daijoubu), an indie VTuber from Indonesia. Let us get started!"'
+sprite exec -- bash -c 'mkdir -p /home/sprite/e2e-onboarding && cd /home/sprite/e2e-onboarding && omp -p "Assalamualaikum Otto! I am Roffi Daijoubu (@Roffi_Daijoubu), an indie VTuber from Indonesia. Let us get started!"'
 ```
 
 **Semantic Pass Criteria (Turn 1):**
-- [ ] Professor L proactively pulls real public data (e.g. YouTube subscriber/view/video counts, X/TikTok/IG handles from Buffer, and background via Exa) — does **not** ask the user to fill out a boring blank form first.
+- [ ] Otto proactively pulls real public data (e.g. YouTube subscriber/view/video counts, X/TikTok/IG handles from Buffer, and background via Exa) — does **not** ask the user to fill out a boring blank form first.
 - [ ] Presents a structured **Draft Dossier** and explicitly asks for **Fact-Check**, **OPSEC / anonymity boundaries**, and **Human Team / Credits** before jumping to Homework #1.
 - [ ] **Zero fourth-wall breaks:** Does NOT mention `omp`, `MEMORY.md`, `Mnemopi`, `youtube_tool`, `buffer_list_channels`, or `/skill:onboarding`.
 
 ### 3. Turn 2 — Confirm Fact-Check, OPSEC & Human Credits
 Run in the same directory (`/home/sprite/e2e-onboarding`):
 ```bash
-sprite exec -- bash -c 'cd /home/sprite/e2e-onboarding && omp -p "Good homework Prof! Here are my answers: 1. Fact-check: I am from the Syiah Ithna Ashari Imamiyah (Twelver Shia / 12 Imam) school — real-life ustadz teaching at Majelis Kautsar in Bandung. 2. OPSEC: Strictly anonymous — never leak my real legal identity or doxable details, and never do sectarian rage-bait. 3. Human Crew: Live2D model by kyuto_hans (Hans) and logo by Himeko Design. Strictly zero AI art/thumbnails!"'
+sprite exec -- bash -c 'cd /home/sprite/e2e-onboarding && omp -p "Good homework Otto! Here are my answers: 1. Fact-check: I am from the Syiah Ithna Ashari Imamiyah (Twelver Shia / 12 Imam) school — real-life ustadz teaching at Majelis Kautsar in Bandung. 2. OPSEC: Strictly anonymous — never leak my real legal identity or doxable details, and never do sectarian rage-bait. 3. Human Crew: Live2D model by kyuto_hans (Hans) and logo by Himeko Design. Strictly zero AI art/thumbnails!"'
 ```
 
 **Semantic Pass Criteria (Turn 2):**
-- [ ] Professor L saves the confirmed profile directly into `/home/sprite/.omp/agent/MEMORY.md`.
+- [ ] Otto saves the confirmed profile directly into `/home/sprite/.omp/agent/MEMORY.md`.
 - [ ] Transitions naturally into **Homework #1** (3 Concrete Goals, Ideal Schedule + mandatory days off, 3 GOATs + WHY, Upcoming "Christmas").
 
 ### 4. Compare Resulting `MEMORY.md` Against `scripts/e2e/expected-memory.md`

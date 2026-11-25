@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
-import ChatHeader from "./components/ChatHeader.vue";
+import ChatHeader, { type StudioTab } from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
-import SessionSidebar from "./components/SessionSidebar.vue";
 import MissionControlWorkspace from "./components/MissionControlWorkspace.vue";
+import OttoMascot from "./components/OttoMascot.vue";
+import SessionSidebar from "./components/SessionSidebar.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
+
+const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
 
 const messages = ref<ChatMessage[]>([]);
 const sessions = ref<SessionSummary[]>([]);
@@ -18,12 +21,34 @@ const connectionState = ref<"connecting" | "ready" | "error">("connecting");
 const error = ref("");
 const sidebarOpen = ref(false);
 const mobilePane = ref<"dashboard" | "chat">("dashboard");
+const activeTab = ref<StudioTab>("overview");
 const zeroLocalKeys = ref<boolean | null>(null);
 const aiMediaDisabled = ref<boolean | null>(null);
+const navCounts = ref({ schedule: 0, files: 0, database: 0, connectors: 0 });
 const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
 const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
+
+const savedColor = typeof localStorage !== "undefined" ? localStorage.getItem("otto_mascot_color") : null;
+const mascotColor = ref<string>(
+  savedColor && (MASCOT_SWATCHES as readonly string[]).includes(savedColor) ? savedColor : "#303030"
+);
+
+function setMascotColor(color: string) {
+  mascotColor.value = color;
+  try {
+    localStorage.setItem("otto_mascot_color", color);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function cycleMascotColor() {
+  const idx = (MASCOT_SWATCHES as readonly string[]).indexOf(mascotColor.value);
+  const next = MASCOT_SWATCHES[(idx + 1) % MASCOT_SWATCHES.length];
+  setMascotColor(next);
+}
 
 // Live streaming accumulator for the active assistant response
 const liveText = ref("");
@@ -305,38 +330,49 @@ onMounted(async () => {
       :zero-local-keys="zeroLocalKeys"
       :ai-media-disabled="aiMediaDisabled"
       :mobile-pane="mobilePane"
+      :active-tab="activeTab"
+      :mascot-color="mascotColor"
+      :counts="navCounts"
       @update:mobile-pane="mobilePane = $event"
+      @update:active-tab="activeTab = $event"
+      @cycle-mascot-color="cycleMascotColor"
     />
 
     <div class="studio-body">
-      <!-- PRIMARY WORKSPACE: MISSION CONTROL AT A GLANCE -->
+      <!-- PRIMARY STUDIO BENTO DESKTOP -->
       <div class="workspace-pane" :class="{ 'mobile-hidden': mobilePane !== 'dashboard' }">
         <MissionControlWorkspace
+          :active-tab="activeTab"
           :refresh-tick="missionRefreshTick"
           :workspace-refresh-tick="workspaceRefreshTick"
           :db-refresh-tick="dbRefreshTick"
+          :mascot-color="mascotColor"
+          :status-state="statusState"
+          :swatches="[...MASCOT_SWATCHES]"
+          @update:active-tab="activeTab = $event"
+          @select-mascot-color="setMascotColor"
+          @counts-updated="navCounts = $event"
           @ask-prompt="handleMissionPrompt"
           @guardrails-updated="handleGuardrailsUpdated"
         />
       </div>
 
-      <!-- DOCKED RIGHT CO-PILOT: PROFESSOR L CHAT -->
-      <aside class="chat-pane" :class="{ 'mobile-hidden': mobilePane !== 'chat' }">
-        <div class="chat-pane-head">
-          <div>
-            <div class="chat-pane-title">Co-Pilot Chat</div>
-            <div class="chat-pane-sub">Direct line to Professor L</div>
-          </div>
-          <div class="flex items-center gap-1.5">
+      <!-- DOCKED RIGHT FLOATING WIDGET: (Y)OUR CO-PILOT -->
+      <aside class="chat-pane otto-card" :class="{ 'mobile-hidden': mobilePane !== 'chat' }">
+        <div class="otto-card-head">
+          <div class="otto-card-head-left">
             <button
-              class="btn btn-xs btn-cafe-secondary"
+              class="btn btn-xs btn-otto-secondary"
               type="button"
-              @click="sidebarOpen = !sidebarOpen"
+              @click="sidebarOpen = true"
             >
               Chats ({{ sessions.length }})
             </button>
+          </div>
+          <span>(Y)our co-pilot.</span>
+          <div class="otto-card-head-right">
             <button
-              class="btn btn-xs btn-cafe-primary"
+              class="btn btn-xs btn-otto-primary"
               type="button"
               :disabled="busy"
               @click="newChat"
@@ -349,20 +385,20 @@ onMounted(async () => {
         <main class="messages-wrap" ref="messagesWrapRef">
           <div class="messages">
             <div v-if="messages.length === 0 && !hasLiveContent" class="empty-state">
-              <h2>Professor L is in the room.</h2>
+              <OttoMascot :size="52" :color="mascotColor" :state="statusState" />
+              <h2>Otto is in the room.</h2>
               <p>
-                No fluff, no yes-man answers, zero AI slop. Use Mission Control on the left or tell
-                me what stream/video we are working on today.
+                No fluff, no yes-man answers, zero AI slop. Use <span class="mark-y">(y)our</span> studio desktop on the left or tell Otto what stream or video we are sharpening today.
               </p>
               <div class="starters">
                 <button
-                  v-for="prompt in starters"
-                  :key="prompt"
-                  class="starter-btn"
+                  v-for="s in starters"
+                  :key="s"
                   type="button"
-                  @click="useStarter(prompt)"
+                  class="starter"
+                  @click="useStarter(s)"
                 >
-                  {{ prompt }}
+                  {{ s }}
                 </button>
               </div>
             </div>
@@ -374,6 +410,7 @@ onMounted(async () => {
               :text="m.text"
               :thinking="m.thinking"
               :steps="m.steps"
+              :mascot-color="mascotColor"
             />
 
             <MessageBubble
@@ -382,13 +419,14 @@ onMounted(async () => {
               :text="liveText"
               :thinking="liveThinking"
               :steps="liveSteps"
-              :live="true"
+              :mascot-color="mascotColor"
+              live
             />
           </div>
         </main>
 
         <div v-if="busy" class="activity">
-          <span class="activity-dot"></span>
+          <span class="pulse"></span>
           <span>{{ activity }}</span>
         </div>
 
@@ -413,150 +451,140 @@ onMounted(async () => {
 
 <style scoped>
 .studio-shell {
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  width: 100%;
-  background: var(--bg);
   overflow: hidden;
+  max-width: 1560px;
+  margin: 0 auto;
 }
 .studio-body {
   flex: 1;
   min-height: 0;
   display: flex;
+  gap: 16px;
+  padding: 10px 18px 18px;
   overflow: hidden;
 }
 .workspace-pane {
   flex: 1;
   min-width: 0;
-  height: 100%;
-  overflow: hidden;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .chat-pane {
   width: 430px;
-  max-width: 44vw;
   flex-shrink: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
-  background: var(--bg);
-}
-.chat-pane-head {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-alt);
-}
-.chat-pane-title {
-  font-family: var(--font-serif);
-  font-size: 16px;
-  line-height: 1.1;
-  color: var(--fg);
-}
-.chat-pane-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--fg-muted);
+  min-height: 0;
 }
 .messages-wrap {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 12px;
-}
-@media (max-width: 1024px) {
-  .chat-pane {
-    width: 100%;
-    max-width: 100%;
-    border-left: none;
-  }
-  .mobile-hidden {
-    display: none;
-  }
+  padding: 14px 14px 12px;
+  background: var(--surface);
 }
 .messages {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 .empty-state {
-  margin: auto;
-  max-width: 500px;
-  padding: 28px;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
-  text-align: left;
+  margin: 20px 6px;
+  padding: 22px 18px;
+  border-radius: 16px;
+  background: var(--surface-alt);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
 }
 .empty-state h2 {
-  margin: 0 0 8px 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: 26px;
-  line-height: 1.25;
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 500;
   color: var(--fg);
 }
 .empty-state p {
-  margin: 0 0 18px 0;
-  font-size: 14px;
+  margin: 0 0 10px;
   color: var(--fg-muted);
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .starters {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
 }
-.starter-btn {
+.starter {
+  width: 100%;
   text-align: left;
-  padding: 11px 14px;
+  padding: 9px 14px;
   border: none;
-  border-radius: var(--radius);
-  background: var(--surface-alt);
-  color: var(--accent);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--shadow-raised-sm);
-  transition: background var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
-}
-.starter-btn:hover {
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: var(--shadow-raised);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: var(--shadow-pill);
+  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+.starter:hover {
+  background: var(--highlight-yellow);
+  transform: translateY(-1px);
 }
 .activity {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  color: var(--fg);
+  background: var(--highlight-yellow);
+  font-size: 11.5px;
+  font-family: var(--font-mono);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-alt);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-muted);
 }
-.activity-dot {
+.pulse {
   width: 7px;
   height: 7px;
-  border-radius: var(--radius-circle);
-  background: var(--warning);
+  border-radius: var(--radius-pill);
+  background: var(--fg);
+  animation: blink 1.1s ease-in-out infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 .error-banner {
-  padding: 10px 20px;
-  border-top: 1px solid var(--error);
+  flex-shrink: 0;
+  padding: 8px 14px;
   background: var(--error-bg);
   color: var(--error);
+  font-size: 11.5px;
   font-family: var(--font-mono);
-  font-size: 12px;
+}
+
+@media (max-width: 1200px) {
+  .chat-pane {
+    width: 370px;
+  }
+}
+@media (max-width: 1024px) {
+  .studio-body {
+    padding: 8px 10px 10px;
+  }
+  .chat-pane {
+    width: 100%;
+    flex: 1;
+  }
+  .mobile-hidden {
+    display: none !important;
+  }
 }
 </style>

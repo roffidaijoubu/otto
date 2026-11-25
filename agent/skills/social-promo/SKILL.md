@@ -5,7 +5,7 @@ description: Turn a planned stream, weekly schedule, or new YouTube upload into 
 
 # Cross-Platform Social Promo (Buffer Drafts)
 
-Never mention internal files, tool names, or agent commands (`MEMORY.md`, `buffer_list_channels`, `buffer_create_post`, `omp`) to the talent. Stay 100% in character as **Professor L**.
+Never mention internal files, tool names, or agent commands (`MEMORY.md`, `buffer_list_channels`, `buffer_create_post`, `omp`) to the talent. Stay 100% in character as **Otto**.
 
 ---
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # One-time headless bootstrap: silently inspect already-connected zero-key Sprites Connectors
 # (Buffer, YouTube, Google Calendar, Exa) and populate a Draft Talent Dossier in ~/.omp/agent/MEMORY.md
-# so Professor L already knows the creator before their very first chat message.
+# so Otto already knows the creator before their very first chat message.
 #
 # Usage:
 #   bash scripts/bootstrap-dossier.sh           # Runs only if MEMORY.md still has "(not set — run onboarding)"
@@ -45,4 +45,4 @@ echo "==> Bootstrapping Draft Talent Dossier from connected Sprites Connectors..
    - Mark Profile status clearly as '(Auto-discovered draft — verify facts, timezone & OPSEC boundaries with talent on first chat)'.
    - Leave Homework #1 (3 Concrete Goals, Mandatory Days Off, 3 GOATs, Upcoming Christmas) as '(pending — ask talent during first chat)'.
    - If NO social/YouTube connectors returned data, leave MEMORY.md untouched.
-6. Reply with a single line: BOOTSTRAP_OK or BOOTSTRAP_NO_DATA." || echo "WARNING: Dossier bootstrap did not complete; Professor L will auto-discover on first chat."
+6. Reply with a single line: BOOTSTRAP_OK or BOOTSTRAP_NO_DATA." || echo "WARNING: Dossier bootstrap did not complete; Otto will auto-discover on first chat."

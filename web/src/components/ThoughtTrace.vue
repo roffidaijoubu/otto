@@ -52,74 +52,73 @@ watch(
 .trace-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
+  gap: 7px;
+  padding: 4px 11px;
   border: none;
-  border-radius: var(--radius-circle);
+  border-radius: var(--radius-pill);
   background: var(--surface-alt);
-  color: var(--accent);
-  box-shadow: var(--shadow-raised-sm);
+  color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 400;
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out);
 }
 .trace-toggle:hover {
-  background: var(--surface);
+  background: var(--surface-inset-hover);
 }
 .trace-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-circle);
-  background: var(--accent-secondary);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--fg-muted);
 }
 .trace-dot.live {
-  background: var(--warning);
+  background: #ca8a04;
   animation: pulse 1.1s ease-in-out infinite;
 }
 .trace-caret {
   font-size: 9px;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 .trace-body {
-  margin-top: 8px;
-  padding: 12px 14px;
-  border-radius: var(--radius);
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .trace-steps {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .trace-step {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--fg);
 }
 .step-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-circle);
-  background: var(--warning);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: #ca8a04;
   flex-shrink: 0;
 }
 .step-dot.done {
-  background: var(--success);
+  background: #16a34a;
 }
 .trace-text {
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--fg-muted);
-  max-height: 220px;
+  max-height: 200px;
   overflow-y: auto;
 }
 @keyframes pulse {
