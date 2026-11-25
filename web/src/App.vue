@@ -6,6 +6,7 @@ import MessageBubble from "./components/MessageBubble.vue";
 import MissionControlWorkspace from "./components/MissionControlWorkspace.vue";
 import OttoMascot from "./components/OttoMascot.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
+import StudioSetupWizard from "./components/StudioSetupWizard.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
 
@@ -29,6 +30,10 @@ const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
 const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
+const setupChecked = ref(false);
+const showSetupWizard = ref(false);
+const setupInitialName = ref("");
+const setupInitialTimezone = ref("");
 
 const savedColor = typeof localStorage !== "undefined" ? localStorage.getItem("otto_mascot_color") : null;
 const mascotColor = ref<string>(
@@ -316,14 +321,77 @@ async function switchChat(session: SessionSummary) {
   }
 }
 
+async function loadSetupStatus() {
+  const params = new URLSearchParams(window.location.search);
+  const forceSkip = params.get("skipSetup") === "1";
+  const forceShow = params.get("setup") === "1";
+  try {
+    const res = await fetch("/api/setup/status");
+    if (res.ok) {
+      const data = (await res.json()) as {
+        completed?: boolean;
+        creatorName?: string;
+        timezone?: string;
+      };
+      setupInitialName.value = data.creatorName || "";
+      setupInitialTimezone.value = data.timezone || "";
+      if (forceShow) {
+        showSetupWizard.value = true;
+      } else if (forceSkip) {
+        showSetupWizard.value = false;
+      } else {
+        showSetupWizard.value = !data.completed;
+      }
+    }
+  } catch {
+    showSetupWizard.value = false;
+  } finally {
+    setupChecked.value = true;
+  }
+}
+
+function handleSetupDone() {
+  showSetupWizard.value = false;
+  missionRefreshTick.value += 1;
+  dbRefreshTick.value += 1;
+  if (window.location.search.includes("setup=1")) {
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+}
+
+async function reopenSetup() {
+  try {
+    const res = await fetch("/api/setup/status");
+    if (res.ok) {
+      const data = (await res.json()) as { creatorName?: string; timezone?: string };
+      setupInitialName.value = data.creatorName || "";
+      setupInitialTimezone.value = data.timezone || "";
+    }
+  } catch {
+    // ignore
+  }
+  showSetupWizard.value = true;
+}
+
 onMounted(async () => {
-  await Promise.all([loadMessages(), loadSessions()]);
+  await Promise.all([loadSetupStatus(), loadMessages(), loadSessions()]);
   connectEvents();
 });
 </script>
 
 <template>
-  <div class="studio-shell">
+  <StudioSetupWizard
+    v-if="setupChecked && showSetupWizard"
+    :initial-name="setupInitialName"
+    :initial-timezone="setupInitialTimezone"
+    :mascot-color="mascotColor"
+    :swatches="[...MASCOT_SWATCHES]"
+    @select-mascot-color="setMascotColor"
+    @completed="handleSetupDone"
+    @skipped="handleSetupDone"
+  />
+
+  <div v-else-if="setupChecked" class="studio-shell">
     <ChatHeader
       :status-state="statusState"
       :status-label="statusLabel"
@@ -354,6 +422,7 @@ onMounted(async () => {
           @counts-updated="navCounts = $event"
           @ask-prompt="handleMissionPrompt"
           @guardrails-updated="handleGuardrailsUpdated"
+          @open-setup="reopenSetup"
         />
       </div>
 

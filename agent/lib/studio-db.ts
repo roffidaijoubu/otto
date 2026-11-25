@@ -223,6 +223,12 @@ function initSchema(db: Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_custom_items_slug ON custom_items(tracker_slug);
+
+    CREATE TABLE IF NOT EXISTS studio_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 }
 
@@ -1007,4 +1013,27 @@ export function runReadOnlySql(
     rows: allRows.slice(0, MAX_ROWS),
     truncated: allRows.length > MAX_ROWS,
   };
+}
+
+// ---------- Studio Metadata KV (Setup State, Preferences) ----------
+
+export function getStudioMeta(key: string): string | null {
+  const db = getStudioDb();
+  const row = db.query("SELECT value FROM studio_meta WHERE key = ?").get(key);
+  if (row && typeof row === "object" && "value" in row && typeof row.value === "string") {
+    return row.value;
+  }
+  return null;
+}
+
+export function setStudioMeta(key: string, value: string): void {
+  const db = getStudioDb();
+  const nowIso = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO studio_meta (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(key, value, nowIso);
 }

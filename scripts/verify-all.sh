@@ -110,6 +110,11 @@ TRK_ROW=$(curl -s -b /tmp/lma_v_cookie.txt -X POST "http://127.0.0.1:8080/api/db
 TRK_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/db/trackers/${TRK_SLUG}" | jq -r ".ok")
 echo "CHECK_DB_TRACKER:${TRK_SLUG}:${TRK_ROW}:${TRK_DEL}"
 
+# First-run setup gate checks (unauth blocked + auth readable)
+UNAUTH_SETUP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/api/setup/status)
+AUTH_SETUP=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/setup/status | jq -r ".completed | type")
+echo "CHECK_SETUP_GATE:${UNAUTH_SETUP}:${AUTH_SETUP}"
+
 rm -f /tmp/lma_v_cookie.txt
 ' 2>&1 || true)
 
@@ -144,6 +149,7 @@ check_grep "Workspace PUT/GET text + ZIP export + DELETE roundtrip" "CHECK_WS_RO
 check_grep "Unified Studio DB overview returns SQLite counts" "CHECK_DB_OVERVIEW:number:number:number"
 check_grep "Unified Studio DB 3+1 pipeline CRUD roundtrip" "CHECK_DB_PIPELINE:idea_[a-f0-9]+:true"
 check_grep "Unified Studio DB custom tracker CRUD roundtrip" "CHECK_DB_TRACKER:verify-tracker:true:true"
+check_grep "Setup wizard status protected (401 unauth / boolean auth)" "CHECK_SETUP_GATE:401:boolean"
 
 if [ "$MODE" = "live" ]; then
   echo ""

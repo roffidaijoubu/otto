@@ -62,8 +62,8 @@ const emit = defineEmits<{
   countsUpdated: [counts: { schedule: number; files: number; database: number; connectors: number }];
   askPrompt: [prompt: string];
   guardrailsUpdated: [payload: { zeroLocalKeys: boolean | null; aiMediaDisabled: boolean | null }];
+  openSetup: [];
 }>();
-
 const workspaceInitialPath = ref("");
 const loading = ref(false);
 
@@ -987,7 +987,14 @@ defineExpose({ fetchAll });
     <!-- VIEW 6: ZERO-KEY CONNECTORS & GUARDRAILS -->
     <div v-else class="detail-stack">
       <div class="otto-card">
-        <div class="otto-card-head">(Y)our guardrails &amp; connectors.</div>
+        <div class="otto-card-head">
+          <span>(Y)our guardrails &amp; connectors.</span>
+          <div class="otto-card-head-right">
+            <button type="button" class="head-link" @click="emit('openSetup')">
+              re-run setup
+            </button>
+          </div>
+        </div>
         <div class="otto-card-body">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="sub-item-card">

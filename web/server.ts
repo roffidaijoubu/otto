@@ -9,6 +9,7 @@ import {
   deleteCustomTrackerItem,
   deletePipelineItem,
   getStudioDbOverview,
+  getStudioMeta,
   listCalendarEvents,
   listChannelMetrics,
   listContacts,
@@ -16,6 +17,7 @@ import {
   listCustomTrackers,
   listPipelineItems,
   saveCalendarEventsBatch,
+  setStudioMeta,
   upsertContact,
   upsertCustomTracker,
   upsertCustomTrackerItem,
@@ -68,7 +70,7 @@ function loadPrivateEnv() {
 }
 loadPrivateEnv();
 
-const WEB_PASSWORD = process.env.LMA_WEB_PASSWORD || "";
+let webPassword = process.env.LMA_WEB_PASSWORD || "";
 const AUTH_COOKIE_NAME = "lma_session";
 
 function computeSessionToken(password: string): string {
@@ -82,20 +84,112 @@ function timingSafeStrEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ba, bb);
 }
 
+function buildAuthCookieHeader(req: Request, url: URL, password: string): string {
+  const token = computeSessionToken(password);
+  const isHttps =
+    url.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  const secureAttr = isHttps ? "; Secure" : "";
+  return `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secureAttr}`;
+}
+
+function updatePrivateWebPassword(newPassword: string): void {
+  const home = process.env.HOME || "/home/sprite";
+  const envDir = path.join(home, ".config", "lma");
+  const envFile = path.join(envDir, "web.env");
+  fs.mkdirSync(envDir, { recursive: true, mode: 0o700 });
+  const lines = fs.existsSync(envFile)
+    ? fs.readFileSync(envFile, "utf8").split(/\r?\n/)
+    : [];
+  let replaced = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (/^\s*LMA_WEB_PASSWORD\s*=/.test(line)) {
+      out.push(`LMA_WEB_PASSWORD=${newPassword}`);
+      replaced = true;
+    } else if (line.length > 0 || out.length > 0) {
+      out.push(line);
+    }
+  }
+  if (!replaced) {
+    out.push(`LMA_WEB_PASSWORD=${newPassword}`);
+  }
+  const content = out.join("\n").replace(/\n*$/, "\n");
+  const tmpFile = `${envFile}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, content, { encoding: "utf8", mode: 0o600 });
+  fs.chmodSync(tmpFile, 0o600);
+  fs.renameSync(tmpFile, envFile);
+  webPassword = newPassword;
+  process.env.LMA_WEB_PASSWORD = newPassword;
+}
+
+function readSetupIdentity(): { creatorName: string; timezone: string } {
+  const home = process.env.HOME || "/home/sprite";
+  const memPath = path.join(home, ".omp", "agent", "MEMORY.md");
+  if (!fs.existsSync(memPath)) return { creatorName: "", timezone: "" };
+  const md = fs.readFileSync(memPath, "utf8");
+  const cleanVal = (raw: string): string => {
+    const cleaned = raw.replace(/[*`]/g, "").trim();
+    if (!cleaned || /^\(not set|\(pending/i.test(cleaned)) return "";
+    return cleaned;
+  };
+  const nameMatch = md.match(/-\s*\*\*Name\s*\/\s*Persona:\*\*\s*(.+)/i);
+  const tzMatch = md.match(/-\s*\*\*Timezone:\*\*\s*(.+)/i);
+  return {
+    creatorName: nameMatch ? cleanVal(nameMatch[1]) : "",
+    timezone: tzMatch ? cleanVal(tzMatch[1]) : "",
+  };
+}
+
+function writeIdentityToMemoryMd(creatorName: string, timezone: string): void {
+  const home = process.env.HOME || "/home/sprite";
+  const memDir = path.join(home, ".omp", "agent");
+  const memPath = path.join(memDir, "MEMORY.md");
+  fs.mkdirSync(memDir, { recursive: true });
+  let md = "";
+  if (fs.existsSync(memPath)) {
+    md = fs.readFileSync(memPath, "utf8");
+  } else {
+    const examplePath = path.resolve(import.meta.dir, "..", "agent", "MEMORY.md.example");
+    md = fs.existsSync(examplePath)
+      ? fs.readFileSync(examplePath, "utf8")
+      : `# Talent Dossier\n\n## Profile\n- **Name / Persona:** (not set)\n- **Timezone:** (not set)\n`;
+  }
+  const safeName = creatorName.replace(/[\r\n]+/g, " ").trim();
+  const safeTz = timezone.replace(/[\r\n]+/g, " ").trim();
+  if (safeName) {
+    if (/-\s*\*\*Name\s*\/\s*Persona:\*\*.*/i.test(md)) {
+      md = md.replace(/-\s*\*\*Name\s*\/\s*Persona:\*\*.*/i, `- **Name / Persona:** ${safeName}`);
+    } else {
+      md = `- **Name / Persona:** ${safeName}\n` + md;
+    }
+  }
+  if (safeTz) {
+    if (/-\s*\*\*Timezone:\*\*.*/i.test(md)) {
+      md = md.replace(/-\s*\*\*Timezone:\*\*.*/i, `- **Timezone:** ${safeTz}`);
+    } else if (/-\s*\*\*Name\s*\/\s*Persona:\*\*.*/i.test(md)) {
+      md = md.replace(/(-\s*\*\*Name\s*\/\s*Persona:\*\*.*)/i, `$1\n- **Timezone:** ${safeTz}`);
+    } else {
+      md = `- **Timezone:** ${safeTz}\n` + md;
+    }
+  }
+  const tmp = `${memPath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, md, "utf8");
+  fs.renameSync(tmp, memPath);
+}
+
 function isAuthenticated(req: Request): boolean {
   // Fail-closed: never expose the agent without LMA_WEB_PASSWORD configured in ~/.config/lma/web.env
-  if (!WEB_PASSWORD) return false;
+  if (!webPassword) return false;
   const cookieHeader = req.headers.get("cookie") || "";
   for (const part of cookieHeader.split(";")) {
     const [rawK, ...rest] = part.trim().split("=");
     if (rawK === AUTH_COOKIE_NAME) {
       const val = rest.join("=");
-      return timingSafeStrEqual(val, computeSessionToken(WEB_PASSWORD));
+      return timingSafeStrEqual(val, computeSessionToken(webPassword));
     }
   }
   return false;
 }
-
 function base64UrlDecode(str: string): Buffer {
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
   return Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
@@ -1044,7 +1138,7 @@ Bun.serve({
 
     // Passcode login endpoint
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
-      if (!WEB_PASSWORD) {
+      if (!webPassword) {
         return Response.json(
           { error: "LMA_WEB_PASSWORD is not configured. Run bash ~/lma/setup.sh first." },
           { status: 503 }
@@ -1062,19 +1156,15 @@ Bun.serve({
         body && typeof body === "object" && "password" in body && typeof body.password === "string"
           ? body.password
           : "";
-      if (!timingSafeStrEqual(pw, WEB_PASSWORD)) {
+      if (!timingSafeStrEqual(pw, webPassword)) {
         recordLoginFailure(clientKey);
         return Response.json({ error: "Invalid passcode" }, { status: 401 });
       }
       loginFailures.delete(clientKey);
-      const token = computeSessionToken(WEB_PASSWORD);
-      const isHttps =
-        url.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
-      const secureAttr = isHttps ? "; Secure" : "";
       return new Response(JSON.stringify({ ok: true }), {
         headers: {
           "Content-Type": "application/json",
-          "Set-Cookie": `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secureAttr}`,
+          "Set-Cookie": buildAuthCookieHeader(req, url, webPassword),
         },
       });
     }
@@ -1244,6 +1334,65 @@ Bun.serve({
         updatedAt: stat.mtime.toISOString(),
         content,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/setup/status") {
+      const identity = readSetupIdentity();
+      const metaDone = getStudioMeta("setup_completed") === "1";
+      const completed = metaDone || Boolean(identity.creatorName && identity.timezone);
+      return Response.json({
+        completed,
+        creatorName: identity.creatorName,
+        timezone: identity.timezone,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/setup/complete") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as {
+          creatorName?: string;
+          timezone?: string;
+          newPassword?: string;
+          skip?: boolean;
+        };
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        let passwordChanged = false;
+
+        if (!body.skip) {
+          const creatorName = typeof body.creatorName === "string" ? body.creatorName.trim() : "";
+          const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
+          if (creatorName || timezone) {
+            writeIdentityToMemoryMd(creatorName, timezone);
+          }
+          const newPw = typeof body.newPassword === "string" ? body.newPassword.trim() : "";
+          if (newPw) {
+            if (newPw.length < 8) {
+              return Response.json(
+                { error: "Passcode must be at least 8 characters long." },
+                { status: 400 }
+              );
+            }
+            if (/[\r\n\0]/.test(newPw)) {
+              return Response.json(
+                { error: "Passcode cannot contain line breaks." },
+                { status: 400 }
+              );
+            }
+            updatePrivateWebPassword(newPw);
+            headers["Set-Cookie"] = buildAuthCookieHeader(req, url, newPw);
+            passwordChanged = true;
+          }
+        }
+
+        setStudioMeta("setup_completed", "1");
+        broadcast({ type: "db_changed" });
+        return new Response(
+          JSON.stringify({ ok: true, completed: true, passwordChanged }),
+          { headers }
+        );
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/calendar") {
