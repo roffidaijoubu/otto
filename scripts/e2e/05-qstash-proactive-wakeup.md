@@ -2,6 +2,8 @@
 
 **Goal:** Verify that Otto can schedule his own future wake-up via the zero-key Upstash QStash Custom API Connector, that unsigned `POST /api/wakeup` requests are rejected (`401`), and that QStash's cryptographically signed webhook wakes the Sprite, acquires the `/.sprite/api.sock` Tasks API hold, and triggers a proactive message visible in Web Chat UI (`/api/messages`).
 
+> **Two wake-up modes:** a normal wake-up injects `[SCHEDULED WAKE-UP: <label>]` into chat; a **silent** wake-up (`silent: true` / `mode: "background"` + `jobType`, used for nightly reflection) runs the turn without posting a chat message. This playbook covers the visible mode.
+
 ---
 
 ## Steps

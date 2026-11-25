@@ -54,7 +54,7 @@ tar \
     mkdir -p /home/sprite/lma
     tar xzf - -C /home/sprite/lma
     rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/* \
-      /home/sprite/.omp/agent/calendar.json* /home/sprite/.omp/agent/studio.db* \
+      /home/sprite/.omp/agent/calendar.json* /home/sprite/.omp/agent/studio.db* /home/sprite/.omp/agent/mnemopi.db* \
       /home/sprite/.omp/agent/learned-skills /home/sprite/workspace
     cp /home/sprite/lma/agent/MEMORY.md.example /home/sprite/.omp/agent/MEMORY.md
     LMA_SKIP_BOOTSTRAP=1 bash /home/sprite/lma/setup.sh

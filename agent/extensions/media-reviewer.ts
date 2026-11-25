@@ -9,9 +9,35 @@ import { Type } from "@sinclair/typebox";
 const execFileAsync = promisify(execFile);
 
 let cachedGeminiBaseUrl: string | null = null;
-const REVIEW_MODEL = process.env.LMA_REVIEW_MODEL || "gemini-2.5-flash";
-const MAX_INLINE_BYTES = 14 * 1024 * 1024; // 14 MB safe inline base64 cap
 const HOME_DIR = process.env.HOME || "/home/sprite";
+
+/**
+ * Resolve the multimodal review model.
+ * Priority: LMA_REVIEW_MODEL override -> agent/config.yml `modelRoles.vision`
+ * (written by setup.sh) -> built-in Gemini default. Never hardcode a model
+ * that the configured Connector may not serve.
+ */
+function resolveReviewModel(): string {
+  const override = process.env.LMA_REVIEW_MODEL?.trim();
+  if (override) return override;
+  try {
+    const cfgPath = path.join(HOME_DIR, ".omp", "agent", "config.yml");
+    if (fs.existsSync(cfgPath)) {
+      const cfg = fs.readFileSync(cfgPath, "utf8");
+      const match = cfg.match(/^\s{2}vision:\s*(\S+)\s*$/m);
+      if (match) {
+        // "google/gemini-4-hydrogen:high" -> "gemini-4-hydrogen"
+        return match[1].replace(/^[^/]+\//, "").replace(/:.*$/, "");
+      }
+    }
+  } catch {
+    // Fall through to the default below.
+  }
+  return "gemini-4-hydrogen";
+}
+
+const REVIEW_MODEL = resolveReviewModel();
+const MAX_INLINE_BYTES = 14 * 1024 * 1024; // 14 MB safe inline base64 cap
 const WORKSPACE_ROOT = path.resolve(process.env.LMA_WORKSPACE_DIR || path.join(HOME_DIR, "workspace"));
 const CLIPS_ROOT = path.resolve(HOME_DIR, "clips");
 

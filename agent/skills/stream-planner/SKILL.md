@@ -1,6 +1,6 @@
 ---
 name: stream-planner
-description: Turn an upcoming stream into a structured 4-6 hour recording session broken into 2-4 YouTube-ready segments, enforcing Otto's 3+1 experiment rule, Abe Lincoln prep, Daily Ideation ($1/$1K/$100K), 4 Ps intros, and updating the 3+1 Stream Tracker.
+description: Turn an upcoming stream into a structured 4-6 hour recording session broken into 2-4 YouTube-ready segments, enforcing Otto's 3+1 experiment rule, Abe Lincoln prep, Daily Ideation ($1/$1K/$100K), 4 Ps intros, and recording the plan in the Studio DB 3+1 Content Pipeline.
 ---
 
 # Segment-First Stream Planner
@@ -12,7 +12,7 @@ Never mention internal files, tool names, or agent commands (`MEMORY.md`, `exa_s
 ## 1. Check Baseline & Sustainability First
 1. Silently read `~/.omp/agent/MEMORY.md` (and optionally call `calendar_sync_google` + `calendar_list_events` to check upcoming Google Calendar commitments/conflicts) to review:
    - The talent's **Ideal Schedule** & **Mandatory Days Off** (if they are trying to stream on a mandatory day off or push past 6 hours without a plan, push back!).
-   - The **3+1 Stream Tracker** (last 4 streams) to see whether this stream should be a **Tried & True** format or the 1-in-4 **Experiment** swing.
+   - The **3+1 ratio so far** (query `studio_pipeline_*` / the Studio DB) to decide whether this stream should be a **Tried & True** format or the 1-in-4 **Experiment** swing.
    - Their niche, content pillars, 3 GOATs, upcoming **"Christmas"** milestone, and **OPSEC boundaries**.
 2. If the talent is out of ideas, run Otto's **Daily Ideation Exercise**:
    - **$1 Idea:** Free, zero-prep concept runnable tonight.
@@ -42,7 +42,7 @@ Structure the plan clearly:
 ---
 
 ## 3. Lock It In & Offer Proactive Ops
-1. Once the talent approves the plan, immediately append it to the **3+1 Stream Tracker** table in `~/.omp/agent/MEMORY.md`.
-2. If they have a confirmed date & time, lock it straight onto their **Schedule Calendar** (`calendar_add_event`, which auto-syncs to Google Calendar when connected) with proactive check-in reminders (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`).
+1. Once the talent approves the plan, immediately record it in the **3+1 Content Pipeline** via `studio_pipeline_upsert` (pillar `core` or `experiment`, status, hook, linked thumbnail/script paths) so Mission Control's **Studio DB** shows it live. Keep only a short last-4 recap line in `~/.omp/agent/MEMORY.md` if useful.
+2. If they have a confirmed date & time, lock it straight onto their **Schedule Calendar** (`calendar_add_event`, which auto-syncs to Google Calendar when connected) with proactive check-in reminders (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`, `at_start`). For a standalone recurring cron reminder outside the calendar, use `schedule_wakeup` with `CRON_TZ=<IANA zone> <cron>`.
 3. Right alongside locking a `stream` / `collab` onto the calendar, include a ready-to-paste **YouTube Studio Waiting Room Pack** (Final Title, Description with timestamps/links, Tags, and Squint-Test Thumbnail Brief for their human artist — note: YouTube Studio waiting rooms cannot be created directly via API, so give them a clean 1-click copy block).
 4. Offer to prep tailored X, TikTok, and Instagram announcement drafts in Buffer (`saveToDraft: true`).

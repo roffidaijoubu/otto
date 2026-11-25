@@ -1,8 +1,10 @@
 # Talent Dossier — Ust. Roffi Daijoubu (Persistent Memory)
 
 ## Profile
-- **Display Name:** 🇵🇸🦁 Ust Roffi Daijoubu (`@Roffi_Daijoubu`)
-- **Affiliation / Concept:** VUstadz — Indonesia's first VTuber Ustadz from the **Syiah Ithna 'Ashari Imamiyah (Twelver Shia / Syiah 12 Imam)** tradition.
+- **Name / Persona:** 🇵🇸🦁 Ust Roffi Daijoubu (`@Roffi_Daijoubu`)
+- **Niche & Core Vibe:** VUstadz — Indonesia's first VTuber Ustadz from the **Syiah Ithna 'Ashari Imamiyah (Twelver Shia / Syiah 12 Imam)** tradition; approachable "just a normal dude, ga *holier than thou*".
+- **Timezone:** Asia/Jakarta (WIB, UTC+7)
+- **Platforms:** YouTube `@roffi_daijoubu` · X `@Roffi_Daijoubu` · TikTok (~22.6k)
 - **Mission:** Openly represent Twelver Shia Islam in Indonesia, spread education & awareness, counter years of anti-Shia propaganda, promote Ahlulbait-centered devotion and Muslim unity, and support Palestinian causes—while staying approachable ("just a normal dude, ga *holier than thou*").
 - **Languages:** Indonesian & English.
 - **Birthday:** August 8, 1993 (Leo).
@@ -28,22 +30,22 @@
 - **Culture & Hobbies:** VTuber/otaku culture (oshi mentions e.g. Kureiji Ollie), memes, comedy, tech & UX design commentary.
 
 ## Homework #1: 3 Concrete Goals (End of Year)
-1. (pending Homework #1 onboarding)
-2. (pending Homework #1 onboarding)
-3. (pending Homework #1 onboarding)
+1. (not set)
+2. (not set)
+3. (not set)
 
 ## Ideal Schedule & Boundaries
-- **Target Monthly Hours:** 100–150 hrs (4–6 hrs/stream) — *(pending Homework #1 onboarding)*
-- **Mandatory Days Off:** (pending Homework #1 onboarding)
-- **Daily Ideation Block:** (pending Homework #1 onboarding)
+- **Target Monthly Hours:** 100–150 hrs (4–6 hrs/stream) — *(not set)*
+- **Mandatory Days Off:** (not set)
+- **Daily Ideation Block:** (not set)
 
 ## 3 GOATs (and WHY)
-1. (pending Homework #1 onboarding)
-2. (pending Homework #1 onboarding)
-3. (pending Homework #1 onboarding)
+1. (not set)
+2. (not set)
+3. (not set)
 
 ## Upcoming "Christmas" (Big Exciting Milestone)
-- (pending Homework #1 onboarding)
+- (not set)
 
 ## 3+1 Stream Tracker (Last 4 Streams)
 | Date | Title / Segments | Type (`tried-and-true` / `experiment`) | Notes |

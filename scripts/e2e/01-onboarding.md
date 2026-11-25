@@ -42,6 +42,7 @@ sprite exec -- cat /home/sprite/.omp/agent/MEMORY.md
 **Accuracy Rubric (Semantic Match — exact wording not required):**
 - [ ] **Identity:** Roffi Daijoubu (`@Roffi_Daijoubu`), Indonesian VTuber Ustadz, Twelver Shia / Syiah 12 Imam, Majelis Kautsar Bandung.
 - [ ] **Platforms:** YouTube (`UCxNQuQpAR08DxRZytUJmNGg` or `@roffi_daijoubu` with real stats), X/Twitter, TikTok, Instagram.
+- [ ] **Timezone:** `Asia/Jakarta` (WIB, UTC+7) recorded under `- **Timezone:**`.
 - [ ] **OPSEC Rule:** Strict anonymity / no real-world legal identity / no sectarian rage-bait.
 - [ ] **Human Credits & Guardrail:** `kyuto_hans` (Live2D), `Himeko Design` (logo), strictly zero AI art/thumbnails.
 - [ ] **No fabricated real-world personal data** (zero OPSEC leaks).

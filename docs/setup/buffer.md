@@ -1,6 +1,6 @@
 # Agent Setup Guide: Buffer (X, TikTok & Instagram) via Sprites Custom API Connector
 
-> **Audience:** AI coding agent setting up `lma` for a user. Execute the CLI steps directly; only interrupt the human to obtain their Buffer API key if it is not already in `.env` or environment variables.
+> **Audience:** AI coding agent setting up `lma` for a user. Execute the CLI steps directly; only interrupt the human to obtain their Buffer API key if it is not already exported in the shell environment (the repo `.env` is **not** auto-loaded at runtime).
 
 `lma` drafts and schedules social posts across **X (Twitter), TikTok, and Instagram** using Buffer's GraphQL API (`https://api.buffer.com`) through a **Fly.io Sprites Custom API Connector** — with **zero API keys stored inside the Sprite**.
 
@@ -11,16 +11,19 @@
 Run inside the Sprite first — skip setup if a `buffer` connector already exists:
 
 ```bash
-sprite exec -- bash -c 'curl -s https://api.sprites.dev/v1/gateway/list | jq ".connections[] | select(.provider==\"custom_api\" and (.display_name | test(\"buffer\"; \"i\"))) | .gateway_base_url"'
+sprite exec -- bash -c 'curl -s https://api.sprites.dev/v1/gateway/list | jq ".connections[] | select((.provider==\"buffer\") or (.provider==\"custom_api\" and (.display_name | test(\"buffer\"; \"i\")))) | .gateway_base_url"'
 ```
 
 ---
 
 ## 2. Obtain `BUFFER_API_KEY` (Only if Missing)
 
-Check if `BUFFER_API_KEY` is already in the local environment or `.env` (never print or commit it). If missing, ask the human to:
+Check if `BUFFER_API_KEY` is already **exported in your current shell** (`[ -n "$BUFFER_API_KEY" ]`) — the repo `.env` is workstation-side only and is never read by the Sprite nor at runtime, so copy from it into the shell if needed (never print or commit it). If missing, ask the human to:
 1. Connect their X, TikTok, and/or Instagram channels at [publish.buffer.com](https://publish.buffer.com).
-2. Generate an API key at [publish.buffer.com/settings/api](https://publish.buffer.com/settings/api) and put `BUFFER_API_KEY=...` in `.env` (gitignored).
+2. Generate an API key at [publish.buffer.com/settings/api](https://publish.buffer.com/settings/api), then export it for this shell session:
+   ```bash
+   export BUFFER_API_KEY=...   # or: set -a; . ./.env; set +a
+   ```
 
 ---
 
@@ -58,7 +61,7 @@ If the command above fails, tell the human to add it manually in the [Fly.io Spr
 
 ## 4. Verify End-to-End Inside the Sprite
 
-`agent/extensions/buffer-gateway.ts` auto-discovers the `Buffer` connector and all connected channels at runtime. (`buffer_create_post` defaults to `saveToDraft: true` so nothing publishes publicly without human approval.) Verify with a read-only call:
+`agent/extensions/buffer-gateway.ts` auto-discovers the `Buffer` connector and all connected channels at runtime. `buffer_list_channels` returns each channel's `id` (plus `name`/`displayName`/`service`); pass that `id` as `channelId` to `buffer_create_post`. (`buffer_create_post` defaults to `saveToDraft: true` so nothing publishes publicly without human approval.) Verify with a read-only call:
 
 ```bash
 sprite exec -- omp -e /home/sprite/.omp/agent/extensions/buffer-gateway.ts --tools buffer_list_channels -p "Use buffer_list_channels and list my connected channels." --no-session

@@ -20,6 +20,10 @@ Run this phase whenever the talent's **Profile / Identity** is empty or incomple
 2. **Research proactively using available tools:**
    - **Connected Socials:** Call `buffer_list_channels` (if available) to automatically discover their connected X, TikTok, Instagram, or other handles.
    - **YouTube Channel:** Call `youtube_tool` (`YOUTUBE_GET_CHANNEL_ID_BY_HANDLE`, `YOUTUBE_GET_CHANNEL_STATISTICS`, `YOUTUBE_LIST_CHANNEL_VIDEOS`) if YouTube is connected to pull real subscriber count, view count, upload count, and recent video topics/titles.
+     - Call shape: `youtube_tool({ slug: "YOUTUBE_...", arguments: {...} })` — the tool takes a top-level `slug` (not `action`).
+     - `YOUTUBE_GET_CHANNEL_ID_BY_HANDLE` needs `channel_handle` **with a leading `@`** (e.g. `@roffi_daijoubu`).
+     - `YOUTUBE_GET_CHANNEL_STATISTICS` needs a `id` channel ID (`UC...`), not `mine: true`.
+     - `YOUTUBE_LIST_USER_PLAYLISTS` with `{}` is the easiest way to discover the channel's own ID first.
    - **Web & Lore:** Use `exa_search` (and `firecrawl_scrape` on profile/wiki/media pages if helpful) to gather public bio, niche, debut/history, hashtags, visual identity, and human artist/rigger credits.
 3. **Present a concise Draft Dossier & Run the Fact-Check + OPSEC Gate:**
    - Summarize what you found in clean bullet points (persona/niche, platforms & baseline numbers, timezone if inferred, content pillars, artist/rigger credits).

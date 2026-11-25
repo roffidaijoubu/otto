@@ -13,13 +13,13 @@ Never mention internal files, tool names, or agent commands (`MEMORY.md`, `buffe
 1. Silently read `~/.omp/agent/MEMORY.md` to respect:
    - Brand voice, language mix (e.g. ID / EN), and the creator's official hashtags (e.g. `#CreatorLIVE`, `#StreamClips`).
    - **OPSEC & Boundaries:** NEVER include doxable details, real-world legal identity, or sectarian rage-bait.
-2. Call `buffer_list_channels` to discover the exact connected channels (X/Twitter, TikTok, Instagram) and their `channelId`s.
+2. Call `buffer_list_channels` to discover the exact connected channels (X/Twitter, TikTok, Instagram) — it returns each channel's `id` (plus `name`/`displayName`/`service`); pass that `id` as `channelId` when creating a post.
 
 ---
 
 ## 2. Tailor Copy Per Platform (Never Copy-Paste Identical Text)
 Adapt the announcement for each connected platform:
-- **X (Twitter):** Punchy, conversational, under 260 characters, clear hook + stream/video time (with timezone) + 1–2 relevant hashtags max. Avoid corporate spam or emoji overload.
+- **X (Twitter):** Punchy, conversational, ≤280 characters, clear hook + stream/video time (with timezone) + 1–2 relevant hashtags max. Avoid corporate spam or emoji overload.
 - **TikTok:** Short, curiosity-first hook caption (1–2 lines) + 3–5 targeted discovery hashtags.
 - **Instagram:** Slightly warmer caption with clear takeaway/schedule line + clean hashtag block.
 

@@ -13,7 +13,7 @@
 
 ## Non-Negotiable Engineering & Product Rules
 1. **Strictly NO AI-generated images or video.** Never generate or recommend AI thumbnails, AI art, AI rigging, or AI video edits — enforced at both prompt level (`agent/APPEND_SYSTEM.md`) and tool-permission level (`generate_image: deny` in `agent/config.yml`).
-2. **Zero Raw API Keys in Repo or Sprite VM.** All external APIs (Gemini, Exa, Firecrawl, Composio v3 YouTube, Buffer X/TikTok/IG, Upstash QStash) route through `https://api.sprites.dev/v1/gateway/...` and auto-discover their `gateway_base_url` via `GET /v1/gateway/list` at runtime. Never hardcode connector IDs or secrets.
+2. **Zero Raw API Keys in Repo or Sprite VM.** Every key-bearing external API (Gemini, Exa, Firecrawl, Composio v3 YouTube, Buffer X/TikTok/IG, Upstash QStash) routes through `https://api.sprites.dev/v1/gateway/...` and auto-discovers its `gateway_base_url` via `GET /v1/gateway/list` at runtime. Never hardcode connector IDs or secrets. (Anonymous public-VOD fetching via `yt-dlp`/InnerTube is keyless and goes direct.)
 3. **Draft-First & Human-Approval Guardrails.** Social posts (`buffer_create_post`) default to `saveToDraft: true`; YouTube mutations (`YOUTUBE_UPDATE_VIDEO`, `YOUTUBE_UPDATE_THUMBNAIL`) require explicit human confirmation.
 4. **Zero Fourth-Wall Breaks.** Otto speaks like a real tough-love talent manager — never expose raw tool slugs, file paths, or VM internals to the talent unless explicitly asked.
 
@@ -35,12 +35,13 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # Auto-discovering connectors + vod-clipper + media-reviewer + new-session
+│   ├── extensions/             # 10 extensions: connectors + vod-clipper + media-reviewer + studio-db + skill-learner + new-session (38 tools)
+│   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), learned skills (learned-skills.ts)
 │   └── skills/                 # 5 streamer ops skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder + scripts/)
 ├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / DaisyUI v5 Chat UI & Mission Control Drawer
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
-    ├── verify-all.sh                   # Deterministic 14-check verification suite (+ --live mode)
+    ├── verify-all.sh                   # Deterministic 26-check verification suite (+ --live mode)
     └── e2e/                            # Agentic multi-turn E2E test playbooks (INDEX.md, README.md, 01..05-*.md, expected-memory.md)
 ```
 
@@ -50,9 +51,9 @@ lma/
 1. Edit files locally, verify frontend changes with `cd web && npm run typecheck && npm run build`.
 2. Fast ad-hoc sync to Sprite without committing:
    ```bash
-   tar --exclude=web/node_modules --exclude=web/dist -czf - agent web docs setup.sh README.md | sprite exec --stdin -- bash -c "tar xzf - -C /home/sprite/lma && bash /home/sprite/lma/setup.sh"
+   tar --exclude=web/node_modules --exclude=web/dist --exclude=agent/MEMORY.md --exclude=agent/models.yml -czf - agent web docs setup.sh README.md scripts | sprite exec --stdin -- bash -c "tar xzf - -C /home/sprite/lma && bash /home/sprite/lma/setup.sh"
    ```
-3. **Auto-Checkpoint on Commit:** `.git/hooks/post-commit` calls `scripts/sync-initialized-checkpoint.sh` to sync the commit to Sprite, reset runtime state (`sessions/`, `memories/`, `MEMORY.md`), rebuild `web/`, restart `lma-web`, create a fresh `initialized: <sha>` checkpoint, and prune only older `initialized:` checkpoints (never touching live/prod checkpoints). Bypass for docs-only commits with `LMA_SKIP_CHECKPOINT=1 git commit ...`.
+3. **Auto-Checkpoint on Commit:** `.git/hooks/post-commit` calls `scripts/sync-initialized-checkpoint.sh` to sync the commit to Sprite, reset runtime state (`sessions/`, `memories/`, `mnemopi.db`, `studio.db`, `learned-skills/`, `workspace/`, `MEMORY.md`), rebuild `web/`, restart `lma-web`, create a fresh `initialized: <sha>` checkpoint, and prune only older `initialized:` checkpoints (never touching live/prod checkpoints). Bypass for docs-only commits with `LMA_SKIP_CHECKPOINT=1 git commit ...`.
 4. **Org-level `sprite api` calls** (e.g. provisioning Custom API connectors) MUST run from a directory without `.sprite` (e.g. `/tmp`) so paths resolve under `/v1/` instead of `/v1/sprites/<name>/`.
 
 ---
@@ -60,7 +61,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~11 seconds — verifies `web/` TypeScript + Vite build, all 5 skill & 8 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, and authenticated Mission Control APIs:
+Runs in ~10 seconds — verifies `web/` TypeScript + Vite build, all 5 skill & 10 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip

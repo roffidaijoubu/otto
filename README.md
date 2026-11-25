@@ -63,7 +63,7 @@ flowchart LR
 ```
 
 - **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw `.mp4`/`.srt` material for human artists and clippers — never replaces them.
-- **Zero outbound API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Google Calendar, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo.
+- **Zero outbound API keys inside the VM:** Every **key-bearing** call to Gemini, Exa, Firecrawl, YouTube, Google Calendar, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo. (Anonymous public-VOD fetching uses keyless `yt-dlp`/InnerTube inside the Sprite instead.)
 - **Unified 2-Way Studio Workspace + Unified SQLite Studio DB:** Both Mission Control and Otto share `/home/sprite/workspace/` (full file manager with drag-drop &amp; chat `📎` uploads, unified VOD `clips/`, inline image/video/audio/Markdown preview &amp; editor, folder ZIP downloads, and 1-click *Squint Test* / *Review Clip*) and `~/.omp/agent/studio.db` (SQLite WAL storing Schedule + Google Calendar sync, 3+1 Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics History, and Custom Trackers — with live SSE auto-refresh).
 - **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining `MEMORY.md` (Talent Dossier), `studio.db` (structured ops data), `workspace/` (shared files/media), and **Mnemopi** SQLite conversational memory across sessions.
 - **Tough-love streamer coaching playbook:** Inspired by Ludwig's *Professor L / Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
@@ -128,7 +128,7 @@ sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma
 | **Buffer (X / TikTok / IG)** | Draft &amp; schedule posts across X, TikTok, and Instagram (`buffer_create_post`) | Auto-discovered Custom API connector ([setup guide](docs/setup/buffer.md)) |
 | **Upstash QStash** | Agent self-scheduled one-shot &amp; cron wake-ups (`schedule_wakeup`) | Auto-discovered Custom API connector ([setup guide](docs/setup/qstash-scheduler.md)) |
 
-> All extensions query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box.
+> All **connector** extensions (`buffer`, `composio-youtube`, `exa`, `firecrawl`, `media-reviewer`, `qstash-scheduler`) query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box. (`studio-db`, `vod-clipper`, `skill-learner`, and `new-session` are local-only.)
 
 <br>
 
@@ -140,17 +140,17 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 
 | Path | Purpose |
 | :--- | :--- |
-| `agent/APPEND_SYSTEM.md` | Otto persona, 4-lecture coaching playbook, non-negotiable rules, and memory protocol |
+| `agent/APPEND_SYSTEM.md` | Otto persona, six non-negotiable core coaching rules, voice/character guardrails, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
-| `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
+| `agent/MEMORY.md.example` | Starter dossier template: profile/timezone, platform baseline, content pillars, human credits, OPSEC boundaries, 3 Goals, Ideal Schedule, 3 GOATs, and an optional last-4 recap |
 | `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, 3+1 Pipeline, Contacts, Metrics &amp; Custom Trackers |
-| `agent/extensions/*.ts` | 9 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, and `--new` |
+| `agent/extensions/*.ts` | 10 extensions exposing 38 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, learned playbooks, plus a `--new` CLI flag (`new-session.ts`) |
 | `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control (`WorkspaceFileManager`, `StudioDatabaseView`, `TodoChecklistCard`, `ThoughtTrace`, chat `📎` uploads, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
-| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 22-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
+| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 26-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
 | `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Talent Dossier |
 ### Why Fly.io Sprites Made Building `lma` 10× Faster
 Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
-- Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, clean Mnemopi SQLite, rebuilt `web/`).
+- Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, cleared Mnemopi/`studio.db`/`learned-skills`/`workspace/`, rebuilt `web/`).
 - Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Otto's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
 
 > **For judges &amp; engineers:** Read the full [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how proactive wake-ups survive 30s auto-sleep, and our defense-in-depth security model.
@@ -166,6 +166,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 - ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, inline preview &amp; Markdown editor, folder ZIP export, and 1-click *Squint Test* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db` powering Schedule, 3+1 Content Pipeline, Contacts, Metrics History &amp; Custom Trackers with live SSE refresh)
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export)
 - ✅ Otto persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
+- ✅ Learned Creator Playbooks (`learned_skills_*` + Mission Control review card): creator-specific SOPs staged as `pending` (optionally by an enabled nightly silent-reflection wake-up), reviewed before they become active, and never overwritten by repo updates
 - ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
 <br>
 

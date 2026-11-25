@@ -30,7 +30,7 @@ Review every Candidate Card and:
 
 ## 3. Cut Clean Raw `.mp4` + `.srt` Files (`vod_cut_clip`)
 - If the talent asked you to **cut the clips** (or after they pick which candidates they want), call `vod_cut_clip(url, startSec, endSec, name)` for each selected moment (e.g. `clip_01_plot_twist`).
-- Each call saves a clean raw `.mp4` and a time-shifted `.srt` starting at `00:00:00,000` inside `/home/sprite/workspace/clips/<video_id>/`.
+- Each call saves a clean raw `.mp4` (plus a time-shifted `.srt` starting at `00:00:00,000` when a transcript was fetched) inside `/home/sprite/workspace/clips/<video_id>/`.
 
 - Optionally call `watch_clip("/home/sprite/workspace/clips/<video_id>/<name>.mp4")` on the #1 cut clip to visually verify the 3-second hook, framing, and dead air before handing off to the human editor.
 ---

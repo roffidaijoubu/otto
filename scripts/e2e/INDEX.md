@@ -83,12 +83,12 @@ rm -f /tmp/e2e_ck.txt
 
 ### Other Authenticated Endpoints
 - `GET /api/messages` — `{ messages: [{ role, text, thinking }], busy, activity }`
-- `GET /api/events` — SSE stream (`status`, `activity`, `tool_start`, `tool_end`, `thinking_delta`, `text_delta`, `assistant_end`, `done`, `session_changed`)
+- `GET /api/events` — SSE stream (`status`, `activity`, `tool_start`, `tool_end`, `thinking_delta`, `text_delta`, `assistant_end`, `done`, `session_changed`, `user_message`, `todos`, `workspace_changed`, `db_changed`, `error`)
 - `GET /api/sessions` & `POST /api/sessions/switch` (`{"path":"..."}`)
 - `POST /api/abort` — interrupt an active turn
 - `GET /api/dossier` — live `/home/sprite/.omp/agent/MEMORY.md`
 - `GET /api/connectors` — live zero-key Sprites Connectors list
-- `GET /api/clips` — live raw `.mp4`/`.srt` clips in `/home/sprite/clips/`
+- `GET /api/clips` — live raw `.mp4`/`.srt` clips in `/home/sprite/workspace/clips/` (compat alias for the unified workspace clips)
 
 ---
 
@@ -107,7 +107,7 @@ printf "{\"id\":\"1\",\"type\":\"get_state\"}\n{\"id\":\"2\",\"type\":\"prompt\"
 ---
 
 ## Playbooks & Deterministic Pre-Flight
-1. **Fast deterministic suite (~11s):** `bash scripts/verify-all.sh` (`--live` for live connector round-trip)
+1. **Fast deterministic suite (~10s):** `bash scripts/verify-all.sh` (`--live` for live connector round-trip)
 2. **Checkpoint Time-Travel Wrapper & Playbook Index:** [`scripts/e2e/README.md`](README.md)
 3. **Golden Reference Dossier:** [`scripts/e2e/expected-memory.md`](expected-memory.md)
 4. **Feature Playbooks:**
