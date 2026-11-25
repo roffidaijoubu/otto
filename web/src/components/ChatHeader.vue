@@ -1,44 +1,59 @@
 <script setup lang="ts">
 defineProps<{
-  sidebarOpen: boolean;
-  missionControlOpen: boolean;
   statusState: "ready" | "busy" | "error";
   statusLabel: string;
-  busy: boolean;
+  zeroLocalKeys: boolean | null;
+  aiMediaDisabled: boolean | null;
+  mobilePane: "dashboard" | "chat";
 }>();
 
 const emit = defineEmits<{
-  toggleSidebar: [];
-  toggleMissionControl: [];
-  newChat: [];
+  "update:mobilePane": [pane: "dashboard" | "chat"];
 }>();
 </script>
 
 <template>
   <header class="header">
     <div class="header-left">
-      <button class="btn btn-sm btn-cafe-secondary" type="button" @click="emit('toggleSidebar')">
-        {{ sidebarOpen ? "Hide" : "Chats" }}
-      </button>
       <div class="brand">
         <div class="avatar">L</div>
         <div>
           <div class="brand-title">Professor L</div>
-          <div class="brand-sub">Talent Manager</div>
+          <div class="brand-sub">Studio Mission Control</div>
         </div>
       </div>
     </div>
+
+    <div class="mobile-switch">
+      <button
+        type="button"
+        class="mobile-tab"
+        :class="{ active: mobilePane === 'dashboard' }"
+        @click="emit('update:mobilePane', 'dashboard')"
+      >
+        Mission Control
+      </button>
+      <button
+        type="button"
+        class="mobile-tab"
+        :class="{ active: mobilePane === 'chat' }"
+        @click="emit('update:mobilePane', 'chat')"
+      >
+        Co-Pilot
+      </button>
+    </div>
+
     <div class="header-actions">
+      <span v-if="zeroLocalKeys === true" class="guard-pill guard-ok">
+        0 Keys in VM
+      </span>
+      <span v-if="aiMediaDisabled === true" class="guard-pill guard-off">
+        No AI Art
+      </span>
       <span class="status-pill" :class="statusState">
         <span class="status-dot" :class="statusState"></span>
         <span>{{ statusLabel }}</span>
       </span>
-      <button class="btn btn-sm btn-cafe-secondary" type="button" @click="emit('toggleMissionControl')">
-        {{ missionControlOpen ? "Close Panel" : "Mission Control" }}
-      </button>
-      <button class="btn btn-sm btn-cafe-primary" type="button" :disabled="busy" @click="emit('newChat')">
-        + New Chat
-      </button>
     </div>
   </header>
 </template>
@@ -123,7 +138,50 @@ const emit = defineEmits<{
 .status-dot.ready { background: var(--success); }
 .status-dot.busy { background: var(--warning); }
 .status-dot.error { background: var(--error); }
+.guard-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-circle);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.guard-ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.guard-off {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.mobile-switch {
+  display: none;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius-circle);
+  background: var(--surface-inset);
+}
+.mobile-tab {
+  border: none;
+  border-radius: var(--radius-circle);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.mobile-tab.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
 
+@media (max-width: 1024px) {
+  .mobile-switch { display: inline-flex; }
+  .guard-pill { display: none; }
+}
 @media (max-width: 768px) {
   .header { padding: 0 12px; }
   .brand-sub, .status-pill { display: none; }

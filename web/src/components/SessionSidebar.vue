@@ -57,13 +57,23 @@ function formatTime(iso: string): string {
 
 <style scoped>
 .backdrop {
-  display: none;
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: rgba(62, 39, 35, 0.25);
+  z-index: 35;
 }
 .sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: var(--sidebar-width);
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  max-width: 88vw;
+  border-left: 1px solid var(--border);
   background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -128,21 +138,5 @@ function formatTime(iso: string): string {
   color: var(--fg-muted);
 }
 
-@media (max-width: 768px) {
-  .backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(62, 39, 35, 0.28);
-    z-index: 15;
-  }
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    z-index: 20;
-    box-shadow: var(--shadow-lg);
-  }
-}
+
 </style>

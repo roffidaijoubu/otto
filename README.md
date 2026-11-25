@@ -13,6 +13,12 @@
   <img src="https://img.shields.io/badge/AI_art_%26_video-disabled-DC2626?style=flat-square" alt="AI Art and Video Disabled">
 </p>
 
+<p align="center">
+  <img src="docs/assets/mission-control-dashboard.png" alt="LMA Studio Mission Control — CafeBlend Web UI" width="100%">
+  <br>
+  <sub><b>Studio Mission Control</b> (CafeBlend theme): at-a-glance KPI strip, 2-way Google Calendar + QStash wake-ups, auto-bootstrapped Talent Dossier, Raw Clips Shelf, Zero-Key Connectors, and docked Professor L Co-Pilot Chat. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
+</p>
+
 <br>
 
 ---
@@ -137,10 +143,10 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `agent/APPEND_SYSTEM.md` | Professor L persona, 4-lecture playbook, non-negotiable rules, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
 | `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
-| `agent/extensions/*.ts` | Auto-discovering `omp` tools for Exa, Firecrawl, Composio YouTube, Buffer, QStash, and `--new` |
-| `web/` | Vue 3 + Vite + DaisyUI v5 Web Chat UI &amp; Mission Control Drawer (`ThoughtTrace`, passcode gate, `/api/wakeup`) |
-| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), 14-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
-| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, builds `web/`, registers `lma-web` |
+| `agent/extensions/*.ts` | Auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, and `--new` |
+| `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control Dashboard &amp; docked Co-Pilot Chat (`TodoChecklistCard`, `ThoughtTrace`, passcode gate, `/api/calendar`, `/api/wakeup`) |
+| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 16-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
+| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Talent Dossier from connected OAuth accounts |
 
 ### Why Fly.io Sprites Made Building `lma` 10× Faster
 Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
@@ -156,8 +162,8 @@ Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Ups
 
 Built actively during **Fly.io Hacksgiving 2026**:
 
-- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier) &amp; Vue 3 + DaisyUI v5 Web Chat UI + Mission Control Drawer (styled via `DESIGN.md` CafeBlend Studio)
-- ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, YouTube (Composio v3), Buffer (X/TikTok/IG), and Upstash QStash (proactive wake-ups)
+- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + one-time OAuth auto-bootstrap) &amp; Mission Control-first CafeBlend Studio UI (with live `omp` Todo checklist &amp; docked Co-Pilot Chat)
+- ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export)
 - ✅ Professor L persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
 - ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
 

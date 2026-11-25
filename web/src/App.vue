@@ -4,7 +4,7 @@ import ChatComposer from "./components/ChatComposer.vue";
 import ChatHeader from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
-import MissionControlDrawer from "./components/MissionControlDrawer.vue";
+import MissionControlWorkspace from "./components/MissionControlWorkspace.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
 
@@ -16,8 +16,10 @@ const busy = ref(false);
 const activity = ref("Thinking...");
 const connectionState = ref<"connecting" | "ready" | "error">("connecting");
 const error = ref("");
-const sidebarOpen = ref(window.innerWidth > 768);
-const missionControlOpen = ref(false);
+const sidebarOpen = ref(false);
+const mobilePane = ref<"dashboard" | "chat">("dashboard");
+const zeroLocalKeys = ref<boolean | null>(null);
+const aiMediaDisabled = ref<boolean | null>(null);
 const missionRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
 
@@ -225,8 +227,16 @@ function useStarter(prompt: string) {
 }
 
 function handleMissionPrompt(prompt: string) {
-  missionControlOpen.value = false;
+  mobilePane.value = "chat";
   useStarter(prompt);
+}
+
+function handleGuardrailsUpdated(payload: {
+  zeroLocalKeys: boolean | null;
+  aiMediaDisabled: boolean | null;
+}) {
+  zeroLocalKeys.value = payload.zeroLocalKeys;
+  aiMediaDisabled.value = payload.aiMediaDisabled;
 }
 
 async function stopReply() {
@@ -237,7 +247,7 @@ async function newChat() {
   if (busy.value) return;
   error.value = "";
   await fetch("/api/new", { method: "POST" }).catch(() => {});
-  if (window.innerWidth <= 768) sidebarOpen.value = false;
+  sidebarOpen.value = false;
 }
 
 async function switchChat(session: SessionSummary) {
@@ -254,7 +264,7 @@ async function switchChat(session: SessionSummary) {
         error?: string;
       };
       error.value = err.error || "Failed to switch chat";
-    } else if (window.innerWidth <= 768) {
+    } else {
       sidebarOpen.value = false;
     }
   } catch (err) {
@@ -269,7 +279,106 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="studio-shell">
+    <ChatHeader
+      :status-state="statusState"
+      :status-label="statusLabel"
+      :zero-local-keys="zeroLocalKeys"
+      :ai-media-disabled="aiMediaDisabled"
+      :mobile-pane="mobilePane"
+      @update:mobile-pane="mobilePane = $event"
+    />
+
+    <div class="studio-body">
+      <!-- PRIMARY WORKSPACE: MISSION CONTROL AT A GLANCE -->
+      <div class="workspace-pane" :class="{ 'mobile-hidden': mobilePane !== 'dashboard' }">
+        <MissionControlWorkspace
+          :refresh-tick="missionRefreshTick"
+          @ask-prompt="handleMissionPrompt"
+          @guardrails-updated="handleGuardrailsUpdated"
+        />
+      </div>
+
+      <!-- DOCKED RIGHT CO-PILOT: PROFESSOR L CHAT -->
+      <aside class="chat-pane" :class="{ 'mobile-hidden': mobilePane !== 'chat' }">
+        <div class="chat-pane-head">
+          <div>
+            <div class="chat-pane-title">Co-Pilot Chat</div>
+            <div class="chat-pane-sub">Direct line to Professor L</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button
+              class="btn btn-xs btn-cafe-secondary"
+              type="button"
+              @click="sidebarOpen = !sidebarOpen"
+            >
+              Chats ({{ sessions.length }})
+            </button>
+            <button
+              class="btn btn-xs btn-cafe-primary"
+              type="button"
+              :disabled="busy"
+              @click="newChat"
+            >
+              + New
+            </button>
+          </div>
+        </div>
+
+        <main class="messages-wrap" ref="messagesWrapRef">
+          <div class="messages">
+            <div v-if="messages.length === 0 && !hasLiveContent" class="empty-state">
+              <h2>Professor L is in the room.</h2>
+              <p>
+                No fluff, no yes-man answers, zero AI slop. Use Mission Control on the left or tell
+                me what stream/video we are working on today.
+              </p>
+              <div class="starters">
+                <button
+                  v-for="prompt in starters"
+                  :key="prompt"
+                  class="starter-btn"
+                  type="button"
+                  @click="useStarter(prompt)"
+                >
+                  {{ prompt }}
+                </button>
+              </div>
+            </div>
+
+            <MessageBubble
+              v-for="m in messages"
+              :key="m.id"
+              :role="m.role"
+              :text="m.text"
+              :thinking="m.thinking"
+              :steps="m.steps"
+            />
+
+            <MessageBubble
+              v-if="hasLiveContent"
+              role="assistant"
+              :text="liveText"
+              :thinking="liveThinking"
+              :steps="liveSteps"
+              :live="true"
+            />
+          </div>
+        </main>
+
+        <div v-if="busy" class="activity">
+          <span class="activity-dot"></span>
+          <span>{{ activity }}</span>
+        </div>
+
+        <div v-if="error" class="error-banner">{{ error }}</div>
+
+        <TodoChecklistCard :phases="todos" @dismiss="todos = []" />
+
+        <ChatComposer v-model="draft" :busy="busy" @send="sendMessage" @stop="stopReply" />
+      </aside>
+    </div>
+
     <SessionSidebar
       :open="sidebarOpen"
       :sessions="sessions"
@@ -278,101 +387,77 @@ onMounted(async () => {
       @new-chat="newChat"
       @select="switchChat"
     />
-
-    <div class="main">
-      <ChatHeader
-        :sidebar-open="sidebarOpen"
-        :mission-control-open="missionControlOpen"
-        :status-state="statusState"
-        :status-label="statusLabel"
-        :busy="busy"
-        @toggle-sidebar="sidebarOpen = !sidebarOpen"
-        @toggle-mission-control="missionControlOpen = !missionControlOpen"
-        @new-chat="newChat"
-      />
-
-      <main class="messages-wrap" ref="messagesWrapRef">
-        <div class="messages">
-          <div v-if="messages.length === 0 && !hasLiveContent" class="empty-state">
-            <h2>Professor L is in the room.</h2>
-            <p>
-              No fluff, no yes-man answers, zero AI slop. Tell me who you are or what stream/video
-              we are working on today.
-            </p>
-            <div class="starters">
-              <button
-                v-for="prompt in starters"
-                :key="prompt"
-                class="starter-btn"
-                type="button"
-                @click="useStarter(prompt)"
-              >
-                {{ prompt }}
-              </button>
-            </div>
-          </div>
-
-          <MessageBubble
-            v-for="m in messages"
-            :key="m.id"
-            :role="m.role"
-            :text="m.text"
-            :thinking="m.thinking"
-            :steps="m.steps"
-          />
-
-          <MessageBubble
-            v-if="hasLiveContent"
-            role="assistant"
-            :text="liveText"
-            :thinking="liveThinking"
-            :steps="liveSteps"
-            :live="true"
-          />
-        </div>
-      </main>
-
-      <div v-if="busy" class="activity">
-        <span class="activity-dot"></span>
-        <span>{{ activity }}</span>
-      </div>
-
-      <div v-if="error" class="error-banner">{{ error }}</div>
-
-      <TodoChecklistCard :phases="todos" @dismiss="todos = []" />
-
-      <ChatComposer v-model="draft" :busy="busy" @send="sendMessage" @stop="stopReply" />
-    </div>
-
-    <MissionControlDrawer
-      :open="missionControlOpen"
-      :refresh-tick="missionRefreshTick"
-      @close="missionControlOpen = false"
-      @ask-prompt="handleMissionPrompt"
-    />
   </div>
 </template>
 
 <style scoped>
-.shell {
+.studio-shell {
   display: flex;
+  flex-direction: column;
   height: 100dvh;
   width: 100%;
   background: var(--bg);
   overflow: hidden;
 }
-.main {
+.studio-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.workspace-pane {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+}
+.chat-pane {
+  width: 430px;
+  max-width: 44vw;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
   background: var(--bg);
+}
+.chat-pane-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+.chat-pane-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.1;
+  color: var(--fg);
+}
+.chat-pane-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
 }
 .messages-wrap {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 16px;
+  padding: 14px 12px;
+}
+@media (max-width: 1024px) {
+  .chat-pane {
+    width: 100%;
+    max-width: 100%;
+    border-left: none;
+  }
+  .mobile-hidden {
+    display: none;
+  }
 }
 .messages {
   max-width: var(--max-width);
