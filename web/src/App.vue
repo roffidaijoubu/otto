@@ -433,7 +433,11 @@ function openChromeAtUrl(url: string) {
   });
 }
 
-function handleBrowserStatusChanged(payload: { running: boolean; sessionCount: number }) {
+function handleBrowserStatusChanged(payload: {
+  running: boolean;
+  sessionCount: number;
+  currentUrl?: string;
+}) {
   chromeRunning.value = payload.running;
   chromeSessionCount.value = payload.sessionCount;
 }
@@ -703,7 +707,7 @@ onMounted(async () => {
 
       <!-- WINDOW 4: EMBEDDED CHROME (noVNC) -->
       <template #app-chrome>
-        <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
+        <div class="flex h-full min-h-0 flex-col bg-white">
           <BrowserWorkspaceTab
             ref="browserTabRef"
             :modal-active="Boolean(activeLoginRequest)"

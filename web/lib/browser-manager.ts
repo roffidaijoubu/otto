@@ -113,6 +113,10 @@ export interface BrowserStatusSnapshot {
   activeVncClients: number;
   activeLogin: BrowserLoginRequestState | null;
   chromeBinary: string | null;
+  currentUrl?: string;
+  pageTitle?: string;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
   sessions: SavedSessionMeta[];
 }
 
@@ -131,7 +135,23 @@ export const COOKIES_DIR = path.join(LMA_CONFIG_DIR, "cookies");
 const DISPLAY_NUM = process.env.LMA_BROWSER_DISPLAY || ":99";
 const VNC_PORT = Number(process.env.LMA_BROWSER_VNC_PORT || 5900);
 const CDP_PORT = Number(process.env.LMA_BROWSER_CDP_PORT || 9222);
+const BROWSER_WIDTH = Number(process.env.LMA_BROWSER_WIDTH || 1280);
+const BROWSER_HEIGHT = Number(process.env.LMA_BROWSER_HEIGHT || 720);
 const IDLE_SHUTDOWN_MS = Number(process.env.LMA_BROWSER_IDLE_MS || 2 * 60 * 1000);
+
+export function normalizeBrowserUrl(raw?: string): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  if (/^about:/i.test(trimmed)) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(trimmed)) {
+    return `http://${trimmed}`;
+  }
+  if (!/\s/.test(trimmed) && trimmed.includes(".")) {
+    return `https://${trimmed}`;
+  }
+  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+}
 
 export function sanitizeSiteSlug(raw: string): string {
   const cleaned = raw
@@ -299,17 +319,18 @@ export class BrowserManager {
   }
 
   public async ensureStarted(initialUrl?: string): Promise<void> {
+    const normalizedUrl = normalizeBrowserUrl(initialUrl);
     if (this.isRunning()) {
       this.clearIdleTimer();
-      if (initialUrl) {
-        await this.navigateToUrl(initialUrl).catch(() => {});
+      if (normalizedUrl) {
+        await this.navigateToUrl(normalizedUrl).catch(() => {});
       }
       return;
     }
     if (this.startingPromise) {
       await this.startingPromise;
-      if (initialUrl) {
-        await this.navigateToUrl(initialUrl).catch(() => {});
+      if (normalizedUrl) {
+        await this.navigateToUrl(normalizedUrl).catch(() => {});
       }
       return;
     }
@@ -330,7 +351,7 @@ export class BrowserManager {
       // ignore
     }
 
-    this.startingPromise = this.startInternal(initialUrl);
+    this.startingPromise = this.startInternal(normalizedUrl || undefined);
     try {
       await this.startingPromise;
     } finally {
@@ -367,7 +388,7 @@ export class BrowserManager {
 
     // 1. Virtual X11 framebuffer
     this.xvfbProc = Bun.spawn(
-      [xvfbBin, DISPLAY_NUM, "-screen", "0", "1280x720x24", "-nolisten", "tcp", "-ac"],
+      [xvfbBin, DISPLAY_NUM, "-screen", "0", `${BROWSER_WIDTH}x${BROWSER_HEIGHT}x24`, "-nolisten", "tcp", "-ac"],
       { stdout: "ignore", stderr: "ignore", env }
     );
     await Bun.sleep(450);
@@ -399,7 +420,8 @@ export class BrowserManager {
       { stdout: "ignore", stderr: "ignore", env }
     );
 
-    // 4. Real Chrome without Playwright --enable-automation flags
+    // 4. Real Chrome in kiosk fullscreen without Playwright --enable-automation flags
+    //    so Chrome's own chrome/tabs/omnibox/infobars stay hidden behind our browser UI.
     const chromeArgs = [
       chromeBin,
       `--user-data-dir=${CHROME_PROFILE_DIR}`,
@@ -410,9 +432,15 @@ export class BrowserManager {
       "--disable-dev-shm-usage",
       "--no-first-run",
       "--no-default-browser-check",
+      "--noerrdialogs",
+      "--disable-infobars",
+      "--disable-session-crashed-bubble",
+      "--hide-crash-restore-bubble",
+      "--disable-features=Translate,TranslateUI",
+      "--test-type",
+      "--kiosk",
       "--window-position=0,0",
-      "--window-size=1280,720",
-      "--start-maximized",
+      `--window-size=${BROWSER_WIDTH},${BROWSER_HEIGHT}`,
       initialUrl || "about:blank",
     ];
     this.chromeProc = Bun.spawn(chromeArgs, {
@@ -554,22 +582,82 @@ export class BrowserManager {
     });
   }
 
-  public async navigateToUrl(targetUrl: string): Promise<void> {
+  private async getActivePageTarget() {
     const targets = await this.getCdpTargets();
-    const page = targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+    return (
+      targets.find(
+        (t) =>
+          t.type === "page" &&
+          t.webSocketDebuggerUrl &&
+          !t.url.startsWith("devtools://")
+      ) || targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl)
+    );
+  }
+
+  public async getStatusAsync(): Promise<BrowserStatusSnapshot> {
+    const base = this.getStatus();
+    if (!base.running) return base;
+    try {
+      const page = await this.getActivePageTarget();
+      if (!page?.webSocketDebuggerUrl) return base;
+      base.currentUrl = page.url || undefined;
+      base.pageTitle = page.title || undefined;
+      const history = await this.sendCdpCommand<{
+        currentIndex?: number;
+        entries?: Array<{ id: number; url: string; title: string }>;
+      }>(page.webSocketDebuggerUrl, "Page.getNavigationHistory").catch(() => null);
+      if (history && typeof history.currentIndex === "number" && Array.isArray(history.entries)) {
+        base.canGoBack = history.currentIndex > 0;
+        base.canGoForward = history.currentIndex < history.entries.length - 1;
+        const currentEntry = history.entries[history.currentIndex];
+        if (currentEntry?.url) base.currentUrl = currentEntry.url;
+        if (currentEntry?.title) base.pageTitle = currentEntry.title;
+      }
+    } catch {
+      // ignore transient CDP errors during startup/shutdown
+    }
+    return base;
+  }
+
+  public async navigateToUrl(targetUrl: string): Promise<void> {
+    const normalized = normalizeBrowserUrl(targetUrl);
+    if (!normalized) return;
+    const page = await this.getActivePageTarget();
     if (page?.webSocketDebuggerUrl) {
-      await this.sendCdpCommand(page.webSocketDebuggerUrl, "Page.navigate", { url: targetUrl });
+      await this.sendCdpCommand(page.webSocketDebuggerUrl, "Page.navigate", { url: normalized });
       return;
     }
-    await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(targetUrl)}`, {
+    await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(normalized)}`, {
       method: "PUT",
       signal: AbortSignal.timeout(3000),
     }).catch(() => {});
   }
 
+  public async performAction(action: "back" | "forward" | "reload"): Promise<boolean> {
+    const page = await this.getActivePageTarget();
+    if (!page?.webSocketDebuggerUrl) return false;
+    if (action === "reload") {
+      await this.sendCdpCommand(page.webSocketDebuggerUrl, "Page.reload");
+      return true;
+    }
+    const history = await this.sendCdpCommand<{
+      currentIndex?: number;
+      entries?: Array<{ id: number }>;
+    }>(page.webSocketDebuggerUrl, "Page.getNavigationHistory");
+    const idx = history?.currentIndex;
+    const entries = history?.entries;
+    if (typeof idx !== "number" || !Array.isArray(entries)) return false;
+    const nextIdx = action === "back" ? idx - 1 : idx + 1;
+    const target = entries[nextIdx];
+    if (!target) return false;
+    await this.sendCdpCommand(page.webSocketDebuggerUrl, "Page.navigateToHistoryEntry", {
+      entryId: target.id,
+    });
+    return true;
+  }
+
   public async getAllCdpCookies(): Promise<{ cookies: CdpCookie[]; activeUrl: string }> {
-    const targets = await this.getCdpTargets();
-    const page = targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+    const page = await this.getActivePageTarget();
     if (!page?.webSocketDebuggerUrl) {
       return { cookies: [], activeUrl: "" };
     }
@@ -582,7 +670,6 @@ export class BrowserManager {
       activeUrl: page.url || "",
     };
   }
-
   private async readPageLocalStorage(): Promise<{
     origin: string;
     entries: Array<{ name: string; value: string }>;

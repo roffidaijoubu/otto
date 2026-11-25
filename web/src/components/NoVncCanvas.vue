@@ -7,11 +7,13 @@ const props = withDefaults(
     active?: boolean;
     wsPath?: string;
     viewOnly?: boolean;
+    background?: string;
   }>(),
   {
     active: true,
     wsPath: "/api/browser/ws",
     viewOnly: false,
+    background: "#f4f4f5",
   }
 );
 
@@ -52,7 +54,7 @@ function connect() {
     client.scaleViewport = true;
     client.resizeSession = false;
     client.viewOnly = props.viewOnly;
-    client.background = "#141414";
+    client.background = props.background;
 
     client.addEventListener("connect", () => {
       state.value = "connected";
@@ -112,10 +114,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="novnc-wrap">
+  <div class="novnc-wrap" :style="{ background: props.background }">
     <div ref="containerRef" class="novnc-stage" @click="focusCanvas" />
     <div v-if="state === 'connecting'" class="novnc-overlay">
-      <span>Connecting to Sprite Chrome…</span>
+      <span>Connecting to browser…</span>
     </div>
   </div>
 </template>
@@ -125,9 +127,7 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 420px;
-  background: #141414;
-  border-radius: 10px;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -142,9 +142,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 20, 20, 0.72);
-  color: #f4f4f5;
+  background: rgba(250, 250, 250, 0.85);
+  color: #303030;
   font-size: 13px;
+  font-weight: 500;
   pointer-events: none;
 }
 </style>

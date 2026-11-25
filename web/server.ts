@@ -1542,13 +1542,13 @@ Bun.serve<VncWsData>({
 
     // Public authenticated Embedded Browser & Cookie Auth endpoints
     if (req.method === "GET" && url.pathname === "/api/browser/status") {
-      return Response.json(browserManager.getStatus());
+      return Response.json(await browserManager.getStatusAsync());
     }
     if (req.method === "POST" && url.pathname === "/api/browser/start") {
       const body = (await req.json().catch(() => ({}))) as { url?: string };
       try {
         await browserManager.ensureStarted(body.url);
-        return Response.json({ ok: true, status: browserManager.getStatus() });
+        return Response.json({ ok: true, status: await browserManager.getStatusAsync() });
       } catch (err) {
         return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
       }
@@ -1573,7 +1573,22 @@ Bun.serve<VncWsData>({
       const body = (await req.json().catch(() => ({}))) as { url?: string };
       if (!body.url) return Response.json({ ok: false, error: "Missing url" }, { status: 400 });
       await browserManager.ensureStarted(body.url);
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, status: await browserManager.getStatusAsync() });
+    }
+    if (req.method === "POST" && url.pathname === "/api/browser/action") {
+      if (!browserManager.isRunning()) {
+        return Response.json({ ok: false, error: "Chrome is not running." }, { status: 400 });
+      }
+      const body = (await req.json().catch(() => ({}))) as { action?: string };
+      if (body.action !== "back" && body.action !== "forward" && body.action !== "reload") {
+        return Response.json({ ok: false, error: "Invalid browser action" }, { status: 400 });
+      }
+      try {
+        const ok = await browserManager.performAction(body.action);
+        return Response.json({ ok, status: await browserManager.getStatusAsync() });
+      } catch (err) {
+        return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
+      }
     }
     if (req.method === "GET" && url.pathname === "/api/browser/sessions") {
       return Response.json({ sessions: browserManager.listSavedSessions() });

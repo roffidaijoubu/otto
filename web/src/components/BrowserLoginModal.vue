@@ -121,7 +121,7 @@ async function handleCancel() {
         </DialogDescription>
       </DialogHeader>
 
-      <div class="w-full h-[64vh] min-h-[420px] rounded-lg overflow-hidden border border-border bg-neutral-950">
+      <div class="w-full h-[64vh] min-h-[420px] rounded-lg overflow-hidden border border-border bg-[#f4f4f5]">
         <NoVncCanvas
           v-if="isOpen"
           ref="vncRef"

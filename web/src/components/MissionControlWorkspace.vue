@@ -1059,10 +1059,12 @@ defineExpose({ fetchAll });
 
     <!-- VIEW 5B: EMBEDDED BROWSER & SAVED SESSIONS -->
     <div v-else-if="props.activeTab === 'browser'" class="detail-stack">
-      <BrowserWorkspaceTab
-        :modal-active="props.browserModalActive"
-        :refresh-tick="props.browserRefreshTick"
-      />
+      <div class="otto-card overflow-hidden min-h-[540px] flex flex-col">
+        <BrowserWorkspaceTab
+          :modal-active="props.browserModalActive"
+          :refresh-tick="props.browserRefreshTick"
+        />
+      </div>
     </div>
 
     <!-- VIEW 6: SPRITES CONNECTORS -->
