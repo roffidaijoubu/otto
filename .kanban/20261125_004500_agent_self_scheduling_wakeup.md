@@ -27,7 +27,7 @@ tags:
   - Professor L executes the scheduled action (e.g., send email, post/draft to Buffer, pull YouTube VOD, or leave a proactive briefing message visible in the Web Chat UI).
 
 ## Checklist
-- [x] **Pick scheduler provider & provision Sprites Custom API Connector:** Provisioned Upstash QStash (`qstash-eu-central-1.upstash.io`) via `sprite api /oauth/connections/custom_api` (`ZBOJxUiLpgbrRAqa5zNwEA`, zero local API token).
+- [x] **Pick scheduler provider & provision Sprites Custom API Connector:** Provisioned Upstash QStash (`qstash-eu-central-1.upstash.io`) via `sprite api /oauth/connections/custom_api` (zero local API token; auto-discovered at runtime).
 - [x] **Add `POST /api/wakeup` + passcode auth gate in `web/server.ts`:** Implemented HS256 + SHA-256 body-hash `Upstash-Signature` verification (dual-key rotation) and `HttpOnly` passcode login cookie (`LMA_WEB_PASSWORD`) for the Web Chat UI.
 - [x] **Build `agent/extensions/qstash-scheduler.ts`:** Registered auto-discovering `schedule_wakeup` (one-shot `runAt`/`delaySeconds` + recurring `cron`), `list_wakeups`, and `cancel_wakeup`.
 - [x] **End-to-end live test:** Verified `401` rejection on unsigned `/api/wakeup` and unauthenticated `/`, then scheduled a 10-second live wake-up via Professor L and confirmed Upstash QStash delivered the signed webhook and produced `PROACTIVE_WAKEUP_SUCCESS` in `/api/messages`.
