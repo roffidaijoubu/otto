@@ -1,8 +1,9 @@
 ---
 title: "Sprite HTTPS Mission Control Dashboard"
-status: idea
+status: done
 priority: medium
 created_at: 2026-11-24T23:18:08+07:00
+completed_at: 2026-11-25T02:25:00+07:00
 tags:
   - web-ui
   - sprites-service
@@ -19,6 +20,6 @@ tags:
 - **Raw Clip Hand-off Shelf:** List, preview, and download `.mp4` + `.srt` raw clips prepared by `raw-clip-finder` for human clippers and editors (visually reinforcing the strictly-no-AI-video rule).
 
 ## Checklist
-- [ ] **Add read-only JSON APIs to `web/server.ts`:** `GET /api/dossier` (`MEMORY.md`), `GET /api/connectors` (`/v1/gateway/list`), and `GET /api/clips` + static file streaming for `/home/sprite/clips/`.
-- [ ] **Build Mission Control drawer/tabs in the Web UI:** Clean side panel or top tabs beside the Web Chat UI without cluttering the primary chat view.
-- [ ] **Verify live updates:** Confirm edits made by Professor L to `MEMORY.md` or newly cut clips appear immediately in the dashboard.
+- [x] **Add read-only JSON APIs to `web/server.ts`:** Implemented authenticated `GET /api/dossier`, `GET /api/connectors`, `GET /api/clips`, and path-traversal-safe `GET /api/clips/file/:videoId/:filename`.
+- [x] **Build Mission Control drawer/tabs in the Web UI:** Built `web/src/components/MissionControlDrawer.vue` using **Tailwind CSS v4 + DaisyUI v5** (`lma-wire` swappable monochrome theme) with Dossier, Zero-Key Connectors, and Raw Clips Shelf tabs (inline `<video>` preview + `.mp4`/`.srt` downloads).
+- [x] **Verify live updates:** Verified `tsc --noEmit`, Bun/Vite production build (`1.73s` on Sprite), and live authenticated JSON responses on Sprite `lma` (`/api/dossier`, `/api/connectors`, `/api/clips`).

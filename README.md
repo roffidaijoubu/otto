@@ -151,10 +151,10 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 
 Built actively during **Fly.io Hacksgiving 2026**:
 
-- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier) &amp; Vue 3 Web Chat UI
+- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier) &amp; Vue 3 + DaisyUI v5 Web Chat UI + Mission Control Drawer
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, YouTube (Composio v3), Buffer (X/TikTok/IG), and Upstash QStash (proactive wake-ups)
-- ✅ Professor L persona, strict no-AI-art/video guardrails, &amp; 5 streamer ops skills (`onboarding`, `youtube-audit`, `stream-planner`, `social-promo`, `raw-clip-finder`)
-- ⚠️ Mission Control dashboard panels &amp; `DESIGN.md` visual polish — next up
+- ✅ Professor L persona, strict no-AI-art/video guardrails, 5 streamer ops skills, &amp; `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter
+- ⚠️ Final `DESIGN.md` visual reskin &amp; Hacksgiving demo video — next up
 
 <br>
 

@@ -759,6 +759,128 @@ Bun.serve({
       }
     }
 
+    if (req.method === "GET" && url.pathname === "/api/dossier") {
+      const home = process.env.HOME || "/home/sprite";
+      const memPath = path.join(home, ".omp", "agent", "MEMORY.md");
+      if (!fs.existsSync(memPath)) {
+        return Response.json({ exists: false, updatedAt: null, content: "" });
+      }
+      const stat = fs.statSync(memPath);
+      const content = fs.readFileSync(memPath, "utf8");
+      return Response.json({
+        exists: true,
+        updatedAt: stat.mtime.toISOString(),
+        content,
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/connectors") {
+      try {
+        const gwRes = await fetch("https://api.sprites.dev/v1/gateway/list", {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!gwRes.ok) {
+          return Response.json({ connectors: [], zeroLocalKeys: true, aiMediaDisabled: true, warning: `Gateway HTTP ${gwRes.status}` });
+        }
+        const gwData = (await gwRes.json()) as {
+          connections?: Array<{
+            provider?: string;
+            display_name?: string;
+            connection_type?: string;
+            description?: string;
+            updated_at?: string;
+          }>;
+        };
+        const connectors = (gwData.connections || []).map((c) => ({
+          provider: c.provider || "custom_api",
+          displayName: c.display_name || c.provider || "Connector",
+          connectionType: c.connection_type || "api_key",
+          description: c.description || "",
+          updatedAt: c.updated_at || null,
+          status: "connected",
+        }));
+        return Response.json({
+          connectors,
+          zeroLocalKeys: true,
+          aiMediaDisabled: true,
+        });
+      } catch (err: unknown) {
+        return Response.json({
+          connectors: [],
+          zeroLocalKeys: true,
+          aiMediaDisabled: true,
+          warning: errorMessage(err),
+        });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/clips") {
+      const home = process.env.HOME || "/home/sprite";
+      const clipsRoot = path.join(home, "clips");
+      if (!fs.existsSync(clipsRoot)) {
+        return Response.json({ clips: [] });
+      }
+      const clips: Array<{
+        videoId: string;
+        name: string;
+        filename: string;
+        mp4Url: string;
+        srtUrl: string | null;
+        sizeBytes: number;
+        updatedAt: string;
+      }> = [];
+      for (const vidEntry of fs.readdirSync(clipsRoot, { withFileTypes: true })) {
+        if (!vidEntry.isDirectory() || !/^[A-Za-z0-9_-]{6,32}$/.test(vidEntry.name)) continue;
+        const vidDir = path.join(clipsRoot, vidEntry.name);
+        for (const f of fs.readdirSync(vidDir)) {
+          if (!f.endsWith(".mp4")) continue;
+          const full = path.join(vidDir, f);
+          const st = fs.statSync(full);
+          if (!st.isFile()) continue;
+          const base = f.slice(0, -4);
+          const srtFile = `${base}.srt`;
+          const hasSrt = fs.existsSync(path.join(vidDir, srtFile));
+          clips.push({
+            videoId: vidEntry.name,
+            name: base,
+            filename: f,
+            mp4Url: `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(f)}`,
+            srtUrl: hasSrt
+              ? `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(srtFile)}`
+              : null,
+            sizeBytes: st.size,
+            updatedAt: st.mtime.toISOString(),
+          });
+        }
+      }
+      clips.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return Response.json({ clips });
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/clips/file/")) {
+      const relParts = url.pathname.slice("/api/clips/file/".length).split("/").filter(Boolean);
+      if (relParts.length !== 2) {
+        return Response.json({ error: "Invalid clip path" }, { status: 400 });
+      }
+      const [vidRaw, fileRaw] = relParts.map((p) => decodeURIComponent(p));
+      if (!/^[A-Za-z0-9_-]{6,32}$/.test(vidRaw) || !/^[A-Za-z0-9_.-]+\.(mp4|srt)$/.test(fileRaw)) {
+        return Response.json({ error: "Invalid clip filename" }, { status: 400 });
+      }
+      const home = process.env.HOME || "/home/sprite";
+      const clipsRoot = path.resolve(home, "clips");
+      const candidate = path.resolve(clipsRoot, vidRaw, fileRaw);
+      if (!candidate.startsWith(clipsRoot + path.sep) || !fs.existsSync(candidate)) {
+        return Response.json({ error: "Clip not found" }, { status: 404 });
+      }
+      const isDownload = url.searchParams.get("download") === "1";
+      const contentType = fileRaw.endsWith(".mp4") ? "video/mp4" : "text/plain; charset=utf-8";
+      const headers: Record<string, string> = { "Content-Type": contentType };
+      if (isDownload) {
+        headers["Content-Disposition"] = `attachment; filename="${fileRaw}"`;
+      }
+      return new Response(Bun.file(candidate), { headers });
+    }
+
     if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
       const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
       const resolvedDist = path.resolve(DIST_DIR);

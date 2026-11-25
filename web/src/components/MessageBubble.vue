@@ -24,7 +24,7 @@ const html = computed(() => renderMarkdown(props.text));
       :steps="steps"
       :live="live"
     />
-    <div v-if="text.trim()" class="msg-body" v-html="html"></div>
+    <div v-if="text.trim()" class="msg-body md-content" v-html="html"></div>
   </div>
 </template>
 

@@ -4,6 +4,7 @@ import ChatComposer from "./components/ChatComposer.vue";
 import ChatHeader from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
+import MissionControlDrawer from "./components/MissionControlDrawer.vue";
 import type { ChatMessage, SessionSummary, TraceStep } from "./types/chat";
 
 const messages = ref<ChatMessage[]>([]);
@@ -14,6 +15,8 @@ const activity = ref("Thinking...");
 const connectionState = ref<"connecting" | "ready" | "error">("connecting");
 const error = ref("");
 const sidebarOpen = ref(window.innerWidth > 768);
+const missionControlOpen = ref(false);
+const missionRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
 
 // Live streaming accumulator for the active assistant response
@@ -163,6 +166,7 @@ function connectEvents() {
       commitLiveAssistant();
       busy.value = false;
       loadSessions();
+      missionRefreshTick.value += 1;
     } else if (type === "session_changed") {
       resetLiveBuffers();
       busy.value = false;
@@ -204,6 +208,11 @@ async function sendMessage() {
 function useStarter(prompt: string) {
   draft.value = prompt;
   sendMessage();
+}
+
+function handleMissionPrompt(prompt: string) {
+  missionControlOpen.value = false;
+  useStarter(prompt);
 }
 
 async function stopReply() {
@@ -259,10 +268,12 @@ onMounted(async () => {
     <div class="main">
       <ChatHeader
         :sidebar-open="sidebarOpen"
+        :mission-control-open="missionControlOpen"
         :status-state="statusState"
         :status-label="statusLabel"
         :busy="busy"
         @toggle-sidebar="sidebarOpen = !sidebarOpen"
+        @toggle-mission-control="missionControlOpen = !missionControlOpen"
         @new-chat="newChat"
       />
 
@@ -316,6 +327,13 @@ onMounted(async () => {
 
       <ChatComposer v-model="draft" :busy="busy" @send="sendMessage" @stop="stopReply" />
     </div>
+
+    <MissionControlDrawer
+      :open="missionControlOpen"
+      :refresh-tick="missionRefreshTick"
+      @close="missionControlOpen = false"
+      @ask-prompt="handleMissionPrompt"
+    />
   </div>
 </template>
 

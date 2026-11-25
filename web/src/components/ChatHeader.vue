@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{
   sidebarOpen: boolean;
+  missionControlOpen: boolean;
   statusState: "ready" | "busy" | "error";
   statusLabel: string;
   busy: boolean;
@@ -8,6 +9,7 @@ defineProps<{
 
 const emit = defineEmits<{
   toggleSidebar: [];
+  toggleMissionControl: [];
   newChat: [];
 }>();
 </script>
@@ -15,7 +17,7 @@ const emit = defineEmits<{
 <template>
   <header class="header">
     <div class="header-left">
-      <button class="btn" type="button" @click="emit('toggleSidebar')">
+      <button class="btn btn-sm btn-outline font-mono" type="button" @click="emit('toggleSidebar')">
         {{ sidebarOpen ? "Hide" : "Chats" }}
       </button>
       <div class="brand">
@@ -31,7 +33,10 @@ const emit = defineEmits<{
         <span class="status-dot" :class="statusState"></span>
         <span>{{ statusLabel }}</span>
       </span>
-      <button class="btn" type="button" :disabled="busy" @click="emit('newChat')">New Chat</button>
+      <button class="btn btn-sm btn-outline font-mono" type="button" @click="emit('toggleMissionControl')">
+        {{ missionControlOpen ? "Close Panel" : "Mission Control" }}
+      </button>
+      <button class="btn btn-sm btn-outline font-mono" type="button" :disabled="busy" @click="emit('newChat')">New Chat</button>
     </div>
   </header>
 </template>
