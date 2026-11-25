@@ -27,18 +27,6 @@ export interface ContentPipelineItem {
   updatedAt: string;
 }
 
-export interface StudioContact {
-  id: string;
-  name: string;
-  role: "artist" | "clipper" | "editor" | "rigger" | "collab" | "sponsor" | "mod";
-  handle: string;
-  platform: string;
-  status: "prospect" | "pitched" | "active" | "paused";
-  notes: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface ChannelMetric {
   id: string;
   recordedAt: string;
@@ -87,12 +75,11 @@ const emit = defineEmits<{
   }];
 }>();
 
-const subTab = ref<"pipeline" | "contacts" | "metrics" | "trackers">("pipeline");
+const subTab = ref<"pipeline" | "metrics" | "trackers">("pipeline");
 const loading = ref(false);
 const errorMsg = ref("");
 
 const pipeline = ref<ContentPipelineItem[]>([]);
-const contacts = ref<StudioContact[]>([]);
 const metrics = ref<ChannelMetric[]>([]);
 const trackers = ref<CustomTracker[]>([]);
 const activeTrackerSlug = ref<string | null>(null);
@@ -102,12 +89,6 @@ const newPipeTitle = ref("");
 const newPipeFormat = ref<ContentPipelineItem["format"]>("stream");
 const newPipePillar = ref<ContentPipelineItem["pillar"]>("core");
 const newPipeHook = ref("");
-
-const newContactName = ref("");
-const newContactRole = ref<StudioContact["role"]>("artist");
-const newContactHandle = ref("");
-const newContactPlatform = ref("");
-const newContactNotes = ref("");
 
 const newMetricDate = ref(new Date().toISOString().slice(0, 10));
 const newMetricSubs = ref("");
@@ -143,14 +124,13 @@ async function fetchAllDb() {
   loading.value = true;
   errorMsg.value = "";
   try {
-    const [pRes, cRes, mRes, tRes] = await Promise.all([
+    const [pRes, mRes, tRes, cRes] = await Promise.all([
       fetch("/api/db/pipeline").then((r) => r.json()).catch(() => null),
-      fetch("/api/db/contacts").then((r) => r.json()).catch(() => null),
       fetch("/api/db/metrics").then((r) => r.json()).catch(() => null),
       fetch("/api/db/trackers").then((r) => r.json()).catch(() => null),
+      fetch("/api/db/contacts").then((r) => r.json()).catch(() => null),
     ]);
     if (pRes && Array.isArray(pRes.items)) pipeline.value = pRes.items;
-    if (cRes && Array.isArray(cRes.contacts)) contacts.value = cRes.contacts;
     if (mRes && Array.isArray(mRes.metrics)) metrics.value = mRes.metrics;
     if (tRes && Array.isArray(tRes.trackers)) {
       trackers.value = tRes.trackers;
@@ -169,7 +149,7 @@ async function fetchAllDb() {
       pipelineCount: activePipeline.value.length,
       coreCount: coreCount.value,
       experimentCount: experimentCount.value,
-      contactsCount: contacts.value.length,
+      contactsCount: cRes && Array.isArray(cRes.contacts) ? cRes.contacts.length : 0,
       trackersCount: trackers.value.length,
     });
   } finally {
@@ -217,41 +197,6 @@ async function patchPipeline(id: string, patch: Partial<ContentPipelineItem>) {
 
 async function removePipeline(id: string) {
   await fetch(`/api/db/pipeline/${encodeURIComponent(id)}`, { method: "DELETE" });
-  await fetchAllDb();
-}
-
-async function addContact() {
-  if (!newContactName.value.trim()) return;
-  const res = await fetch("/api/db/contacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: newContactName.value.trim(),
-      role: newContactRole.value,
-      handle: newContactHandle.value.trim(),
-      platform: newContactPlatform.value.trim(),
-      notes: newContactNotes.value.trim(),
-    }),
-  });
-  if (!res.ok) return;
-  newContactName.value = "";
-  newContactHandle.value = "";
-  newContactPlatform.value = "";
-  newContactNotes.value = "";
-  await fetchAllDb();
-}
-
-async function patchContact(id: string, patch: Partial<StudioContact>) {
-  await fetch(`/api/db/contacts/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  await fetchAllDb();
-}
-
-async function removeContact(id: string) {
-  await fetch(`/api/db/contacts/${encodeURIComponent(id)}`, { method: "DELETE" });
   await fetchAllDb();
 }
 
@@ -382,9 +327,6 @@ defineExpose({ fetchAllDb });
           <button type="button" class="db-tab" :class="{ active: subTab === 'pipeline' }" @click="subTab = 'pipeline'">
             3+1 Pipeline ({{ activePipeline.length }})
           </button>
-          <button type="button" class="db-tab" :class="{ active: subTab === 'contacts' }" @click="subTab = 'contacts'">
-            Contacts ({{ contacts.length }})
-          </button>
           <button type="button" class="db-tab" :class="{ active: subTab === 'metrics' }" @click="subTab = 'metrics'">
             Metrics ({{ metrics.length }})
           </button>
@@ -495,72 +437,6 @@ defineExpose({ fetchAllDb });
                   {{ item.scriptPath }}
                 </Button>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 2: CONTACTS ROLODEX -->
-        <div v-else-if="subTab === 'contacts'" class="space-y-3">
-          <div class="db-sub">Human thumbnail artists, clippers, editors, riggers, collabs &amp; sponsors.</div>
-
-          <form class="db-form" @submit.prevent="addContact">
-            <input v-model="newContactName" type="text" class="db-input" placeholder="Name" required />
-            <select v-model="newContactRole" class="db-select">
-              <option value="artist">Artist</option>
-              <option value="clipper">Clipper</option>
-              <option value="editor">Editor</option>
-              <option value="rigger">Rigger</option>
-              <option value="collab">Collab</option>
-              <option value="sponsor">Sponsor</option>
-              <option value="mod">Mod</option>
-            </select>
-            <input v-model="newContactHandle" type="text" class="db-input" placeholder="@handle / email" />
-            <input v-model="newContactPlatform" type="text" class="db-input" placeholder="Platform (X, VGen, YT)" />
-            <input v-model="newContactNotes" type="text" class="db-input flex-1" placeholder="Rates, vibe, notes" />
-            <Button type="submit" size="sm">
-              <PlusIcon data-icon="inline-start" />
-              Add
-            </Button>
-          </form>
-
-          <div v-if="contacts.length === 0" class="db-empty">
-            No contacts saved yet. Add your go-to human thumbnail artist, clipper, or collab partners.
-          </div>
-
-          <div v-else class="db-cards">
-            <div v-for="c in contacts" :key="c.id" class="db-row-card">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="otto-chip otto-chip-ink">{{ c.role }}</span>
-                  <span class="font-medium text-sm">{{ c.name }}</span>
-                  <span v-if="c.handle" class="text-xs font-mono text-[var(--fg-muted)]">{{ c.handle }}</span>
-                  <span v-if="c.platform" class="otto-chip otto-chip-neutral">{{ c.platform }}</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <select
-                    :value="c.status"
-                    class="db-mini-select"
-                    @change="patchContact(c.id, { status: ($event.target as HTMLSelectElement).value as StudioContact['status'] })"
-                  >
-                    <option value="prospect">Prospect</option>
-                    <option value="pitched">Pitched</option>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                  </select>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    @click="emit('askPrompt', `Draft a clear, zero-friction ${c.role === 'collab' ? 'collab pitch' : 'brief / outreach message'} for ${c.name} (${c.role}${c.handle ? ', ' + c.handle : ''}).`)"
-                  >
-                    Draft Outreach
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" aria-label="Delete contact" @click="removeContact(c.id)">
-                    <XIcon />
-                  </Button>
-                </div>
-              </div>
-              <div v-if="c.notes" class="text-xs text-[var(--fg-muted)] mt-1">{{ c.notes }}</div>
             </div>
           </div>
         </div>

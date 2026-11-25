@@ -95,6 +95,7 @@ const SHORTCUT_APP_IDS: StudioAppId[] = [
   "studio-db",
   "playbooks",
   "calendar",
+  "contacts",
   "settings",
 ];
 

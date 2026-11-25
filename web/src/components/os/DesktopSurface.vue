@@ -43,6 +43,7 @@ const props = withDefaults(
       { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
       { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
       { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
+      { id: "contacts", label: "Contacts", sublabel: "Rolodex", icon: "contacts", appId: "contacts" },
     ],
     mascotState: "ready",
     mascotColor: "#303030",

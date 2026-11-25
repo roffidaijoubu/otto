@@ -18,6 +18,7 @@ export type StudioAppId =
   | "studio-db"
   | "playbooks"
   | "calendar"
+  | "contacts"
   | "settings";
 
 export type StudioAppIconName =
@@ -28,6 +29,7 @@ export type StudioAppIconName =
   | "database"
   | "sparkles"
   | "calendar"
+  | "contacts"
   | "settings";
 
 export type SnapZone = "left" | "right" | "maximize";
@@ -260,6 +262,18 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "7",
   },
   {
+    id: "contacts",
+    title: "Contacts",
+    shortLabel: "Contacts",
+    icon: "contacts",
+    minWidth: 520,
+    minHeight: 400,
+    defaultWidth: 880,
+    defaultHeight: 580,
+    dockSection: "primary",
+    shortcutDigit: "8",
+  },
+  {
     id: "settings",
     title: "System Settings",
     shortLabel: "Settings",
@@ -269,7 +283,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 620,
     defaultHeight: 560,
     dockSection: "utility",
-    shortcutDigit: "8",
+    shortcutDigit: "9",
   },
 ] as const;
 

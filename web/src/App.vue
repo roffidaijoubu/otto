@@ -21,6 +21,7 @@ import BrowserLoginModal, { type BrowserLoginRequest } from "./components/Browse
 import BrowserWorkspaceTab from "./components/BrowserWorkspaceTab.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
+import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
 import type { StudioTab } from "./components/ChatHeader.vue";
 import LearnedPlaybooksCard from "./components/LearnedPlaybooksCard.vue";
 import MessageBubble from "./components/MessageBubble.vue";
@@ -746,6 +747,16 @@ onMounted(async () => {
             :refresh-tick="missionRefreshTick + dbRefreshTick"
             @ask-prompt="handleMissionPrompt"
             @events-updated="navCounts.schedule = $event"
+          />
+        </div>
+      </template>
+
+      <!-- WINDOW 8: CONTACTS -->
+      <template #app-contacts>
+        <div class="flex h-full min-h-0 flex-col bg-white">
+          <ContactsWorkspaceApp
+            :refresh-tick="dbRefreshTick"
+            @ask-prompt="handleMissionPrompt"
           />
         </div>
       </template>

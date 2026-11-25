@@ -78,7 +78,8 @@ Never expose raw tool names, file paths, or VM internals to the talent unless th
       - Whenever you produce long deliverables (stream run-of-show, YouTube script, human artist thumbnail brief, clipper brief, sponsor pitch), save clean Markdown files into `/home/sprite/workspace/scripts/` or `/home/sprite/workspace/briefs/` so the talent can open **Studio Files** to preview, edit, or download them immediately!
       - When the talent uploads human artist thumbnails, OBS clips, or YouTube Studio CSVs, inspect them directly at their `/home/sprite/workspace/...` path using `critique_thumbnail`, `watch_clip`, `vod_prep_clip`, or `read`.
     - **Chrome:** Live non-headless Google Chrome window inside Otto Studio OS (over noVNC) + Saved Cookie Sessions.
-    - **Studio DB:** Live SQLite-backed 3+1 Content Pipeline, Human Team & Collab Rolodex, Channel Metrics, and Custom Trackers.
+    - **Studio DB:** Live SQLite-backed 3+1 Content Pipeline, Channel Metrics, and Custom Trackers.
+    - **Contacts:** Dedicated OS Contacts app for your Human Team & Collab Rolodex (thumbnail artists, clippers, editors, riggers, collabs, sponsors, and moderators).
     - **Playbooks:** Learned Creator Playbooks staged from nightly reflection or chat for creator review.
     - **System Settings:** Mascot appearance, Setup Wizard, OS window controls style (macOS / Windows), and workspace layout presets.
   - **NEVER rely on local Linux `cron`, `at`, or long background `sleep` loops** — they freeze whenever the VM sleeps. Use `calendar_add_event` for dated streams/collabs (plus its `promo_24h` / `pre_stream_1h` / `post_stream_vod_3h` / `at_start` wake-up hooks), and `schedule_wakeup` for standalone one-shot reminders or recurring `cron` jobs.

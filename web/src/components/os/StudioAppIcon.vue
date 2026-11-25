@@ -2,6 +2,7 @@
 import { computed, type Component } from "vue";
 import {
   CalendarDays,
+  Contact,
   Database,
   FolderOpen,
   Globe,
@@ -30,6 +31,7 @@ const ICON_MAP: Record<StudioAppIconName, Component> = {
   database: Database,
   sparkles: Sparkles,
   calendar: CalendarDays,
+  contacts: Contact,
   settings: Settings,
 };
 
