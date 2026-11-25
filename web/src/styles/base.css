@@ -7,13 +7,77 @@ html, body {
   padding: 0;
   height: 100%;
   background-color: var(--bg-flat);
-  background-image: var(--bg-canvas);
-  background-attachment: fixed;
   color: var(--fg);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Smooth GPU-composited looping ambient studio gradient backdrop */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -28%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+
+body::before {
+  background-image: var(--bg-canvas);
+  animation: otto-canvas-drift-a 24s ease-in-out infinite;
+}
+
+body::after {
+  background-image:
+    radial-gradient(circle at 22% 72%, rgba(220, 107, 70, 0.34) 0%, rgba(220, 107, 70, 0) 46%),
+    radial-gradient(circle at 76% 24%, rgba(188, 204, 226, 0.42) 0%, rgba(188, 204, 226, 0) 48%),
+    radial-gradient(circle at 52% 52%, rgba(249, 245, 162, 0.14) 0%, rgba(249, 245, 162, 0) 44%);
+  animation: otto-canvas-drift-b 32s ease-in-out infinite;
+}
+
+@keyframes otto-canvas-drift-a {
+  0% {
+    transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(4%, -3%, 0) scale(1.06) rotate(3deg);
+  }
+  66% {
+    transform: translate3d(-3%, 4%, 0) scale(1.03) rotate(-2deg);
+  }
+  100% {
+    transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes otto-canvas-drift-b {
+  0% {
+    transform: translate3d(0%, 0%, 0) scale(1.02) rotate(0deg);
+  }
+  35% {
+    transform: translate3d(-5%, 4%, 0) scale(1.08) rotate(-4deg);
+  }
+  70% {
+    transform: translate3d(5%, 2%, 0) scale(0.98) rotate(3deg);
+  }
+  100% {
+    transform: translate3d(0%, 0%, 0) scale(1.02) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none;
+  }
 }
 
 /* Signature Otto Bento Widget Card */

@@ -327,14 +327,44 @@ const LOGIN_HTML = `<!DOCTYPE html>
     body {
       margin: 0; min-height: 100dvh; color: #303030;
       background-color: #dbdbdb;
+      position: relative; isolation: isolate; overflow: hidden;
+      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      display: grid; place-items: center; padding: 16px;
+    }
+    body::before, body::after {
+      content: ""; position: fixed; inset: -28%; z-index: -1;
+      pointer-events: none; will-change: transform;
+    }
+    body::before {
       background-image:
         radial-gradient(circle at 10% 8%, #cfd5df 0%, rgba(207,213,223,0) 48%),
         radial-gradient(circle at 94% 10%, #dc6b46 0%, rgba(220,107,70,0) 52%),
         radial-gradient(circle at 90% 92%, #df7a59 0%, rgba(223,122,89,0) 50%),
         radial-gradient(circle at 8% 92%, #e59d81 0%, rgba(229,157,129,0) 52%),
         linear-gradient(135deg, #d7d5d6 0%, #dcd4d2 48%, #e6b29a 100%);
-      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      display: grid; place-items: center; padding: 16px;
+      animation: otto-drift-a 24s ease-in-out infinite;
+    }
+    body::after {
+      background-image:
+        radial-gradient(circle at 22% 72%, rgba(220,107,70,0.34) 0%, rgba(220,107,70,0) 46%),
+        radial-gradient(circle at 76% 24%, rgba(188,204,226,0.42) 0%, rgba(188,204,226,0) 48%),
+        radial-gradient(circle at 52% 52%, rgba(249,245,162,0.14) 0%, rgba(249,245,162,0) 44%);
+      animation: otto-drift-b 32s ease-in-out infinite;
+    }
+    @keyframes otto-drift-a {
+      0% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); }
+      33% { transform: translate3d(4%, -3%, 0) scale(1.06) rotate(3deg); }
+      66% { transform: translate3d(-3%, 4%, 0) scale(1.03) rotate(-2deg); }
+      100% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); }
+    }
+    @keyframes otto-drift-b {
+      0% { transform: translate3d(0%, 0%, 0) scale(1.02) rotate(0deg); }
+      35% { transform: translate3d(-5%, 4%, 0) scale(1.08) rotate(-4deg); }
+      70% { transform: translate3d(5%, 2%, 0) scale(0.98) rotate(3deg); }
+      100% { transform: translate3d(0%, 0%, 0) scale(1.02) rotate(0deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body::before, body::after { animation: none; }
     }
     .card {
       width: min(92vw, 390px); background: #ffffff;
