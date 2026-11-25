@@ -225,7 +225,10 @@ const LOGIN_HTML = `<!DOCTYPE html>
         body: JSON.stringify({ password: document.getElementById("pw").value }),
       });
       if (res.ok) location.reload();
-      else err.textContent = "Invalid passcode.";
+      else {
+        const data = await res.json().catch(() => ({}));
+        err.textContent = data.error || "Invalid passcode.";
+      }
     });
   </script>
 </body>
@@ -747,12 +750,20 @@ Bun.serve({
           { status: 503, headers: { "Retry-After": "15" } }
         );
       }
-      // Acquire Sprite Tasks API hold BEFORE returning 200 ACK so idle sleep cannot pause mid-turn
+      // Claim busy synchronously before awaiting Tasks API hold so concurrent calls cannot race
+      rpc.busy = true;
       await rpc.holdSpriteActive();
       const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
-      rpc.prompt(wakeupMsg).catch((err) => {
+      try {
+        rpc.busy = false;
+        await rpc.prompt(wakeupMsg);
+      } catch (err) {
         console.error("[lma-web] wakeup prompt error:", errorMessage(err));
-      });
+        return Response.json(
+          { error: "Failed to dispatch wake-up; retry shortly" },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
+      }
       return Response.json({ ok: true, label });
     }
 
@@ -939,15 +950,20 @@ Bun.serve({
           const st = fs.statSync(full);
           if (!st.isFile()) continue;
           const base = f.slice(0, -4);
-          const srtFile = `${base}.srt`;
-          const hasSrt = fs.existsSync(path.join(vidDir, srtFile));
+          const exactSrt = `${base}.srt`;
+          const strippedSrt = `${base.replace(/_prepped$/, "")}.srt`;
+          const matchedSrt = fs.existsSync(path.join(vidDir, exactSrt))
+            ? exactSrt
+            : fs.existsSync(path.join(vidDir, strippedSrt))
+              ? strippedSrt
+              : null;
           clips.push({
             videoId: vidEntry.name,
             name: base,
             filename: f,
             mp4Url: `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(f)}`,
-            srtUrl: hasSrt
-              ? `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(srtFile)}`
+            srtUrl: matchedSrt
+              ? `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(matchedSrt)}`
               : null,
             sizeBytes: st.size,
             updatedAt: st.mtime.toISOString(),
@@ -982,15 +998,33 @@ Bun.serve({
       const isDownload = url.searchParams.get("download") === "1";
       const contentType = fileRaw.endsWith(".mp4") ? "video/mp4" : "text/plain; charset=utf-8";
       const stat = fs.statSync(candidate);
+      const size = stat.size;
       const headers: Record<string, string> = {
         "Content-Type": contentType,
-        "Content-Length": String(stat.size),
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(size),
       };
       if (isDownload) {
         headers["Content-Disposition"] = `attachment; filename="${fileRaw}"`;
       }
       if (req.method === "HEAD") {
         return new Response(null, { status: 200, headers });
+      }
+      const rangeHeader = req.headers.get("range");
+      if (rangeHeader && rangeHeader.startsWith("bytes=")) {
+        const [startStr, endStr] = rangeHeader.slice(6).split("-");
+        const start = startStr ? Number.parseInt(startStr, 10) : 0;
+        const end = endStr ? Math.min(size - 1, Number.parseInt(endStr, 10)) : size - 1;
+        if (Number.isNaN(start) || Number.isNaN(end) || start < 0 || start > end || start >= size) {
+          return new Response(null, {
+            status: 416,
+            headers: { "Content-Range": `bytes */${size}` },
+          });
+        }
+        const chunkSize = end - start + 1;
+        headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+        headers["Content-Length"] = String(chunkSize);
+        return new Response(Bun.file(candidate).slice(start, end + 1), { status: 206, headers });
       }
       return new Response(Bun.file(candidate), { headers });
     }

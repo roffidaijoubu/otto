@@ -74,7 +74,7 @@ Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprite
 1. Follow https://fly.io/sprites/agent-ready.md to verify the Sprite CLI and Fly.io auth.
 2. Create a Sprite named "lma" and set it active (`sprite create --skip-console lma && sprite use lma`).
 3. Inside the Sprite, clone this repo into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
-4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors:
+4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors (then re-run `bash ~/lma/setup.sh` so `~/.omp/agent/models.yml` is written):
    - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl.
    - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
    - Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.

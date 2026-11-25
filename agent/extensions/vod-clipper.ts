@@ -234,6 +234,7 @@ export default function (pi: ExtensionAPI) {
       const dir = path.dirname(resolvedIn);
       const base = path.basename(resolvedIn, path.extname(resolvedIn)).replace(/_prepped$/, "");
       const outPath = path.join(dir, `${base}_prepped.mp4`);
+      const tmpOut = path.join(dir, `${base}_prepped.tmp.${Date.now()}.mp4`);
       const lufs = Math.min(-8, Math.max(-24, params.targetLufs ?? -14));
 
       const ffArgs: string[] = ["-y"];
@@ -266,10 +267,16 @@ export default function (pi: ExtensionAPI) {
         "192k",
         "-movflags",
         "+faststart",
-        outPath
+        tmpOut
       );
 
-      await execFileAsync("ffmpeg", ffArgs, { timeout: 240_000, maxBuffer: 8 * 1024 * 1024 });
+      try {
+        await execFileAsync("ffmpeg", ffArgs, { timeout: 240_000, maxBuffer: 8 * 1024 * 1024 });
+        fs.renameSync(tmpOut, outPath);
+      } catch (err) {
+        fs.rmSync(tmpOut, { force: true });
+        throw err;
+      }
       const stat = fs.statSync(outPath);
       const result = {
         input_path: resolvedIn,

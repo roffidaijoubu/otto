@@ -208,7 +208,11 @@ export default function (pi: ExtensionAPI) {
         mimeType = guessMimeType(target, "image/png");
         bytes = fs.readFileSync(target);
       }
-
+      if (bytes.length > MAX_INLINE_BYTES) {
+        throw new Error(
+          `Thumbnail image exceeds ${(MAX_INLINE_BYTES / 1024 / 1024).toFixed(0)} MB limit (${(bytes.length / 1024 / 1024).toFixed(1)} MB).`
+        );
+      }
       const titleLine = params.videoTitle ? `Paired video title: "${params.videoTitle}"\n\n` : "";
       const prompt =
         `${titleLine}Critique this YouTube thumbnail using Professor L's blunt packaging playbook and the Michael Reeves Squint Test:\n` +
