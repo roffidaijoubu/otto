@@ -57,7 +57,7 @@ flowchart LR
 ```
 
 - **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw `.mp4`/`.srt` material for human artists and clippers — never replaces them.
-- **Zero API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md). Even if you inspect the Sprite's disk or environment, no credentials exist to leak.
+- **Zero outbound API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md) — no third-party API keys are ever stored in the Sprite or repo.
 - **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining a structured `MEMORY.md` talent dossier (3 Goals, Ideal Schedule, 3 GOATs, 3+1 tracker) with built-in **Mnemopi** SQLite memory across sessions.
 - **Professor L coaching playbook:** Grounded in Ludwig's *Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
 
@@ -86,7 +86,7 @@ Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprite
 
 ---
 
-## Manual Setup (3 Commands)
+## Manual Setup (4 Commands)
 
 Prefer to run it directly from your terminal?
 
@@ -94,10 +94,13 @@ Prefer to run it directly from your terminal?
 # 1. Create and select your persistent Sprite
 sprite create --skip-console lma && sprite use lma
 
-# 2. Clone the repo inside the Sprite and run the idempotent installer
+# 2. Add the required Google Gemini connector in https://sprites.dev -> Connectors
+#    (and grant access to your `lma` Sprite)
+
+# 3. Clone the repo inside the Sprite and run the idempotent installer
 sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma && bash ~/lma/setup.sh"
 
-# 3. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
+# 4. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
 #    (or chat directly from your terminal via: sprite console && omp)
 ```
 

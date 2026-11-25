@@ -46,7 +46,7 @@ sprite exec -- bash -c 'cd /home/sprite/e2e-run1 && omp -p "Turn 3 confirmation 
 
 ## Method B — Live Web UI HTTP/SSE API (`lma-web` Port 8080, Recommended for Playbook 05 & Web UI Tests)
 
-`lma-web` wraps one persistent `omp --mode rpc --no-ui` subprocess over JSONL stdin/stdout and exposes authenticated HTTP + SSE endpoints on `http://127.0.0.1:8080` (inside the Sprite) and `https://lma-bicns.sprites.app` (public HTTPS).
+`lma-web` wraps one persistent `omp --mode rpc --no-ui` subprocess over JSONL stdin/stdout and exposes authenticated HTTP + SSE endpoints on `http://127.0.0.1:8080` (inside the Sprite) and `https://<your-sprite>.sprites.app` (public HTTPS).
 
 ### Complete Multi-Turn Script (Login → New Chat → Send Turn 1 → Wait → Send Turn 2)
 ```bash

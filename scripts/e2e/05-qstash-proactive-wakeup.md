@@ -8,7 +8,8 @@
 
 ### 1. Confirm Unsigned Spoof Rejection (`401`)
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://lma-bicns.sprites.app/api/wakeup \
+# Replace with your Sprite URL from `sprite info` (or LMA_PUBLIC_URL)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://<your-sprite>.sprites.app/api/wakeup" \
   -H "Content-Type: application/json" \
   -d '{"label":"spoof","prompt":"hack"}'
 ```

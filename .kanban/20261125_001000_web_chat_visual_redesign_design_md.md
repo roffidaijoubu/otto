@@ -22,4 +22,4 @@ tags:
 - [x] **Adapt `DESIGN.md`:** Created CafeBlend Studio `DESIGN.md` at repo root (warm cream `#FDF6EC`, espresso `#3E2723`, `#8B5E3C` primary, DM Serif Display + Work Sans + IBM Plex Mono, neumorphic raised/inset shadows).
 - [x] **Update DaisyUI v5 theme & tokens:** Replaced wireframe tokens with `lma-cafe` theme in `web/src/styles/daisy.css`, `tokens.css`, `base.css`, and Google Fonts in `web/index.html`.
 - [x] **Polish all Vue components & Passcode Gate:** Applied CafeBlend raised cards, inset composer/login inputs, pill status chips, and sidebar selection indicators across `ChatHeader`, `SessionSidebar`, `MessageBubble`, `ThoughtTrace`, `ChatComposer`, `MissionControlDrawer`, `App.vue`, and `web/server.ts`.
-- [x] **Build & deploy to Sprite `lma`:** Verified `tsc --noEmit`, Vite build, and live restart on `https://lma-bicns.sprites.app`.
+- [x] **Build & deploy to Sprite `lma`:** Verified `tsc --noEmit`, Vite build, and live restart on the Sprite HTTPS URL.

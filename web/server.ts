@@ -74,19 +74,78 @@ function verifyQStashJwtWithKey(token: string, rawBody: string, key: string): bo
   if (payload.iss !== "Upstash") return false;
   if (typeof payload.exp === "number" && now > payload.exp + 30) return false;
   if (typeof payload.nbf === "number" && now < payload.nbf - 30) return false;
-
-  if (typeof payload.body === "string") {
-    const actualHashB64Url = crypto.createHash("sha256").update(rawBody).digest("base64url");
-    const actualHashB64 = crypto.createHash("sha256").update(rawBody).digest("base64");
-    const claimed = payload.body.replace(/=+$/, "");
-    if (
-      !timingSafeStrEqual(claimed, actualHashB64Url) &&
-      !timingSafeStrEqual(payload.body, actualHashB64)
-    ) {
-      return false;
-    }
+  if (typeof payload.body !== "string") return false;
+  const expectedSub = process.env.LMA_PUBLIC_URL
+    ? `${process.env.LMA_PUBLIC_URL.replace(/\/+$/, "")}/api/wakeup`
+    : null;
+  if (expectedSub && typeof payload.sub === "string" && payload.sub !== expectedSub) {
+    return false;
+  }
+  const actualHashB64Url = crypto.createHash("sha256").update(rawBody).digest("base64url");
+  const actualHashB64 = crypto.createHash("sha256").update(rawBody).digest("base64");
+  const claimed = payload.body.replace(/=+$/, "");
+  if (
+    !timingSafeStrEqual(claimed, actualHashB64Url) &&
+    !timingSafeStrEqual(payload.body, actualHashB64)
+  ) {
+    return false;
   }
   return true;
+}
+
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_FAILURES = 5;
+
+function getClientKey(req: Request): string {
+  const fwd = req.headers.get("fly-client-ip") || req.headers.get("x-forwarded-for") || "local";
+  return fwd.split(",")[0].trim() || "local";
+}
+
+function isLoginRateLimited(key: string): boolean {
+  const entry = loginFailures.get(key);
+  if (!entry) return false;
+  if (Date.now() > entry.resetAt) {
+    loginFailures.delete(key);
+    return false;
+  }
+  return entry.count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginFailure(key: string) {
+  const now = Date.now();
+  const entry = loginFailures.get(key);
+  if (!entry || now > entry.resetAt) {
+    loginFailures.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function computeGuardrailStatus(): { zeroLocalKeys: boolean; aiMediaDisabled: boolean } {
+  const outboundKeyNames = [
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "EXA_API_KEY",
+    "FIRECRAWL_API_KEY",
+    "COMPOSIO_API_KEY",
+    "BUFFER_API_KEY",
+    "QSTASH_TOKEN",
+  ];
+  const zeroLocalKeys = outboundKeyNames.every((k) => !process.env[k]);
+
+  let aiMediaDisabled = false;
+  try {
+    const home = process.env.HOME || "/home/sprite";
+    const cfgPath = path.join(home, ".omp", "agent", "config.yml");
+    if (fs.existsSync(cfgPath)) {
+      const cfg = fs.readFileSync(cfgPath, "utf8");
+      aiMediaDisabled = /generate_image:\s*deny/i.test(cfg);
+    }
+  } catch {
+    aiMediaDisabled = false;
+  }
+  return { zeroLocalKeys, aiMediaDisabled };
 }
 
 function verifyUpstashSignature(req: Request, rawBody: string): boolean {
@@ -322,9 +381,9 @@ class OmpRpcBridge {
     this.spawn();
   }
 
-  private holdSpriteActive() {
+  public async holdSpriteActive(): Promise<void> {
     if (!fs.existsSync("/.sprite/api.sock")) return;
-    fetch("http://sprite/v1/tasks/lma-agent-turn", {
+    await fetch("http://sprite/v1/tasks/lma-agent-turn", {
       unix: "/.sprite/api.sock",
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -636,19 +695,31 @@ Bun.serve({
     // Passcode login endpoint
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       if (!WEB_PASSWORD) return Response.json({ ok: true });
+      const clientKey = getClientKey(req);
+      if (isLoginRateLimited(clientKey)) {
+        return Response.json(
+          { error: "Too many login attempts. Try again in 1 minute." },
+          { status: 429, headers: { "Retry-After": "60" } }
+        );
+      }
       const body: unknown = await req.json().catch(() => ({}));
       const pw =
         body && typeof body === "object" && "password" in body && typeof body.password === "string"
           ? body.password
           : "";
       if (!timingSafeStrEqual(pw, WEB_PASSWORD)) {
+        recordLoginFailure(clientKey);
         return Response.json({ error: "Invalid passcode" }, { status: 401 });
       }
+      loginFailures.delete(clientKey);
       const token = computeSessionToken(WEB_PASSWORD);
+      const isHttps =
+        url.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+      const secureAttr = isHttps ? "; Secure" : "";
       return new Response(JSON.stringify({ ok: true }), {
         headers: {
           "Content-Type": "application/json",
-          "Set-Cookie": `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`,
+          "Set-Cookie": `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secureAttr}`,
         },
       });
     }
@@ -670,8 +741,15 @@ Bun.serve({
       if (!prompt) {
         return Response.json({ error: "Missing prompt" }, { status: 400 });
       }
+      if (rpc.busy) {
+        return Response.json(
+          { error: "Agent busy; retry shortly" },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
+      }
+      // Acquire Sprite Tasks API hold BEFORE returning 200 ACK so idle sleep cannot pause mid-turn
+      await rpc.holdSpriteActive();
       const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
-      // Trigger asynchronously so QStash receives immediate 200 ACK
       rpc.prompt(wakeupMsg).catch((err) => {
         console.error("[lma-web] wakeup prompt error:", errorMessage(err));
       });
@@ -795,12 +873,17 @@ Bun.serve({
     }
 
     if (req.method === "GET" && url.pathname === "/api/connectors") {
+      const guardrails = computeGuardrailStatus();
       try {
         const gwRes = await fetch("https://api.sprites.dev/v1/gateway/list", {
           signal: AbortSignal.timeout(8000),
         });
         if (!gwRes.ok) {
-          return Response.json({ connectors: [], zeroLocalKeys: true, aiMediaDisabled: true, warning: `Gateway HTTP ${gwRes.status}` });
+          return Response.json({
+            connectors: [],
+            ...guardrails,
+            warning: `Gateway HTTP ${gwRes.status}`,
+          });
         }
         const gwData = (await gwRes.json()) as {
           connections?: Array<{
@@ -821,14 +904,12 @@ Bun.serve({
         }));
         return Response.json({
           connectors,
-          zeroLocalKeys: true,
-          aiMediaDisabled: true,
+          ...guardrails,
         });
       } catch (err: unknown) {
         return Response.json({
           connectors: [],
-          zeroLocalKeys: true,
-          aiMediaDisabled: true,
+          ...guardrails,
           warning: errorMessage(err),
         });
       }
@@ -877,12 +958,18 @@ Bun.serve({
       return Response.json({ clips });
     }
 
-    if (req.method === "GET" && url.pathname.startsWith("/api/clips/file/")) {
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/clips/file/")) {
       const relParts = url.pathname.slice("/api/clips/file/".length).split("/").filter(Boolean);
       if (relParts.length !== 2) {
         return Response.json({ error: "Invalid clip path" }, { status: 400 });
       }
-      const [vidRaw, fileRaw] = relParts.map((p) => decodeURIComponent(p));
+      let vidRaw: string;
+      let fileRaw: string;
+      try {
+        [vidRaw, fileRaw] = relParts.map((p) => decodeURIComponent(p));
+      } catch {
+        return Response.json({ error: "Malformed clip path encoding" }, { status: 400 });
+      }
       if (!/^[A-Za-z0-9_-]{6,32}$/.test(vidRaw) || !/^[A-Za-z0-9_.-]+\.(mp4|srt)$/.test(fileRaw)) {
         return Response.json({ error: "Invalid clip filename" }, { status: 400 });
       }
@@ -894,9 +981,16 @@ Bun.serve({
       }
       const isDownload = url.searchParams.get("download") === "1";
       const contentType = fileRaw.endsWith(".mp4") ? "video/mp4" : "text/plain; charset=utf-8";
-      const headers: Record<string, string> = { "Content-Type": contentType };
+      const stat = fs.statSync(candidate);
+      const headers: Record<string, string> = {
+        "Content-Type": contentType,
+        "Content-Length": String(stat.size),
+      };
       if (isDownload) {
         headers["Content-Disposition"] = `attachment; filename="${fileRaw}"`;
+      }
+      if (req.method === "HEAD") {
+        return new Response(null, { status: 200, headers });
       }
       return new Response(Bun.file(candidate), { headers });
     }
