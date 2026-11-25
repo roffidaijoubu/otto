@@ -43,6 +43,28 @@ if ! command -v yt-dlp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/yt-dlp" ]; 
   chmod +x "${HOME}/.local/bin/yt-dlp"
 fi
 
+# 1c. Install Xvfb, x11vnc, openbox, xdotool, fonts, and Google Chrome for embedded Browser / Cookie Auth
+if command -v apt-get >/dev/null 2>&1; then
+  if ! command -v Xvfb >/dev/null 2>&1 || ! command -v x11vnc >/dev/null 2>&1 || ! command -v openbox >/dev/null 2>&1; then
+    echo "==> Installing Xvfb, x11vnc, openbox, xdotool, and fonts..."
+    SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+    ${SUDO} apt-get update -qq && ${SUDO} apt-get install -y -qq --no-install-recommends \
+      xvfb x11vnc openbox xdotool fonts-liberation fonts-noto-color-emoji
+  fi
+  if ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    echo "==> Installing Google Chrome Stable..."
+    SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+    CHROME_DEB="/tmp/google-chrome-stable_current_amd64.deb"
+    if curl -fsSL "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" -o "${CHROME_DEB}"; then
+      ${SUDO} apt-get install -y -qq "${CHROME_DEB}" || ${SUDO} apt-get -f install -y -qq
+      rm -f "${CHROME_DEB}"
+    else
+      echo "WARNING: Failed to download google-chrome-stable; falling back to chromium..." >&2
+      ${SUDO} apt-get install -y -qq --no-install-recommends chromium || true
+    fi
+  fi
+fi
+
 # 2. Symlink agent persona, config, extensions, and skills
 mkdir -p "${OMP_AGENT_DIR}/extensions"
 ln -sf "${REPO_DIR}/agent/APPEND_SYSTEM.md" "${OMP_AGENT_DIR}/APPEND_SYSTEM.md"

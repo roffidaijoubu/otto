@@ -7,6 +7,7 @@ import type { StudioTab } from "./ChatHeader.vue";
 import LearnedPlaybooksCard from "./LearnedPlaybooksCard.vue";
 import OttoMascot from "./OttoMascot.vue";
 import StudioDatabaseView from "./StudioDatabaseView.vue";
+import BrowserWorkspaceTab from "./BrowserWorkspaceTab.vue";
 import WorkspaceFileManager, {
   type WorkspaceEntry,
   type WorkspaceStats,
@@ -50,6 +51,8 @@ export interface CalendarEventItem {
 }
 
 const props = defineProps<{
+  browserModalActive?: boolean;
+  browserRefreshTick?: number;
   activeTab: StudioTab;
   refreshTick: number;
   workspaceRefreshTick: number;
@@ -1051,6 +1054,14 @@ defineExpose({ fetchAll });
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- VIEW 5B: EMBEDDED BROWSER & SAVED SESSIONS -->
+    <div v-else-if="props.activeTab === 'browser'" class="detail-stack">
+      <BrowserWorkspaceTab
+        :modal-active="props.browserModalActive"
+        :refresh-tick="props.browserRefreshTick"
+      />
     </div>
 
     <!-- VIEW 6: SPRITES CONNECTORS -->

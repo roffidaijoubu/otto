@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import OttoMascot from "./OttoMascot.vue";
 
-export type StudioTab = "overview" | "schedule" | "files" | "database" | "playbooks" | "dossier" | "connectors";
+export type StudioTab = "overview" | "schedule" | "files" | "database" | "playbooks" | "dossier" | "connectors" | "browser";
 
 defineProps<{
   statusState: "ready" | "busy" | "error";
@@ -32,6 +32,7 @@ const tabs: Array<{ id: StudioTab; label: string; countKey?: "schedule" | "files
   { id: "playbooks", label: "Playbooks", countKey: "playbooks" },
   { id: "dossier", label: "Dossier" },
   { id: "connectors", label: "Connectors", countKey: "connectors" },
+  { id: "browser", label: "Browser" },
 ];
 </script>
 

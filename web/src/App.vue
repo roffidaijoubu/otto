@@ -9,6 +9,8 @@ import ChatHeader, { type StudioTab } from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import MissionControlWorkspace from "./components/MissionControlWorkspace.vue";
 import OttoMascot from "./components/OttoMascot.vue";
+import { toast } from "vue-sonner";
+import BrowserLoginModal, { type BrowserLoginRequest } from "./components/BrowserLoginModal.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
 import StudioSetupWizard from "./components/StudioSetupWizard.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
@@ -33,6 +35,8 @@ const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
 const setupChecked = ref(false);
 const showSetupWizard = ref(false);
+const activeLoginRequest = ref<BrowserLoginRequest | null>(null);
+const browserRefreshTick = ref(0);
 const setupInitialName = ref("");
 const setupInitialTimezone = ref("");
 
@@ -232,6 +236,18 @@ function connectEvents() {
     } else if (type === "error") {
       error.value = typeof msg.message === "string" ? msg.message : "Unexpected error";
       busy.value = false;
+    } else if (type === "browser_login_required" && msg.request && typeof msg.request === "object") {
+      activeLoginRequest.value = msg.request as BrowserLoginRequest;
+    } else if (type === "browser_login_done" && msg.request && typeof msg.request === "object") {
+      const req = msg.request as BrowserLoginRequest;
+      activeLoginRequest.value = null;
+      browserRefreshTick.value += 1;
+      toast.success(`Signed in to ${req.label || req.site}. Cookies saved.`);
+    } else if (type === "browser_login_cancelled") {
+      activeLoginRequest.value = null;
+      browserRefreshTick.value += 1;
+    } else if (type === "browser_status") {
+      browserRefreshTick.value += 1;
     }
   };
 }
@@ -408,6 +424,8 @@ onMounted(async () => {
           :workspace-refresh-tick="workspaceRefreshTick"
           :db-refresh-tick="dbRefreshTick"
           :mascot-color="mascotColor"
+          :browser-modal-active="Boolean(activeLoginRequest)"
+          :browser-refresh-tick="browserRefreshTick"
           :status-state="statusState"
           :swatches="[...MASCOT_SWATCHES]"
           @update:active-tab="activeTab = $event"
@@ -511,6 +529,11 @@ onMounted(async () => {
       @select="switchChat"
     />
   </div>
+  <BrowserLoginModal
+    :request="activeLoginRequest"
+    @completed="activeLoginRequest = null; browserRefreshTick += 1"
+    @cancelled="activeLoginRequest = null"
+  />
   <Toaster position="bottom-right" />
   </TooltipProvider>
 </template>
