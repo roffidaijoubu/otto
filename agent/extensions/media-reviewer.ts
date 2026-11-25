@@ -244,10 +244,23 @@ export default function (pi: ExtensionAPI) {
       let mimeType: string;
 
       if (/^https?:\/\//i.test(target)) {
-        const safeUrl = assertSafePublicHttpsUrl(target);
-        const imgRes = await fetch(safeUrl.toString(), { signal: AbortSignal.timeout(15_000) });
-        if (!imgRes.ok) {
-          throw new Error(`Failed to fetch thumbnail URL (${imgRes.status}): ${safeUrl.hostname}`);
+        let currentUrl = assertSafePublicHttpsUrl(target);
+        let imgRes: Response | null = null;
+        for (let hop = 0; hop < 4; hop++) {
+          imgRes = await fetch(currentUrl.toString(), {
+            redirect: "manual",
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (imgRes.status >= 300 && imgRes.status < 400) {
+            const loc = imgRes.headers.get("location");
+            if (!loc) break;
+            currentUrl = assertSafePublicHttpsUrl(new URL(loc, currentUrl).toString());
+            continue;
+          }
+          break;
+        }
+        if (!imgRes || !imgRes.ok) {
+          throw new Error(`Failed to fetch thumbnail URL (${imgRes?.status ?? "no response"}): ${currentUrl.hostname}`);
         }
         const ct = imgRes.headers.get("content-type")?.split(";")[0]?.trim();
         mimeType = ct && ct.startsWith("image/") ? ct : guessMimeType(target, "image/jpeg");

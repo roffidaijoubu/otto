@@ -432,14 +432,18 @@ class OmpRpcBridge {
 
   private spawn() {
     this.ready = false;
+    // Never inherit inbound UI passcode or QStash webhook signing keys into the agent subprocess
+    const childEnv: Record<string, string | undefined> = { ...process.env };
+    delete childEnv.LMA_WEB_PASSWORD;
+    delete childEnv.QSTASH_CURRENT_SIGNING_KEY;
+    delete childEnv.QSTASH_NEXT_SIGNING_KEY;
     this.proc = Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
       cwd: WORK_DIR,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: process.env,
+      env: childEnv,
     });
-
     this.readStdout(this.proc.stdout);
     this.readStderr(this.proc.stderr);
 
@@ -813,6 +817,7 @@ Bun.serve({
 
     if (req.method === "GET" && url.pathname === "/api/events") {
       let ctrlRef: SSEClient | null = null;
+      let pingTimer: NodeJS.Timeout | null = null;
       const stream = new ReadableStream<Uint8Array>({
         start(ctrl) {
           ctrlRef = ctrl;
@@ -822,8 +827,18 @@ Bun.serve({
               `data: ${JSON.stringify({ type: "status", busy: rpc.busy, activity: rpc.activity })}\n\n`
             )
           );
+          // Keep SSE alive during long (>4m) VOD hype-scan / ffmpeg turns
+          pingTimer = setInterval(() => {
+            try {
+              ctrl.enqueue(encoder.encode(": ping\n\n"));
+            } catch {
+              clearInterval(pingTimer ?? undefined);
+              sseClients.delete(ctrl);
+            }
+          }, 30_000);
         },
         cancel() {
+          clearInterval(pingTimer ?? undefined);
           if (ctrlRef) sseClients.delete(ctrlRef);
         },
       });

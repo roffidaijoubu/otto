@@ -116,11 +116,18 @@ function commitLiveAssistant(finalText?: string) {
 
 function connectEvents() {
   const es = new EventSource("/api/events");
+  let wasDisconnected = false;
   es.onopen = () => {
     error.value = "";
     connectionState.value = "ready";
+    if (wasDisconnected) {
+      wasDisconnected = false;
+      loadMessages();
+      loadSessions();
+    }
   };
   es.onerror = () => {
+    wasDisconnected = true;
     connectionState.value = "error";
   };
   es.onmessage = (ev) => {
