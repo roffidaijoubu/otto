@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue";
 import {
+  CalendarDays,
   Database,
   FolderOpen,
   Globe,
@@ -28,6 +29,7 @@ const ICON_MAP: Record<StudioAppIconName, Component> = {
   globe: Globe,
   database: Database,
   sparkles: Sparkles,
+  calendar: CalendarDays,
   settings: Settings,
 };
 

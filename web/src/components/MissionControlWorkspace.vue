@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, PlusIcon, XIcon } from "@lucide/vue";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { PlusIcon } from "@lucide/vue";
+import { Button } from "@/components/ui/button";
 import { renderMarkdown } from "../lib/markdown";
 import type { StudioTab } from "./ChatHeader.vue";
 import LearnedPlaybooksCard from "./LearnedPlaybooksCard.vue";
@@ -94,7 +94,6 @@ const learningSummary = ref({
   activeCount: 0,
 });
 const calendarEvents = ref<CalendarEventItem[]>([]);
-const cancellingEventId = ref<string | null>(null);
 const syncingGoogle = ref(false);
 const googleSyncNote = ref("");
 const quickAddText = ref("");
@@ -112,10 +111,6 @@ onUnmounted(() => {
   clearInterval(tickTimer ?? undefined);
 });
 
-const nowDate = new Date();
-const viewYear = ref(nowDate.getFullYear());
-const viewMonth = ref(nowDate.getMonth());
-const selectedDayKey = ref<string | null>(null);
 
 const dossierHtml = computed(() =>
   dossierContent.value.trim() ? renderMarkdown(dossierContent.value) : ""
@@ -163,16 +158,6 @@ function formatTime(iso: string | null): string {
   }
 }
 
-function toLocalDayKey(isoOrDate: string | Date): string | null {
-  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-const todayKey = computed(() => toLocalDayKey(new Date()) || "");
 
 const activeCalendarEvents = computed(() =>
   calendarEvents.value.filter((e) => e.status !== "cancelled")
@@ -219,78 +204,6 @@ const armedWakeups = computed(() => {
   });
 });
 
-const monthLabel = computed(() =>
-  new Date(viewYear.value, viewMonth.value, 1).toLocaleString([], {
-    month: "long",
-    year: "numeric",
-  })
-);
-
-const eventsByDay = computed(() => {
-  const map = new Map<string, CalendarEventItem[]>();
-  for (const evt of activeCalendarEvents.value) {
-    const key = toLocalDayKey(evt.startAt);
-    if (!key) continue;
-    const list = map.get(key) || [];
-    list.push(evt);
-    map.set(key, list);
-  }
-  return map;
-});
-
-interface CalendarCell {
-  key: string | null;
-  day: number | null;
-  isToday: boolean;
-  isSelected: boolean;
-  dots: string[];
-}
-
-const calendarCells = computed<CalendarCell[]>(() => {
-  const first = new Date(viewYear.value, viewMonth.value, 1);
-  const daysInMonth = new Date(viewYear.value, viewMonth.value + 1, 0).getDate();
-  const leading = (first.getDay() + 6) % 7;
-  const cells: CalendarCell[] = [];
-  for (let i = 0; i < leading; i++) {
-    cells.push({ key: null, day: null, isToday: false, isSelected: false, dots: [] });
-  }
-  for (let day = 1; day <= daysInMonth; day++) {
-    const key = `${viewYear.value}-${String(viewMonth.value + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const dayEvents = eventsByDay.value.get(key) || [];
-    const dots: string[] = [];
-    for (const evt of dayEvents.slice(0, 3)) {
-      if (evt.type === "stream" || evt.type === "collab") dots.push("dot-ink");
-      else if (evt.type === "upload") dots.push("dot-success");
-      else dots.push("dot-warn");
-    }
-    cells.push({
-      key,
-      day,
-      isToday: key === todayKey.value,
-      isSelected: key === selectedDayKey.value,
-      dots,
-    });
-  }
-  return cells;
-});
-
-const visibleAgendaEvents = computed(() => {
-  if (selectedDayKey.value) {
-    return eventsByDay.value.get(selectedDayKey.value) || [];
-  }
-  return activeCalendarEvents.value;
-});
-
-function shiftMonth(delta: number) {
-  const next = new Date(viewYear.value, viewMonth.value + delta, 1);
-  viewYear.value = next.getFullYear();
-  viewMonth.value = next.getMonth();
-}
-
-function toggleDay(key: string | null) {
-  if (!key) return;
-  selectedDayKey.value = selectedDayKey.value === key ? null : key;
-}
 
 function eventTypeBadgeClass(type: CalendarEventItem["type"]): string {
   if (type === "stream" || type === "collab") return "otto-chip-ink";
@@ -310,28 +223,13 @@ function formatHookOffset(hook: CalendarWakeupHook): string {
   return hook.triggerAt ? formatTime(hook.triggerAt) : "Armed";
 }
 
-function submitQuickAdd(useSelectedDay = false) {
+function submitQuickAdd() {
   const text = quickAddText.value.trim();
   if (!text) return;
   quickAddText.value = "";
-  const datePart = useSelectedDay && selectedDayKey.value ? ` on ${selectedDayKey.value}` : "";
   const hiddenDirective =
     '<hidden>Use the todo tool to track missing details needed to finalize this schedule (and copy-paste YouTube Studio waiting room pack if it is a stream/collab). Prefix non-blocking items with "(Optional)". Once all required items are clear, immediately create the calendar event and mark required tasks done.</hidden>';
-  emit("askPrompt", `I want to add this to calendar${datePart}: ${text}\n${hiddenDirective}`);
-}
-
-async function cancelEvent(eventId: string) {
-  cancellingEventId.value = eventId;
-  try {
-    const res = await fetch(`/api/calendar/${encodeURIComponent(eventId)}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
-      await fetchAll();
-    }
-  } finally {
-    cancellingEventId.value = null;
-  }
+  emit("askPrompt", `I want to add this to calendar: ${text}\n${hiddenDirective}`);
 }
 
 async function syncGoogleCalendar() {
@@ -580,7 +478,7 @@ defineExpose({ fetchAll });
           </div>
 
           <div class="otto-card-body">
-            <form class="cal-quick-add" @submit.prevent="submitQuickAdd(false)">
+            <form class="cal-quick-add" @submit.prevent="submitQuickAdd()">
               <input
                 v-model="quickAddText"
                 type="text"
@@ -864,155 +762,17 @@ defineExpose({ fetchAll });
       </div>
     </div>
 
-    <!-- VIEW 2: FULL SCHEDULE CALENDAR -->
-    <div v-else-if="props.activeTab === 'schedule'" class="detail-stack">
-      <div class="schedule-split">
-        <div class="otto-card">
-          <div class="otto-card-head">
-            <span>(Y)our calendar.</span>
-            <div class="otto-card-head-right">
-              <button type="button" class="head-link" :disabled="syncingGoogle" @click="syncGoogleCalendar">
-                {{ syncingGoogle ? "..." : "sync" }}
-              </button>
-              <a href="/api/calendar/export.ics" download="lma-schedule.ics" class="head-link no-underline">.ics</a>
-            </div>
-          </div>
-
-          <div class="otto-card-body">
-            <div class="flex items-center justify-between gap-2">
-              <Button variant="secondary" size="icon-xs" type="button" aria-label="Previous month" @click="shiftMonth(-1)">
-                <ChevronLeftIcon />
-              </Button>
-              <span class="font-mono text-xs font-medium">{{ monthLabel }}</span>
-              <Button variant="secondary" size="icon-xs" type="button" aria-label="Next month" @click="shiftMonth(1)">
-                <ChevronRightIcon />
-              </Button>
-            </div>
-            <div v-if="googleSyncNote" class="text-[11px] font-mono text-[var(--fg-muted)]">{{ googleSyncNote }}</div>
-            <div class="cal-weekdays">
-              <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-            </div>
-            <div class="cal-grid">
-              <button
-                v-for="(cell, idx) in calendarCells"
-                :key="cell.key || `pad-${idx}`"
-                type="button"
-                class="cal-cell"
-                :class="{
-                  'is-empty': !cell.day,
-                  'is-today': cell.isToday,
-                  'is-selected': cell.isSelected,
-                }"
-                :disabled="!cell.day"
-                @click="toggleDay(cell.key)"
-              >
-                <span v-if="cell.day" class="cal-day-num">{{ cell.day }}</span>
-                <span v-if="cell.dots.length" class="cal-dots">
-                  <span v-for="(dot, dIdx) in cell.dots" :key="dIdx" class="cal-dot" :class="dot"></span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="otto-card">
-          <div class="otto-card-head">
-            <span>(Y)our agenda.</span>
-            <div v-if="selectedDayKey" class="otto-card-head-right">
-              <button type="button" class="head-link" @click="selectedDayKey = null">show all</button>
-            </div>
-          </div>
-
-          <div class="otto-card-body">
-            <form class="cal-quick-add" @submit.prevent="submitQuickAdd(true)">
-              <input
-                v-model="quickAddText"
-                type="text"
-                class="pill-input"
-                :placeholder="selectedDayKey ? `Add event on ${selectedDayKey}...` : 'Add stream, collab, or reminder...'"
-              />
-              <Button
-                type="submit"
-                size="icon-sm"
-                class="quick-plus"
-                :disabled="!quickAddText.trim()"
-                aria-label="Add to calendar"
-              >
-                <PlusIcon />
-              </Button>
-            </form>
-
-            <div v-if="visibleAgendaEvents.length === 0" class="empty-inset">
-              {{ selectedDayKey ? `No events on ${selectedDayKey}.` : "No events scheduled yet. Type above and hit + to add one." }}
-            </div>
-
-            <div v-else class="space-y-2.5">
-              <div v-for="evt in visibleAgendaEvents" :key="evt.id" class="sub-item-card space-y-2">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="otto-chip" :class="eventTypeBadgeClass(evt.type)">{{ evt.type }}</span>
-                  <a
-                    v-if="evt.googleHtmlLink && /^https:\/\//i.test(evt.googleHtmlLink)"
-                    :href="evt.googleHtmlLink"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="otto-chip otto-chip-success no-underline"
-                  >
-                    GCal ↗
-                  </a>
-                  <span class="text-[11px] font-mono text-[var(--fg-muted)]">
-                    {{ evt.cron ? `Cron: ${evt.cron}` : formatTime(evt.startAt) }}
-                  </span>
-                </div>
-                <div class="font-medium text-sm">{{ evt.title }}</div>
-                <div v-if="evt.notes" class="text-xs text-[var(--fg-muted)] leading-relaxed">{{ evt.notes }}</div>
-
-                <div v-if="evt.wakeups && evt.wakeups.some((w) => w.status === 'armed')" class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="hook in evt.wakeups.filter((w) => w.status === 'armed')"
-                    :key="hook.qstashId"
-                    class="otto-chip otto-chip-yellow"
-                  >
-                    ⏰ {{ formatHookOffset(hook) }}
-                    <template v-if="hook.triggerAt"> · {{ formatTime(hook.triggerAt) }}</template>
-                  </span>
-                </div>
-
-                <div class="flex items-center gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    class="flex-1"
-                    @click="emit('askPrompt', `Let's prep for my scheduled ${evt.type} '${evt.title}' (${evt.startAt}). Review run-of-show, Buffer drafts, and readiness.`)"
-                  >
-                    Ask Otto to Prep
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    class="text-destructive hover:text-destructive"
-                    :disabled="cancellingEventId === evt.id"
-                    @click="cancelEvent(evt.id)"
-                  >
-                    {{ cancellingEventId === evt.id ? "..." : "Cancel" }}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- VIEW 3: UNIFIED WORKSPACE FILE MANAGER & CLIPS -->
     <div v-else-if="props.activeTab === 'files'" class="detail-stack">
-      <WorkspaceFileManager
-        :refresh-tick="props.workspaceRefreshTick"
-        :initial-path="workspaceInitialPath"
-        @ask-prompt="emit('askPrompt', $event)"
-        @stats-updated="(p) => { workspaceStats = p.stats; recentFiles = p.recentFiles; emitCounts(); }"
-      />
+      <div class="otto-card overflow-hidden h-[580px] flex flex-col">
+        <WorkspaceFileManager
+          :refresh-tick="props.workspaceRefreshTick"
+          :initial-path="workspaceInitialPath"
+          @ask-prompt="emit('askPrompt', $event)"
+          @stats-updated="(p) => { workspaceStats = p.stats; recentFiles = p.recentFiles; emitCounts(); }"
+        />
+      </div>
     </div>
 
     <!-- VIEW 4: UNIFIED STUDIO DATABASE (SQLITE WAL) -->
@@ -1413,67 +1173,6 @@ defineExpose({ fetchAll });
   flex-shrink: 0;
 }
 
-/* Schedule Split */
-.schedule-split {
-  display: grid;
-  grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-.cal-weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-}
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
-.cal-cell {
-  aspect-ratio: 1;
-  border: none;
-  border-radius: 10px;
-  background: var(--surface-alt);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  cursor: pointer;
-}
-.cal-cell.is-empty {
-  background: transparent;
-  cursor: default;
-}
-.cal-cell.is-today {
-  background: var(--highlight-yellow);
-  font-weight: 600;
-}
-.cal-cell.is-selected {
-  background: var(--fg);
-  color: #ffffff;
-}
-.cal-dots {
-  display: flex;
-  gap: 2px;
-}
-.cal-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: var(--radius-pill);
-}
-.dot-ink { background: var(--fg); }
-.cal-cell.is-selected .dot-ink { background: #ffffff; }
-.dot-success { background: #16a34a; }
-.dot-warn { background: #ca8a04; }
-
 .connectors-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1489,8 +1188,7 @@ defineExpose({ fetchAll });
   .hero-row {
     grid-template-columns: 1fr;
   }
-  .bento-grid,
-  .schedule-split {
+  .bento-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -17,6 +17,7 @@ export type StudioAppId =
   | "chrome"
   | "studio-db"
   | "playbooks"
+  | "calendar"
   | "settings";
 
 export type StudioAppIconName =
@@ -26,6 +27,7 @@ export type StudioAppIconName =
   | "globe"
   | "database"
   | "sparkles"
+  | "calendar"
   | "settings";
 
 export type SnapZone = "left" | "right" | "maximize";
@@ -246,6 +248,18 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "6",
   },
   {
+    id: "calendar",
+    title: "Calendar",
+    shortLabel: "Calendar",
+    icon: "calendar",
+    minWidth: 540,
+    minHeight: 420,
+    defaultWidth: 960,
+    defaultHeight: 640,
+    dockSection: "primary",
+    shortcutDigit: "7",
+  },
+  {
     id: "settings",
     title: "System Settings",
     shortLabel: "Settings",
@@ -255,7 +269,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 620,
     defaultHeight: 560,
     dockSection: "utility",
-    shortcutDigit: "7",
+    shortcutDigit: "8",
   },
 ] as const;
 

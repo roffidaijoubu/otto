@@ -2037,6 +2037,102 @@ Bun.serve<VncWsData>({
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/api/calendar") {
+      const body = (await req.json().catch(() => ({}))) as {
+        title?: string;
+        type?: string;
+        startAt?: string;
+        endAt?: string | null;
+        notes?: string;
+      };
+      const title = (body.title || "").trim();
+      const startAtRaw = (body.startAt || "").trim();
+      if (!title) {
+        return Response.json({ error: "Event title is required" }, { status: 400 });
+      }
+      const parsedStart = Date.parse(startAtRaw);
+      if (!startAtRaw || Number.isNaN(parsedStart)) {
+        return Response.json({ error: "Valid startAt timestamp is required" }, { status: 400 });
+      }
+      const VALID_EVENT_TYPES: Record<string, true> = {
+        stream: true,
+        collab: true,
+        upload: true,
+        reminder: true,
+        deadline: true,
+      };
+      const evtType = VALID_EVENT_TYPES[body.type || ""]
+        ? (body.type as ServerCalendarEvent["type"])
+        : "stream";
+      const nowIso = new Date().toISOString();
+      const newEvent: ServerCalendarEvent = {
+        id: `evt_${crypto.randomBytes(5).toString("hex")}`,
+        title,
+        type: evtType,
+        startAt: new Date(parsedStart).toISOString(),
+        endAt:
+          body.endAt && !Number.isNaN(Date.parse(body.endAt))
+            ? new Date(Date.parse(body.endAt)).toISOString()
+            : null,
+        cron: null,
+        notes: (body.notes || "").trim(),
+        status: "planned",
+        source: "local",
+        googleEventId: null,
+        googleHtmlLink: null,
+        wakeups: [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const events = readCalendarEvents();
+      events.push(newEvent);
+      writeCalendarEvents(events);
+      return Response.json({ ok: true, event: newEvent });
+    }
+
+    if (req.method === "PATCH" && url.pathname.startsWith("/api/calendar/")) {
+      const eventId = decodeURIComponent(url.pathname.slice("/api/calendar/".length)).trim();
+      if (!/^[A-Za-z0-9_-]{4,64}$/.test(eventId)) {
+        return Response.json({ error: "Invalid event ID" }, { status: 400 });
+      }
+      const body = (await req.json().catch(() => ({}))) as {
+        status?: string;
+        title?: string;
+        notes?: string;
+        type?: string;
+        startAt?: string;
+      };
+      const events = readCalendarEvents();
+      const evt = events.find((e) => e.id === eventId);
+      if (!evt) {
+        return Response.json({ error: "Calendar event not found" }, { status: 404 });
+      }
+      if (body.status === "planned" || body.status === "done" || body.status === "cancelled") {
+        evt.status = body.status;
+      }
+      if (typeof body.title === "string" && body.title.trim()) {
+        evt.title = body.title.trim();
+      }
+      if (typeof body.notes === "string") {
+        evt.notes = body.notes.trim();
+      }
+      if (
+        body.type === "stream" ||
+        body.type === "collab" ||
+        body.type === "upload" ||
+        body.type === "reminder" ||
+        body.type === "deadline"
+      ) {
+        evt.type = body.type;
+      }
+      if (typeof body.startAt === "string" && !Number.isNaN(Date.parse(body.startAt))) {
+        evt.startAt = new Date(Date.parse(body.startAt)).toISOString();
+      }
+      evt.updatedAt = new Date().toISOString();
+      writeCalendarEvents(events);
+      return Response.json({ ok: true, event: evt });
+    }
+
     if (req.method === "DELETE" && url.pathname.startsWith("/api/calendar/")) {
       const eventId = decodeURIComponent(url.pathname.slice("/api/calendar/".length)).trim();
       if (!/^[A-Za-z0-9_-]{4,64}$/.test(eventId)) {

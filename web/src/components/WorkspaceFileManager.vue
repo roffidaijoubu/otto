@@ -2,9 +2,13 @@
 import { computed, onUnmounted, ref, watch, type Component } from "vue";
 import {
   ArchiveIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ArrowUpDownIcon,
+  ArrowUpIcon,
   CaptionsIcon,
   CheckIcon,
+  ChevronRightIcon,
   ClipboardListIcon,
   DownloadIcon,
   EyeIcon,
@@ -16,6 +20,7 @@ import {
   FolderInputIcon,
   FolderOpenIcon,
   FolderPlusIcon,
+  HardDriveIcon,
   ImageIcon,
   LayoutGridIcon,
   ListIcon,
@@ -184,7 +189,10 @@ function readStoredViewMode(): ViewMode {
   return "list";
 }
 
-const currentPath = ref(normalizeDirPath(props.initialPath || ""));
+const initialNormalizedPath = normalizeDirPath(props.initialPath || "");
+const currentPath = ref(initialNormalizedPath);
+const navHistory = ref<string[]>([initialNormalizedPath]);
+const navHistoryIndex = ref(0);
 const breadcrumbs = ref<Array<{ name: string; path: string }>>(buildBreadcrumbs(currentPath.value));
 const items = ref<WorkspaceEntry[]>([]);
 const dirs = ref<string[]>([""]);
@@ -205,6 +213,9 @@ let activeAbortController: AbortController | null = null;
 let latestTextRequestId = 0;
 let activeTextAbortController: AbortController | null = null;
 
+const canGoBack = computed(() => navHistoryIndex.value > 0);
+const canGoForward = computed(() => navHistoryIndex.value < navHistory.value.length - 1);
+const canGoUp = computed(() => currentPath.value.length > 0);
 // Dialog states
 const newFolderOpen = ref(false);
 const newFolderTargetDir = ref("");
@@ -436,13 +447,20 @@ async function loadDirectory(targetPath = currentPath.value, opts: LoadDirectory
   }
 }
 
-function navigateTo(relDir: string) {
+function navigateTo(relDir: string, opts: { recordHistory?: boolean } = {}) {
   const nextDir = normalizeDirPath(relDir);
   const prevPath = currentPath.value;
   const hadSearch = Boolean(searchQuery.value.trim());
 
   if (nextDir === prevPath && loading.value && !hadSearch) {
     return;
+  }
+
+  if (opts.recordHistory !== false && nextDir !== prevPath) {
+    const sliced = navHistory.value.slice(0, navHistoryIndex.value + 1);
+    sliced.push(nextDir);
+    navHistory.value = sliced;
+    navHistoryIndex.value = sliced.length - 1;
   }
 
   clearTimeout(searchTimer ?? undefined);
@@ -464,6 +482,25 @@ function navigateTo(relDir: string) {
   items.value = [];
   showListSkeleton.value = true;
   void loadDirectory(nextDir, { showSkeleton: true, rollbackPath: prevPath });
+}
+
+function goBack() {
+  if (!canGoBack.value) return;
+  navHistoryIndex.value -= 1;
+  navigateTo(navHistory.value[navHistoryIndex.value], { recordHistory: false });
+}
+
+function goForward() {
+  if (!canGoForward.value) return;
+  navHistoryIndex.value += 1;
+  navigateTo(navHistory.value[navHistoryIndex.value], { recordHistory: false });
+}
+
+function goUp() {
+  if (!canGoUp.value) return;
+  const parts = currentPath.value.split("/").filter(Boolean);
+  parts.pop();
+  navigateTo(parts.join("/"));
 }
 
 async function openEntry(entry: WorkspaceEntry, startInEdit = false) {
@@ -865,8 +902,8 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
   <div
     :class="
       cn(
-        'fm-shell',
-        dragOver && 'outline-2 outline-dashed outline-primary outline-offset-4 rounded-[var(--radius-card)]'
+        'relative flex h-full min-h-0 flex-col bg-white select-none',
+        dragOver && 'outline-2 outline-dashed outline-primary -outline-offset-4'
       )
     "
     @dragover.prevent="dragOver = true"
@@ -875,277 +912,342 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
   >
     <input ref="fileInputRef" type="file" multiple class="hidden" @change="onFileInputChange" />
 
-    <!-- LEFT SIDEBAR: (Y)our folders. -->
-    <aside class="otto-card fm-tree">
-      <div class="otto-card-head">
-        <span>(Y)our folders.</span>
-        <div class="otto-card-head-right">
-          <span class="text-[10px] font-mono text-muted-foreground">{{ formatBytes(stats.totalBytes) }}</span>
+    <!-- TOP OS FILE MANAGER TOOLBAR -->
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#ededed] bg-[#fafafa] px-3 py-2 shrink-0">
+      <!-- Navigation & Path Breadcrumb Bar -->
+      <div class="flex items-center gap-1.5 min-w-0 flex-1">
+        <div class="flex items-center gap-0.5 shrink-0">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            title="Back"
+            :disabled="!canGoBack"
+            @click="goBack"
+          >
+            <ArrowLeftIcon class="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            title="Forward"
+            :disabled="!canGoForward"
+            @click="goForward"
+          >
+            <ArrowRightIcon class="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            title="Parent folder"
+            :disabled="!canGoUp"
+            @click="goUp"
+          >
+            <ArrowUpIcon class="size-3.5" />
+          </Button>
         </div>
+
+        <div class="flex h-8 min-w-[160px] flex-1 max-w-xl items-center gap-1 overflow-x-auto rounded-lg border border-[#e3e3e3] bg-white px-2.5">
+          <HardDriveIcon class="size-3.5 shrink-0 text-muted-foreground mr-0.5" />
+          <Breadcrumb class="min-w-0">
+            <BreadcrumbList class="font-mono text-xs gap-0.5 flex-nowrap">
+              <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
+                <ChevronRightIcon v-if="idx > 0" class="size-3 shrink-0 text-muted-foreground/60" />
+                <BreadcrumbItem class="shrink-0">
+                  <BreadcrumbPage
+                    v-if="idx === breadcrumbs.length - 1"
+                    class="font-mono text-xs font-medium text-[#303030] px-1.5 py-0.5 rounded bg-[#f2f2f2]"
+                  >
+                    {{ bc.name }}
+                  </BreadcrumbPage>
+                  <BreadcrumbLink v-else as-child>
+                    <button
+                      type="button"
+                      class="font-mono text-xs text-muted-foreground hover:text-[#303030] hover:bg-[#f2f2f2] px-1.5 py-0.5 rounded transition-colors"
+                      @click="navigateTo(bc.path)"
+                    >
+                      {{ bc.name }}
+                    </button>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+              </template>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          title="Refresh"
+          class="shrink-0"
+          @click="manualRefresh"
+        >
+          <RefreshCwIcon class="size-3.5" />
+        </Button>
       </div>
 
-      <div class="flex flex-col gap-2.5 p-3">
-        <ScrollArea class="max-h-[340px]">
-          <div class="flex flex-col gap-1 pr-1">
-            <WorkspaceFileSkeleton v-if="!hasLoadedDirs && loading" variant="tree" :count="7" />
-            <template v-else>
-              <ContextMenu v-for="d in dirs" :key="d || '__root__'">
-                <ContextMenuTrigger as-child>
-                  <button
-                    type="button"
-                    :class="
-                      cn(
-                        'fm-dir-btn flex items-center gap-2 w-full rounded-full py-1.5 pr-2.5 text-left font-mono text-[11.5px] transition-all active:scale-[0.985]',
-                        currentPath === d && !searchQuery.trim()
-                          ? 'active bg-primary text-primary-foreground font-medium'
-                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      )
-                    "
-                    :aria-current="currentPath === d && !searchQuery.trim() ? 'page' : undefined"
-                    :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
-                    @click="navigateTo(d)"
-                  >
-                    <component
-                      :is="folderIconComponent(d, currentPath === d && !searchQuery.trim())"
-                      class="size-3.5 shrink-0 opacity-85"
-                    />
-                    <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
-                  </button>
-                </ContextMenuTrigger>
-                <ContextMenuContent class="w-48">
-                  <ContextMenuLabel class="font-mono text-[11px] truncate">
-                    /{{ d || "workspace" }}
-                  </ContextMenuLabel>
-                  <ContextMenuSeparator />
-                  <ContextMenuGroup>
-                    <ContextMenuItem @select="navigateTo(d)">
-                      <FolderOpenIcon />
-                      Open Folder
-                    </ContextMenuItem>
-                    <ContextMenuItem @select="openNewFolderDialog(d)">
-                      <FolderPlusIcon />
-                      New Subfolder...
-                    </ContextMenuItem>
-                    <ContextMenuItem @select="openNewNoteDialog(d || 'scripts')">
-                      <FilePlus2Icon />
-                      New Note Here...
-                    </ContextMenuItem>
-                  </ContextMenuGroup>
-                  <ContextMenuSeparator />
-                  <ContextMenuGroup>
-                    <ContextMenuItem @select="triggerDownload(zipUrl(d))">
-                      <ArchiveIcon />
-                      Download ZIP
-                    </ContextMenuItem>
-                  </ContextMenuGroup>
-                </ContextMenuContent>
-              </ContextMenu>
-            </template>
-          </div>
-        </ScrollArea>
+      <!-- Search, View Mode, Sort, Actions -->
+      <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+        <InputGroup class="w-40 sm:w-48 h-8 rounded-lg bg-white border-[#e3e3e3]">
+          <InputGroupAddon align="inline-start">
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search files..."
+            class="font-mono text-[11.5px] h-8"
+            @input="onSearchInput"
+          />
+          <InputGroupAddon v-if="searchQuery" align="inline-end">
+            <InputGroupButton
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Clear search"
+              @click="clearSearch"
+            >
+              <XIcon />
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
 
-        <Separator />
+        <ToggleGroup
+          type="single"
+          size="sm"
+          variant="outline"
+          :model-value="viewMode"
+          class="rounded-lg bg-[#ededed] p-0.5 gap-0.5"
+          @update:model-value="(val) => { if (val === 'list' || val === 'grid') setViewMode(val); }"
+        >
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <ToggleGroupItem
+                value="list"
+                aria-label="List view"
+                class="h-7 px-2 rounded-md border-0 data-[state=on]:bg-white data-[state=on]:shadow-2xs"
+              >
+                <ListIcon class="size-3.5" />
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent>List view</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <ToggleGroupItem
+                value="grid"
+                aria-label="Grid view"
+                class="h-7 px-2 rounded-md border-0 data-[state=on]:bg-white data-[state=on]:shadow-2xs"
+              >
+                <LayoutGridIcon class="size-3.5" />
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent>Grid view</TooltipContent>
+          </Tooltip>
+        </ToggleGroup>
 
-        <div class="flex flex-col gap-2 font-mono text-[10.5px] text-muted-foreground">
-          <div class="flex items-center justify-between px-1">
-            <span>{{ stats.fileCount }} files · {{ stats.clipCount }} clips</span>
-          </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button type="button" variant="outline" size="sm" class="h-8 rounded-lg bg-white">
+              <ArrowUpDownIcon data-icon="inline-start" />
+              {{ sortLabel }}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-40">
+            <DropdownMenuLabel class="font-mono text-[11px]">Sort by</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem @select="sortMode = 'name-asc'">
+                <CheckIcon :class="cn('opacity-0', sortMode === 'name-asc' && 'opacity-100')" />
+                Name (A–Z)
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="sortMode = 'modified-desc'">
+                <CheckIcon :class="cn('opacity-0', sortMode === 'modified-desc' && 'opacity-100')" />
+                Newest first
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="sortMode = 'size-desc'">
+                <CheckIcon :class="cn('opacity-0', sortMode === 'size-desc' && 'opacity-100')" />
+                Largest first
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button type="button" variant="outline" size="sm" class="h-8 rounded-lg bg-white">
+              <PlusIcon data-icon="inline-start" />
+              New
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-44">
+            <DropdownMenuGroup>
+              <DropdownMenuItem @select="openNewNoteDialog(currentPath || 'scripts')">
+                <FilePlus2Icon />
+                New Note (.md)
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="openNewFolderDialog(currentPath)">
+                <FolderPlusIcon />
+                New Folder
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem @select="triggerDownload(zipUrl(currentPath))">
+                <ArchiveIcon />
+                Download ZIP
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="manualRefresh">
+                <RefreshCwIcon />
+                Refresh
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button
+          type="button"
+          size="sm"
+          class="h-8 rounded-lg"
+          :disabled="uploading"
+          @click="triggerUploadPicker"
+        >
+          <Spinner v-if="uploading" data-icon="inline-start" />
+          <UploadIcon v-else data-icon="inline-start" />
+          {{ uploading ? "Uploading" : "Upload" }}
+        </Button>
+      </div>
+    </div>
+
+    <!-- SPLIT OS FILE MANAGER BODY -->
+    <div class="flex flex-1 min-h-0 overflow-hidden">
+      <!-- LEFT SIDEBAR: LOCATIONS / FOLDER TREE -->
+      <aside class="hidden md:flex w-52 lg:w-56 shrink-0 flex-col border-r border-[#ededed] bg-[#f7f7f8]">
+        <div class="px-3.5 pt-3 pb-1.5 flex items-center justify-between">
+          <span class="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Locations
+          </span>
+          <span class="font-mono text-[10px] text-muted-foreground">{{ formatBytes(stats.totalBytes) }}</span>
+        </div>
+
+        <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-0.5">
+          <WorkspaceFileSkeleton v-if="!hasLoadedDirs && loading" variant="tree" :count="7" />
+          <template v-else>
+            <ContextMenu v-for="d in dirs" :key="d || '__root__'">
+              <ContextMenuTrigger as-child>
+                <button
+                  type="button"
+                  :class="
+                    cn(
+                      'flex items-center gap-2 w-full rounded-lg py-1.5 pr-2.5 text-left text-xs transition-colors',
+                      currentPath === d && !searchQuery.trim()
+                        ? 'bg-black/[0.08] text-[#141414] font-medium'
+                        : 'text-[#525252] hover:bg-black/[0.04] hover:text-[#141414]'
+                    )
+                  "
+                  :aria-current="currentPath === d && !searchQuery.trim() ? 'page' : undefined"
+                  :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
+                  @click="navigateTo(d)"
+                >
+                  <component
+                    :is="folderIconComponent(d, currentPath === d && !searchQuery.trim())"
+                    class="size-3.5 shrink-0 opacity-80"
+                  />
+                  <span class="truncate font-mono text-[11.5px]">{{ d ? d.split("/").pop() : "workspace" }}</span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent class="w-48">
+                <ContextMenuLabel class="font-mono text-[11px] truncate">
+                  /{{ d || "workspace" }}
+                </ContextMenuLabel>
+                <ContextMenuSeparator />
+                <ContextMenuGroup>
+                  <ContextMenuItem @select="navigateTo(d)">
+                    <FolderOpenIcon />
+                    Open Folder
+                  </ContextMenuItem>
+                  <ContextMenuItem @select="openNewFolderDialog(d)">
+                    <FolderPlusIcon />
+                    New Subfolder...
+                  </ContextMenuItem>
+                  <ContextMenuItem @select="openNewNoteDialog(d || 'scripts')">
+                    <FilePlus2Icon />
+                    New Note Here...
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+                <ContextMenuSeparator />
+                <ContextMenuGroup>
+                  <ContextMenuItem @select="triggerDownload(zipUrl(d))">
+                    <ArchiveIcon />
+                    Download ZIP
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+              </ContextMenuContent>
+            </ContextMenu>
+          </template>
+        </div>
+
+        <div class="shrink-0 border-t border-[#ededed] p-2.5 flex flex-col gap-1.5">
           <a
             :href="zipUrl(currentPath)"
-            :class="cn(buttonVariants({ variant: 'secondary', size: 'xs' }), 'w-full no-underline')"
+            :class="cn(buttonVariants({ variant: 'outline', size: 'xs' }), 'w-full rounded-lg bg-white no-underline justify-center')"
           >
             <DownloadIcon data-icon="inline-start" />
             Download ZIP
           </a>
         </div>
-      </div>
-    </aside>
+      </aside>
 
-    <!-- RIGHT MAIN: (Y)our files. -->
-    <div class="flex flex-col gap-4 min-w-0">
-      <div class="otto-card">
-        <div class="otto-card-head">
-          <span>(Y)our files.</span>
-          <div class="otto-card-head-right">
-            <span class="text-[10px] font-mono text-muted-foreground">
-              {{ showListSkeleton ? "loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"}` }}
-            </span>
-          </div>
+      <!-- RIGHT MAIN PANE -->
+      <div class="flex flex-1 min-w-0 min-h-0 flex-col bg-white">
+        <!-- Mobile/narrow folder strip -->
+        <div class="flex md:hidden items-center gap-1 overflow-x-auto border-b border-[#ededed] bg-[#fafafa] px-3 py-1.5 shrink-0">
+          <button
+            v-for="d in dirs"
+            :key="`mob-${d || '__root__'}`"
+            type="button"
+            :class="
+              cn(
+                'shrink-0 rounded-md px-2 py-1 font-mono text-[11px] transition-colors',
+                currentPath === d && !searchQuery.trim()
+                  ? 'bg-[#303030] text-white font-medium'
+                  : 'text-muted-foreground hover:bg-black/5'
+              )
+            "
+            @click="navigateTo(d)"
+          >
+            {{ d ? d.split("/").pop() : "workspace" }}
+          </button>
         </div>
 
-        <div class="otto-card-body">
-          <!-- COMMAND TOOLBAR -->
-          <div class="flex items-center justify-between gap-2.5 flex-wrap">
-            <Breadcrumb>
-              <BreadcrumbList class="font-mono text-xs gap-1">
-                <template v-for="(bc, idx) in breadcrumbs" :key="bc.path || 'root'">
-                  <BreadcrumbSeparator v-if="idx > 0" />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage
-                      v-if="idx === breadcrumbs.length - 1"
-                      class="fm-bc-btn font-mono text-xs font-medium text-foreground px-1.5 py-0.5 rounded-md bg-secondary/70"
-                    >
-                      {{ bc.name }}
-                    </BreadcrumbPage>
-                    <BreadcrumbLink v-else as-child>
-                      <button
-                        type="button"
-                        class="fm-bc-btn font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-highlight-yellow px-1.5 py-0.5 rounded-md transition-colors"
-                        @click="navigateTo(bc.path)"
-                      >
-                        {{ bc.name }}
-                      </button>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                </template>
-              </BreadcrumbList>
-            </Breadcrumb>
+        <Alert v-if="errorMsg" variant="destructive" class="m-3 mb-0 shrink-0">
+          <AlertDescription class="font-mono text-xs">{{ errorMsg }}</AlertDescription>
+        </Alert>
 
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <InputGroup class="w-44 h-7 rounded-full bg-secondary border-transparent">
-                <InputGroupAddon align="inline-start">
-                  <SearchIcon />
-                </InputGroupAddon>
-                <InputGroupInput
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="Search files..."
-                  class="font-mono text-[11.5px] h-7"
-                  @input="onSearchInput"
-                />
-                <InputGroupAddon v-if="searchQuery" align="inline-end">
-                  <InputGroupButton
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label="Clear search"
-                    @click="clearSearch"
-                  >
-                    <XIcon />
-                  </InputGroupButton>
-                </InputGroupAddon>
-              </InputGroup>
-
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
-                :model-value="viewMode"
-                class="rounded-full bg-secondary p-0.5 gap-0.5"
-                @update:model-value="(val) => { if (val === 'list' || val === 'grid') setViewMode(val); }"
+        <!-- FILE LIST / GRID AREA WITH BACKGROUND CONTEXT MENU -->
+        <ContextMenu>
+          <ContextMenuTrigger as-child>
+            <div class="relative flex-1 min-h-0 overflow-y-auto">
+              <div
+                v-if="dragOver"
+                class="absolute inset-3 z-20 grid place-items-center rounded-xl border-2 border-dashed border-primary bg-highlight-yellow/90 font-mono text-xs text-foreground"
               >
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <ToggleGroupItem
-                      value="list"
-                      aria-label="List view"
-                      class="h-6 px-2 rounded-full border-0 data-[state=on]:bg-background data-[state=on]:shadow-xs"
-                    >
-                      <ListIcon class="size-3.5" />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>List view</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <ToggleGroupItem
-                      value="grid"
-                      aria-label="Grid view"
-                      class="h-6 px-2 rounded-full border-0 data-[state=on]:bg-background data-[state=on]:shadow-xs"
-                    >
-                      <LayoutGridIcon class="size-3.5" />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent>Grid view</TooltipContent>
-                </Tooltip>
-              </ToggleGroup>
+                <span>Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong></span>
+              </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button type="button" variant="secondary" size="xs">
-                    <ArrowUpDownIcon data-icon="inline-start" />
-                    {{ sortLabel }}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-40">
-                  <DropdownMenuLabel class="font-mono text-[11px]">Sort by</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem @select="sortMode = 'name-asc'">
-                      <CheckIcon :class="cn('opacity-0', sortMode === 'name-asc' && 'opacity-100')" />
-                      Name (A–Z)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @select="sortMode = 'modified-desc'">
-                      <CheckIcon :class="cn('opacity-0', sortMode === 'modified-desc' && 'opacity-100')" />
-                      Newest first
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @select="sortMode = 'size-desc'">
-                      <CheckIcon :class="cn('opacity-0', sortMode === 'size-desc' && 'opacity-100')" />
-                      Largest first
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button type="button" size="xs" :disabled="uploading" @click="triggerUploadPicker">
-                <Spinner v-if="uploading" data-icon="inline-start" />
-                <UploadIcon v-else data-icon="inline-start" />
-                {{ uploading ? "Uploading" : "Upload" }}
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button type="button" variant="secondary" size="xs">
-                    <PlusIcon data-icon="inline-start" />
-                    New
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-44">
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem @select="openNewNoteDialog(currentPath || 'scripts')">
-                      <FilePlus2Icon />
-                      New Note (.md)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @select="openNewFolderDialog(currentPath)">
-                      <FolderPlusIcon />
-                      New Folder
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem @select="manualRefresh">
-                      <RefreshCwIcon />
-                      Refresh
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          <Alert v-if="errorMsg" variant="destructive">
-            <AlertDescription class="font-mono text-xs">{{ errorMsg }}</AlertDescription>
-          </Alert>
-
-          <!-- FILE LIST / GRID AREA WITH BACKGROUND CONTEXT MENU -->
-          <ContextMenu>
-            <ContextMenuTrigger as-child>
-              <div class="relative min-h-[220px]">
-                <div
-                  v-if="dragOver"
-                  class="absolute inset-0 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-highlight-yellow/90 font-mono text-xs text-foreground"
-                >
-                  <span>Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong></span>
-                </div>
-
-                <!-- SKELETON STATE -->
+              <!-- SKELETON STATE -->
+              <div v-if="showListSkeleton" class="p-4">
                 <WorkspaceFileSkeleton
-                  v-if="showListSkeleton"
                   :variant="viewMode === 'grid' ? 'grid' : 'rows'"
                   :count="currentPath === '' ? 6 : 4"
                 />
+              </div>
 
-                <!-- EMPTY STATE -->
-                <Empty v-else-if="sortedItems.length === 0" class="rounded-2xl bg-secondary/60 border-0 py-10">
+              <!-- EMPTY STATE -->
+              <div v-else-if="sortedItems.length === 0" class="flex h-full min-h-[260px] items-center justify-center p-6">
+                <Empty class="border-0 py-8">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <FolderOpenIcon />
@@ -1189,240 +1291,259 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                     </div>
                   </EmptyContent>
                 </Empty>
+              </div>
 
-                <!-- LIST VIEW -->
-                <div v-else-if="viewMode === 'list'" class="flex flex-col gap-1.5">
-                  <div class="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_76px_126px_142px] items-center gap-3 px-3 pb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <span>Name</span>
-                    <span class="text-right">Size</span>
-                    <span class="text-right">Modified</span>
-                    <span class="text-right pr-1">Actions</span>
-                  </div>
-
-                  <div class="fm-rows flex flex-col gap-1.5">
-                    <ContextMenu v-for="entry in sortedItems" :key="entry.relPath">
-                      <ContextMenuTrigger as-child>
-                        <div
-                          :class="
-                            cn(
-                              'fm-row group flex sm:grid sm:grid-cols-[minmax(0,1fr)_76px_126px_142px] items-center justify-between gap-2 sm:gap-3 rounded-2xl px-3 py-2 transition-colors',
-                              selectedFile?.relPath === entry.relPath
-                                ? 'bg-highlight-yellow text-foreground'
-                                : 'bg-secondary/75 hover:bg-accent/90'
-                            )
-                          "
-                        >
-                          <button
-                            type="button"
-                            class="fm-row-main flex items-center gap-2.5 min-w-0 flex-1 text-left"
-                            @click="openEntry(entry)"
-                          >
-                            <span
-                              :class="
-                                cn(
-                                  'grid place-items-center size-8 rounded-xl shrink-0 transition-colors',
-                                  entry.isDir
-                                    ? 'bg-background text-foreground shadow-2xs'
-                                    : entry.kind === 'image' || entry.kind === 'video'
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'bg-background text-muted-foreground shadow-2xs'
-                                )
-                              "
-                            >
-                              <component :is="entryIconComponent(entry)" class="size-4" />
-                            </span>
-                            <div class="min-w-0 flex-1">
-                              <div class="flex items-center gap-1.5 min-w-0">
-                                <span class="fm-name font-mono text-[12.5px] font-medium text-foreground truncate">
-                                  {{ entry.name }}
-                                </span>
-                                <Badge v-if="entry.matchedSrtRelPath" variant="secondary" class="font-mono text-[9.5px] h-4 px-1.5">
-                                  .srt
-                                </Badge>
-                              </div>
-                              <div class="sm:hidden font-mono text-[10.5px] text-muted-foreground truncate">
-                                <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
-                                <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
-                                <span>{{ formatTime(entry.updatedAt) }}</span>
-                              </div>
-                              <div v-if="searchQuery.trim()" class="hidden sm:block font-mono text-[10px] text-muted-foreground truncate">
-                                /{{ entry.relPath }}
-                              </div>
-                            </div>
-                          </button>
-
-                          <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
-                            {{ entry.isDir ? "—" : formatBytes(entry.sizeBytes) }}
-                          </div>
-
-                          <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
-                            {{ formatTime(entry.updatedAt) }}
-                          </div>
-
-                          <div class="flex items-center justify-end gap-1 shrink-0">
-                            <Button
-                              v-if="!entry.isDir"
-                              type="button"
-                              size="xs"
-                              @click.stop="askOttoAbout(entry)"
-                            >
-                              <SparklesIcon data-icon="inline-start" />
-                              {{ askActionLabel(entry) }}
-                            </Button>
-                            <Button
-                              v-else
-                              type="button"
-                              variant="secondary"
-                              size="xs"
-                              class="bg-background/80 hover:bg-background"
-                              @click.stop="navigateTo(entry.relPath)"
-                            >
-                              Open
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger as-child>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  aria-label="More actions"
-                                  @click.stop
-                                >
-                                  <MoreHorizontalIcon />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" class="w-48">
-                                <DropdownMenuGroup>
-                                  <DropdownMenuItem @select="openEntry(entry)">
-                                    <FolderOpenIcon v-if="entry.isDir" />
-                                    <EyeIcon v-else />
-                                    {{ entry.isDir ? "Open Folder" : "Preview" }}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
-                                    <PencilIcon />
-                                    Edit File
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
-                                    <SparklesIcon />
-                                    {{ askActionLabel(entry) }}
-                                  </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuGroup>
-                                  <DropdownMenuItem
-                                    v-if="entry.isDir"
-                                    @select="triggerDownload(zipUrl(entry.relPath))"
-                                  >
-                                    <ArchiveIcon />
-                                    Download ZIP
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    v-else
-                                    @select="triggerDownload(fileUrl(entry.relPath, true))"
-                                  >
-                                    <DownloadIcon />
-                                    Download
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    v-if="entry.matchedSrtRelPath"
-                                    @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
-                                  >
-                                    <CaptionsIcon />
-                                    Download .srt Captions
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem @select="openMoveDialog(entry)">
-                                    <FolderInputIcon />
-                                    Rename / Move...
-                                  </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuGroup>
-                                  <DropdownMenuItem variant="destructive" @select="promptDelete(entry)">
-                                    <Trash2Icon />
-                                    Delete...
-                                  </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                      </ContextMenuTrigger>
-
-                      <ContextMenuContent class="w-52">
-                        <ContextMenuLabel class="font-mono text-[11px] truncate">
-                          {{ entry.name }}
-                        </ContextMenuLabel>
-                        <ContextMenuSeparator />
-                        <ContextMenuGroup>
-                          <ContextMenuItem @select="openEntry(entry)">
-                            <FolderOpenIcon v-if="entry.isDir" />
-                            <EyeIcon v-else />
-                            {{ entry.isDir ? "Open Folder" : "Preview" }}
-                          </ContextMenuItem>
-                          <ContextMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
-                            <PencilIcon />
-                            Edit File
-                          </ContextMenuItem>
-                          <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
-                            <SparklesIcon />
-                            {{ askActionLabel(entry) }}
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                        <ContextMenuSeparator />
-                        <ContextMenuGroup>
-                          <ContextMenuItem
-                            v-if="entry.isDir"
-                            @select="triggerDownload(zipUrl(entry.relPath))"
-                          >
-                            <ArchiveIcon />
-                            Download ZIP
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            v-else
-                            @select="triggerDownload(fileUrl(entry.relPath, true))"
-                          >
-                            <DownloadIcon />
-                            Download
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            v-if="entry.matchedSrtRelPath"
-                            @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
-                          >
-                            <CaptionsIcon />
-                            Download .srt Captions
-                          </ContextMenuItem>
-                          <ContextMenuItem @select="openMoveDialog(entry)">
-                            <FolderInputIcon />
-                            Rename / Move...
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                        <ContextMenuSeparator />
-                        <ContextMenuGroup>
-                          <ContextMenuItem variant="destructive" @select="promptDelete(entry)">
-                            <Trash2Icon />
-                            Delete...
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  </div>
+              <!-- LIST VIEW (OS Details Table) -->
+              <div v-else-if="viewMode === 'list'" class="flex flex-col">
+                <div class="sticky top-0 z-10 hidden sm:grid sm:grid-cols-[minmax(0,1fr)_88px_142px_142px] items-center gap-3 border-b border-[#ededed] bg-[#fafafa]/95 backdrop-blur-xs px-4 py-1.5 font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                  <button
+                    type="button"
+                    class="text-left hover:text-foreground transition-colors flex items-center gap-1"
+                    @click="sortMode = 'name-asc'"
+                  >
+                    Name
+                  </button>
+                  <button
+                    type="button"
+                    class="text-right hover:text-foreground transition-colors"
+                    @click="sortMode = 'size-desc'"
+                  >
+                    Size
+                  </button>
+                  <button
+                    type="button"
+                    class="text-right hover:text-foreground transition-colors"
+                    @click="sortMode = 'modified-desc'"
+                  >
+                    Date Modified
+                  </button>
+                  <span class="text-right pr-1">Actions</span>
                 </div>
 
-                <!-- GRID VIEW -->
-                <div v-else class="fm-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                <div class="divide-y divide-[#f3f3f4]">
                   <ContextMenu v-for="entry in sortedItems" :key="entry.relPath">
                     <ContextMenuTrigger as-child>
                       <div
                         :class="
                           cn(
-                            'fm-grid-card group relative flex flex-col gap-2 rounded-2xl p-2.5 transition-all',
+                            'group flex sm:grid sm:grid-cols-[minmax(0,1fr)_88px_142px_142px] items-center justify-between gap-2 sm:gap-3 px-4 py-2 transition-colors',
                             selectedFile?.relPath === entry.relPath
-                              ? 'bg-highlight-yellow text-foreground'
-                              : 'bg-secondary/75 hover:bg-accent/90'
+                              ? 'bg-highlight-yellow/70 text-foreground'
+                              : 'hover:bg-[#f6f6f7]'
                           )
                         "
                       >
+                        <button
+                          type="button"
+                          class="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+                          @click="openEntry(entry)"
+                        >
+                          <span
+                            :class="
+                              cn(
+                                'grid place-items-center size-7 rounded-lg shrink-0 transition-colors',
+                                entry.isDir
+                                  ? 'bg-[#f2f2f3] text-[#303030]'
+                                  : entry.kind === 'image' || entry.kind === 'video'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-[#f2f2f3] text-muted-foreground'
+                              )
+                            "
+                          >
+                            <component :is="entryIconComponent(entry)" class="size-3.5" />
+                          </span>
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                              <span class="font-mono text-[12.5px] font-medium text-[#222] truncate">
+                                {{ entry.name }}
+                              </span>
+                              <Badge v-if="entry.matchedSrtRelPath" variant="secondary" class="font-mono text-[9.5px] h-4 px-1.5">
+                                .srt
+                              </Badge>
+                            </div>
+                            <div class="sm:hidden font-mono text-[10.5px] text-muted-foreground truncate">
+                              <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
+                              <span v-if="!entry.isDir">{{ formatBytes(entry.sizeBytes) }} · </span>
+                              <span>{{ formatTime(entry.updatedAt) }}</span>
+                            </div>
+                            <div v-if="searchQuery.trim()" class="hidden sm:block font-mono text-[10px] text-muted-foreground truncate">
+                              /{{ entry.relPath }}
+                            </div>
+                          </div>
+                        </button>
+
+                        <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
+                          {{ entry.isDir ? "—" : formatBytes(entry.sizeBytes) }}
+                        </div>
+
+                        <div class="hidden sm:block text-right font-mono text-[11px] text-muted-foreground">
+                          {{ formatTime(entry.updatedAt) }}
+                        </div>
+
+                        <div class="flex items-center justify-end gap-1 shrink-0">
+                          <Button
+                            v-if="!entry.isDir"
+                            type="button"
+                            size="xs"
+                            @click.stop="askOttoAbout(entry)"
+                          >
+                            <SparklesIcon data-icon="inline-start" />
+                            {{ askActionLabel(entry) }}
+                          </Button>
+                          <Button
+                            v-else
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            class="text-muted-foreground hover:text-foreground opacity-80 group-hover:opacity-100"
+                            @click.stop="navigateTo(entry.relPath)"
+                          >
+                            Open
+                          </Button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger as-child>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="More actions"
+                                @click.stop
+                              >
+                                <MoreHorizontalIcon />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" class="w-48">
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem @select="openEntry(entry)">
+                                  <FolderOpenIcon v-if="entry.isDir" />
+                                  <EyeIcon v-else />
+                                  {{ entry.isDir ? "Open Folder" : "Preview" }}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                                  <PencilIcon />
+                                  Edit File
+                                </DropdownMenuItem>
+                                <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                                  <SparklesIcon />
+                                  {{ askActionLabel(entry) }}
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  v-if="entry.isDir"
+                                  @select="triggerDownload(zipUrl(entry.relPath))"
+                                >
+                                  <ArchiveIcon />
+                                  Download ZIP
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  v-else
+                                  @select="triggerDownload(fileUrl(entry.relPath, true))"
+                                >
+                                  <DownloadIcon />
+                                  Download
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  v-if="entry.matchedSrtRelPath"
+                                  @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
+                                >
+                                  <CaptionsIcon />
+                                  Download .srt Captions
+                                </DropdownMenuItem>
+                                <DropdownMenuItem @select="openMoveDialog(entry)">
+                                  <FolderInputIcon />
+                                  Rename / Move...
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem variant="destructive" @select="promptDelete(entry)">
+                                  <Trash2Icon />
+                                  Delete...
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </ContextMenuTrigger>
+
+                    <ContextMenuContent class="w-52">
+                      <ContextMenuLabel class="font-mono text-[11px] truncate">
+                        {{ entry.name }}
+                      </ContextMenuLabel>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem @select="openEntry(entry)">
+                          <FolderOpenIcon v-if="entry.isDir" />
+                          <EyeIcon v-else />
+                          {{ entry.isDir ? "Open Folder" : "Preview" }}
+                        </ContextMenuItem>
+                        <ContextMenuItem v-if="entry.editable" @select="openEntry(entry, true)">
+                          <PencilIcon />
+                          Edit File
+                        </ContextMenuItem>
+                        <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                          <SparklesIcon />
+                          {{ askActionLabel(entry) }}
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem
+                          v-if="entry.isDir"
+                          @select="triggerDownload(zipUrl(entry.relPath))"
+                        >
+                          <ArchiveIcon />
+                          Download ZIP
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          v-else
+                          @select="triggerDownload(fileUrl(entry.relPath, true))"
+                        >
+                          <DownloadIcon />
+                          Download
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          v-if="entry.matchedSrtRelPath"
+                          @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
+                        >
+                          <CaptionsIcon />
+                          Download .srt Captions
+                        </ContextMenuItem>
+                        <ContextMenuItem @select="openMoveDialog(entry)">
+                          <FolderInputIcon />
+                          Rename / Move...
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                      <ContextMenuSeparator />
+                      <ContextMenuGroup>
+                        <ContextMenuItem variant="destructive" @select="promptDelete(entry)">
+                          <Trash2Icon />
+                          Delete...
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                </div>
+              </div>
+
+              <!-- GRID VIEW -->
+              <div v-else class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                <ContextMenu v-for="entry in sortedItems" :key="entry.relPath">
+                  <ContextMenuTrigger as-child>
+                    <div
+                      :class="
+                        cn(
+                          'group relative flex flex-col gap-2 rounded-xl border p-2.5 transition-all',
+                          selectedFile?.relPath === entry.relPath
+                            ? 'border-primary/40 bg-highlight-yellow/70 text-foreground'
+                            : 'border-[#ededed] bg-[#fafafa] hover:bg-[#f2f2f4]'
+                        )
+                      "
+                    >
                         <button
                           type="button"
                           class="flex flex-col gap-2 text-left w-full"
@@ -1624,6 +1745,14 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
               </ContextMenuGroup>
             </ContextMenuContent>
           </ContextMenu>
+
+        <!-- OS STATUS BAR -->
+        <div class="shrink-0 border-t border-[#ededed] bg-[#fafafa] px-4 py-1.5 flex items-center justify-between gap-2 font-mono text-[10.5px] text-muted-foreground">
+          <span>
+            {{ showListSkeleton ? "Loading…" : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"}` }}
+            <span class="hidden sm:inline"> · {{ stats.fileCount }} files · {{ stats.clipCount }} clips</span>
+          </span>
+          <span>/{{ currentPath || "workspace" }} · {{ formatBytes(stats.totalBytes) }}</span>
         </div>
       </div>
     </div>
@@ -1956,16 +2085,4 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
 </template>
 
 <style scoped>
-.fm-shell {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-@media (max-width: 820px) {
-  .fm-shell {
-    grid-template-columns: 1fr;
-  }
-}
 </style>

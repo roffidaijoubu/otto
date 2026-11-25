@@ -19,6 +19,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { DesktopShell, type DesktopShellExposed } from "@/components/os";
 import BrowserLoginModal, { type BrowserLoginRequest } from "./components/BrowserLoginModal.vue";
 import BrowserWorkspaceTab from "./components/BrowserWorkspaceTab.vue";
+import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import type { StudioTab } from "./components/ChatHeader.vue";
 import LearnedPlaybooksCard from "./components/LearnedPlaybooksCard.vue";
@@ -34,11 +35,10 @@ import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/
 
 const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
 
-type MissionSubTab = "overview" | "schedule" | "dossier" | "connectors";
+type MissionSubTab = "overview" | "dossier" | "connectors";
 
 const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "schedule", label: "Schedule" },
   { id: "dossier", label: "Dossier" },
   { id: "connectors", label: "Connectors" },
 ];
@@ -369,6 +369,10 @@ function handleMissionPrompt(prompt: string) {
 
 function handleMissionTabRequest(tab: StudioTab) {
   const wm = shellRef.value?.wm;
+  if (tab === "schedule") {
+    wm?.openWindow("calendar", { focus: true });
+    return;
+  }
   if (tab === "files") {
     wm?.openWindow("files", { focus: true });
     return;
@@ -694,7 +698,7 @@ onMounted(async () => {
 
       <!-- WINDOW 3: STUDIO FILES -->
       <template #app-files>
-        <div class="h-full overflow-y-auto bg-white p-2.5">
+        <div class="flex h-full min-h-0 flex-col bg-white">
           <WorkspaceFileManager
             ref="fileManagerRef"
             :refresh-tick="workspaceRefreshTick"
@@ -732,6 +736,17 @@ onMounted(async () => {
       <template #app-playbooks>
         <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
           <LearnedPlaybooksCard :refresh-tick="dbRefreshTick + missionRefreshTick" />
+        </div>
+      </template>
+
+      <!-- WINDOW 7: CALENDAR -->
+      <template #app-calendar>
+        <div class="flex h-full min-h-0 flex-col bg-white">
+          <CalendarWorkspaceApp
+            :refresh-tick="missionRefreshTick + dbRefreshTick"
+            @ask-prompt="handleMissionPrompt"
+            @events-updated="navCounts.schedule = $event"
+          />
         </div>
       </template>
 
