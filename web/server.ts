@@ -122,6 +122,11 @@ function isLoginRateLimited(key: string): boolean {
 
 function recordLoginFailure(key: string) {
   const now = Date.now();
+  if (loginFailures.size > 500) {
+    for (const [k, v] of loginFailures) {
+      if (now > v.resetAt) loginFailures.delete(k);
+    }
+  }
   const entry = loginFailures.get(key);
   if (!entry || now > entry.resetAt) {
     loginFailures.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
@@ -385,6 +390,7 @@ class OmpRpcBridge {
   private readyResolvers: Array<() => void> = [];
   private pending = new Map<string, PendingRequest>();
   private reqCounter = 0;
+  private holdHeartbeat: NodeJS.Timeout | null = null;
   public busy = false;
   public activity = "Thinking...";
 
@@ -392,7 +398,7 @@ class OmpRpcBridge {
     this.spawn();
   }
 
-  public async holdSpriteActive(): Promise<void> {
+  private async putSpriteHold(): Promise<void> {
     if (!fs.existsSync("/.sprite/api.sock")) return;
     await fetch("http://sprite/v1/tasks/lma-agent-turn", {
       unix: "/.sprite/api.sock",
@@ -402,7 +408,21 @@ class OmpRpcBridge {
     }).catch(() => {});
   }
 
+  public async holdSpriteActive(): Promise<void> {
+    await this.putSpriteHold();
+    if (!this.holdHeartbeat && fs.existsSync("/.sprite/api.sock")) {
+      // Refresh 10m TTL every 5 minutes during long multi-tool / ffmpeg turns
+      this.holdHeartbeat = setInterval(() => {
+        if (this.busy) void this.putSpriteHold();
+      }, 5 * 60 * 1000);
+    }
+  }
+
   private releaseSpriteHold() {
+    if (this.holdHeartbeat) {
+      clearInterval(this.holdHeartbeat);
+      this.holdHeartbeat = null;
+    }
     if (!fs.existsSync("/.sprite/api.sock")) return;
     fetch("http://sprite/v1/tasks/lma-agent-turn", {
       unix: "/.sprite/api.sock",

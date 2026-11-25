@@ -9,8 +9,60 @@ import { Type } from "@sinclair/typebox";
 const execFileAsync = promisify(execFile);
 
 let cachedGeminiBaseUrl: string | null = null;
-const REVIEW_MODEL = "gemini-2.5-flash";
+const REVIEW_MODEL = process.env.LMA_REVIEW_MODEL || "gemini-2.5-flash";
 const MAX_INLINE_BYTES = 14 * 1024 * 1024; // 14 MB safe inline base64 cap
+const CLIPS_ROOT = path.resolve(process.env.HOME || "/home/sprite", "clips");
+
+function resolveClipFile(localPath: string): string {
+  const resolved = path.resolve(localPath);
+  if (!resolved.startsWith(CLIPS_ROOT + path.sep)) {
+    throw new Error(`Local media path must reside inside ${CLIPS_ROOT}`);
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    throw new Error(`Media file not found inside ${CLIPS_ROOT}: ${path.basename(resolved)}`);
+  }
+  return resolved;
+}
+
+function assertSafePublicHttpsUrl(rawUrl: string): URL {
+  const u = new URL(rawUrl);
+  if (u.protocol !== "https:") {
+    throw new Error("Thumbnail URL must use https://");
+  }
+  const h = u.hostname.toLowerCase();
+  if (
+    h === "localhost" ||
+    h === "::1" ||
+    h.endsWith(".local") ||
+    h.endsWith(".internal") ||
+    /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(h)
+  ) {
+    throw new Error(`Refused private/internal thumbnail host: ${h}`);
+  }
+  return u;
+}
+
+async function readStreamWithLimit(res: Response, maxBytes: number): Promise<Buffer> {
+  const contentLen = Number(res.headers.get("content-length") || 0);
+  if (contentLen > maxBytes) {
+    throw new Error(`Remote image exceeds ${(maxBytes / 1024 / 1024).toFixed(0)} MB limit.`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Error(`Remote image exceeded ${(maxBytes / 1024 / 1024).toFixed(0)} MB stream cap.`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
 
 async function getGeminiGatewayBaseUrl(): Promise<string> {
   if (cachedGeminiBaseUrl) return cachedGeminiBaseUrl;
@@ -154,10 +206,8 @@ export default function (pi: ExtensionAPI) {
       if (isYouTubeUrl(target)) {
         parts.push({ fileData: { fileUri: target } });
       } else {
-        if (!fs.existsSync(target)) {
-          throw new Error(`Video file not found: ${target}`);
-        }
-        const { bytes, mimeType } = await ensureCompactVideoBytes(target);
+        const safePath = resolveClipFile(target);
+        const { bytes, mimeType } = await ensureCompactVideoBytes(safePath);
         parts.push({
           inlineData: {
             mimeType,
@@ -194,24 +244,22 @@ export default function (pi: ExtensionAPI) {
       let mimeType: string;
 
       if (/^https?:\/\//i.test(target)) {
-        const imgRes = await fetch(target, { signal: AbortSignal.timeout(15_000) });
+        const safeUrl = assertSafePublicHttpsUrl(target);
+        const imgRes = await fetch(safeUrl.toString(), { signal: AbortSignal.timeout(15_000) });
         if (!imgRes.ok) {
-          throw new Error(`Failed to fetch thumbnail URL (${imgRes.status}): ${target}`);
+          throw new Error(`Failed to fetch thumbnail URL (${imgRes.status}): ${safeUrl.hostname}`);
         }
         const ct = imgRes.headers.get("content-type")?.split(";")[0]?.trim();
         mimeType = ct && ct.startsWith("image/") ? ct : guessMimeType(target, "image/jpeg");
-        bytes = Buffer.from(await imgRes.arrayBuffer());
+        bytes = await readStreamWithLimit(imgRes, MAX_INLINE_BYTES);
       } else {
-        if (!fs.existsSync(target)) {
-          throw new Error(`Thumbnail file not found: ${target}`);
+        const safePath = resolveClipFile(target);
+        const st = fs.statSync(safePath);
+        if (st.size > MAX_INLINE_BYTES) {
+          throw new Error(`Thumbnail file exceeds ${(MAX_INLINE_BYTES / 1024 / 1024).toFixed(0)} MB limit.`);
         }
-        mimeType = guessMimeType(target, "image/png");
-        bytes = fs.readFileSync(target);
-      }
-      if (bytes.length > MAX_INLINE_BYTES) {
-        throw new Error(
-          `Thumbnail image exceeds ${(MAX_INLINE_BYTES / 1024 / 1024).toFixed(0)} MB limit (${(bytes.length / 1024 / 1024).toFixed(1)} MB).`
-        );
+        mimeType = guessMimeType(safePath, "image/png");
+        bytes = fs.readFileSync(safePath);
       }
       const titleLine = params.videoTitle ? `Paired video title: "${params.videoTitle}"\n\n` : "";
       const prompt =
