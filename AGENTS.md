@@ -16,6 +16,7 @@
 2. **Zero Raw API Keys in Repo or Sprite VM.** Every key-bearing external API (Gemini, Exa, Firecrawl, Composio v3 YouTube, Buffer X/TikTok/IG, Upstash QStash) routes through `https://api.sprites.dev/v1/gateway/...` and auto-discovers its `gateway_base_url` via `GET /v1/gateway/list` at runtime. Never hardcode connector IDs or secrets. (Anonymous public-VOD fetching via `yt-dlp`/InnerTube is keyless and goes direct.)
 3. **Draft-First & Human-Approval Guardrails.** Social posts (`buffer_create_post`) default to `saveToDraft: true`; YouTube mutations (`YOUTUBE_UPDATE_VIDEO`, `YOUTUBE_UPDATE_THUMBNAIL`) require explicit human confirmation.
 4. **Zero Fourth-Wall Breaks.** Otto speaks like a real tough-love talent manager — never expose raw tool slugs, file paths, or VM internals to the talent unless explicitly asked.
+5. **Proactive Kanban Tracking for Ad-Hoc Features:** The author frequently comes up with spur-of-the-moment feature ideas directly in chat without creating a `.kanban/` card first. Whenever you finish implementing a new ad-hoc feature or notable capability that isn't tracked in `.kanban/`, **proactively nudge the author** to create a `.kanban/` card with `status: done` (capturing what was built and key file paths) so shipped features stay tracked and can be used later to bulk-update `README.md` and submission docs.
 
 ---
 

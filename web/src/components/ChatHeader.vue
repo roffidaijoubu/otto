@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import OttoMascot from "./OttoMascot.vue";
 
-export type StudioTab = "overview" | "schedule" | "files" | "database" | "dossier" | "connectors";
+export type StudioTab = "overview" | "schedule" | "files" | "database" | "playbooks" | "dossier" | "connectors";
 
 defineProps<{
   statusState: "ready" | "busy" | "error";
@@ -13,6 +13,7 @@ defineProps<{
     schedule: number;
     files: number;
     database: number;
+    playbooks: number;
     connectors: number;
   };
 }>();
@@ -23,11 +24,12 @@ const emit = defineEmits<{
   cycleMascotColor: [];
 }>();
 
-const tabs: Array<{ id: StudioTab; label: string; countKey?: "schedule" | "files" | "database" | "connectors" }> = [
+const tabs: Array<{ id: StudioTab; label: string; countKey?: "schedule" | "files" | "database" | "playbooks" | "connectors" }> = [
   { id: "overview", label: "Overview" },
   { id: "schedule", label: "Schedule", countKey: "schedule" },
   { id: "files", label: "Files & Clips", countKey: "files" },
   { id: "database", label: "Studio DB", countKey: "database" },
+  { id: "playbooks", label: "Playbooks", countKey: "playbooks" },
   { id: "dossier", label: "Dossier" },
   { id: "connectors", label: "Connectors", countKey: "connectors" },
 ];
