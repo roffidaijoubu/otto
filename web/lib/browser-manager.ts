@@ -469,6 +469,29 @@ export class BrowserManager {
         }>)
       : [];
   }
+  public async captureActiveTab(siteOverride?: string): Promise<SavedSessionMeta> {
+    const { activeUrl } = await this.getAllCdpCookies();
+    const effectiveUrl = activeUrl || "https://example.com";
+    let inferredSite = siteOverride?.trim() || "";
+    if (!inferredSite) {
+      for (const [slug, preset] of Object.entries(PLATFORM_PRESETS)) {
+        if (preset.domains.some((d) => effectiveUrl.toLowerCase().includes(d))) {
+          inferredSite = slug;
+          break;
+        }
+      }
+    }
+    if (!inferredSite) {
+      try {
+        inferredSite = new URL(effectiveUrl).hostname.replace(/^www\./, "").split(".")[0] || "custom";
+      } catch {
+        inferredSite = "custom";
+      }
+    }
+    const meta = await this.captureAndSaveCookies(inferredSite, effectiveUrl);
+    this.callbacks.onStatusChanged?.(this.getStatus());
+    return meta;
+  }
 
   private async sendCdpCommand<T = unknown>(
     wsUrl: string,
@@ -486,6 +509,7 @@ export class BrowserManager {
         }
         reject(new Error(`CDP ${method} timed out`));
       }, 5000);
+
 
       ws.addEventListener("open", () => {
         ws.send(JSON.stringify({ id, method, params }));

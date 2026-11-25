@@ -88,6 +88,31 @@ async function navigateBrowser() {
   await startBrowser(navUrl.value.trim());
 }
 
+async function captureCurrentCookies() {
+  busy.value = true;
+  errorMsg.value = "";
+  try {
+    const res = await fetch("/api/browser/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      sessions?: SavedSession[];
+    };
+    if (!res.ok || !data.ok) {
+      errorMsg.value = data.error || "Failed to capture cookies.";
+    } else if (data.sessions) {
+      status.value.sessions = data.sessions;
+    }
+  } catch (err) {
+    errorMsg.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    busy.value = false;
+  }
+}
 async function revokeSession(site: string) {
   const res = await fetch(`/api/browser/sessions/${encodeURIComponent(site)}`, {
     method: "DELETE",
@@ -159,6 +184,17 @@ defineExpose({ openUrl, loadStatus });
           >
             <SquareIcon class="w-3.5 h-3.5 mr-1" />
             Stop Chrome
+          </Button>
+          <Button
+            v-if="status.running"
+            size="xs"
+            variant="secondary"
+            type="button"
+            :disabled="busy"
+            @click="captureCurrentCookies()"
+          >
+            <CookieIcon class="w-3.5 h-3.5 mr-1" />
+            Capture Cookies
           </Button>
           <Button variant="outline" size="xs" type="button" @click="loadStatus">
             <RefreshCwIcon class="w-3.5 h-3.5" />

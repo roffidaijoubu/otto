@@ -1537,6 +1537,18 @@ Bun.serve<VncWsData>({
       await browserManager.stop();
       return Response.json({ ok: true, status: browserManager.getStatus() });
     }
+    if (req.method === "POST" && url.pathname === "/api/browser/capture") {
+      if (!browserManager.isRunning()) {
+        return Response.json({ ok: false, error: "Chrome is not running." }, { status: 400 });
+      }
+      const body = (await req.json().catch(() => ({}))) as { site?: string };
+      try {
+        const session = await browserManager.captureActiveTab(body.site);
+        return Response.json({ ok: true, session, sessions: browserManager.listSavedSessions() });
+      } catch (err) {
+        return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
+      }
+    }
     if (req.method === "POST" && url.pathname === "/api/browser/navigate") {
       const body = (await req.json().catch(() => ({}))) as { url?: string };
       if (!body.url) return Response.json({ ok: false, error: "Missing url" }, { status: 400 });
