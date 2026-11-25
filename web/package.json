@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port 5173",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
+    "@types/bun": "^1.4.5",
     "@types/dompurify": "^3.0.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "daisyui": "^5.8.2",

@@ -8,3 +8,4 @@ agent/MEMORY.md
 WORKSTATION.md
 .tests/
 web/dist/
+.kanban/

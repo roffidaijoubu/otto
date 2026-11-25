@@ -7,8 +7,18 @@ OMP_PKG_VERSION="19.1.1"
 
 echo "==> Setting up lma (Professor L Livestreamer Manager Agent) on Sprite..."
 
+# 0. Preflight check for required base tools
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required for passcode generation and VOD clip scripts. Install python3 and re-run." >&2
+  exit 1
+fi
+
 # 1. Install pinned omp if not present
 if ! command -v omp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/omp" ]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: npm is required to install @oh-my-pi/pi-coding-agent. Install Node.js/npm and re-run." >&2
+    exit 1
+  fi
   echo "==> Installing @oh-my-pi/pi-coding-agent@${OMP_PKG_VERSION}..."
   npm install -g "@oh-my-pi/pi-coding-agent@${OMP_PKG_VERSION}"
   mkdir -p "${HOME}/.local/bin"
@@ -17,8 +27,13 @@ fi
 
 # 1b. Install jq, ffmpeg, and yt-dlp for gateway discovery & VOD/clip workflows
 if ! command -v jq >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "ERROR: jq and ffmpeg are required, and apt-get is unavailable. Install jq and ffmpeg manually and re-run." >&2
+    exit 1
+  fi
   echo "==> Installing jq and ffmpeg..."
-  sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends jq ffmpeg
+  SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+  ${SUDO} apt-get update -qq && ${SUDO} apt-get install -y -qq --no-install-recommends jq ffmpeg
 fi
 
 if ! command -v yt-dlp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/yt-dlp" ]; then
@@ -72,7 +87,7 @@ if [ ! -f "${WEB_ENV_FILE}" ] || ! grep -q '^LMA_WEB_PASSWORD=' "${WEB_ENV_FILE}
   GEN_PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
   echo "LMA_WEB_PASSWORD=${GEN_PASS}" >> "${WEB_ENV_FILE}"
   chmod 600 "${WEB_ENV_FILE}"
-  echo "==> Generated Web Chat UI passcode in ${WEB_ENV_FILE}: ${GEN_PASS}"
+  echo "==> Generated Web Chat UI passcode in ${WEB_ENV_FILE} (chmod 600). View it with: cat ${WEB_ENV_FILE}"
 fi
 
 # 6. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)

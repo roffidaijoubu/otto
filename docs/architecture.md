@@ -63,7 +63,7 @@ sequenceDiagram
 ### Why the `/.sprite/api.sock` Tasks API Hold Matters
 Because `POST /api/wakeup` returns `200 OK` to QStash immediately and runs `omp` asynchronously, there is **no open browser SSE connection** during a headless wake-up. Without a keep-alive hold, a multi-tool agent turn taking >30 seconds could be paused mid-flight by the Sprite's idle detector.
 
-Holding `PUT /v1/tasks/lma-agent-turn` (`expire: "10m"`) on `agent_start` (with a 5-minute refresh heartbeat while `rpc.busy` is active) and releasing `DELETE /v1/tasks/lma-agent-turn` on `agent_end`/`abort` guarantees even long multi-tool VOD clipping turns finish cleanly — while the 10-minute TTL guarantees a crash can never leak billing.
+Holding `PUT /v1/tasks/lma-agent-turn` (`expire: "10m"`) on `agent_start` (with a 5-minute refresh heartbeat while `rpc.busy` is active, capped at a hard 30-minute ceiling) and releasing `DELETE /v1/tasks/lma-agent-turn` on `agent_end`/`abort` keeps long multi-tool VOD clipping turns alive without letting a crash or hung turn leak billing indefinitely.
 
 ---
 
@@ -103,7 +103,7 @@ flowchart LR
 
 ## 5. Defense-in-Depth Security
 
-- **Zero outbound API keys in VM or repo:** All 6 external API credentials stay inside Fly.io's encrypted org gateway. Inbound verification secrets (`LMA_WEB_PASSWORD` and Upstash QStash signing keys) live strictly in `chmod 600 ~/.config/lma/web.env` outside git.
-- **Fail-closed Web Chat UI gate:** `setup.sh` auto-generates `LMA_WEB_PASSWORD` in `~/.config/lma/web.env`; if unset, `web/server.ts` fails closed (`401` on `/` &amp; `/api/*`, `503` on `/api/auth/login`), rate-limits brute-force attempts (`429` with bounded IP map), and signs `HttpOnly; SameSite=Lax; Secure` cookies verified with `crypto.timingSafeEqual`.
-- **Headless RPC execution model &amp; containment:** Because `omp` runs headlessly (`--mode rpc --no-ui`), `agent/config.yml` uses `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `/home/sprite/clips/` path containment on `vod-clipper.ts` &amp; `media-reviewer.ts`, SSRF/size-capped thumbnail fetching, and prompt-injection rules for untrusted web/chat data.
+- **Zero outbound API keys in VM or repo:** All 6 external API credentials stay inside Fly.io's encrypted org gateway. Inbound verification secrets (`LMA_WEB_PASSWORD` and Upstash QStash signing keys) live in `chmod 600 ~/.config/lma/web.env` outside git, and `web/server.ts` strips them from the `omp` subprocess environment (`qstash-scheduler.ts` reads only the non-secret `LMA_PUBLIC_URL` env var and never opens `web.env`).
+- **Fail-closed Web Chat UI gate:** `setup.sh` auto-generates `LMA_WEB_PASSWORD` in `~/.config/lma/web.env`; if unset, `web/server.ts` fails closed (`401` on `/` &amp; `/api/*`, `503` on `/api/auth/login`), rate-limits brute-force attempts (`429` keyed on `fly-client-ip` / rightmost proxy hop / socket IP), and sets `HttpOnly; SameSite=Lax` cookies (with `Secure` over HTTPS / `x-forwarded-proto: https`) verified with `crypto.timingSafeEqual`.
+- **Headless RPC execution model &amp; containment:** Because `omp` runs headlessly (`--mode rpc --no-ui`) inside a dedicated single-tenant Sprite VM, `agent/config.yml` uses `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `/home/sprite/clips/` path containment on `vod-clipper.ts` &amp; `media-reviewer.ts`, SSRF/size-capped thumbnail fetching, and prompt-injection rules for untrusted web/chat data.
 - **Path-traversal protection:** `POST /api/sessions/switch`, `/api/clips/file/...` (with HTTP `Range` 206 support), and static file serving strictly verify `path.resolve(...)` stays within the expected directory.

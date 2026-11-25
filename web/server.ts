@@ -105,9 +105,16 @@ const loginFailures = new Map<string, { count: number; resetAt: number }>();
 const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_FAILURES = 5;
 
-function getClientKey(req: Request): string {
-  const fwd = req.headers.get("fly-client-ip") || req.headers.get("x-forwarded-for") || "local";
-  return fwd.split(",")[0].trim() || "local";
+function getClientKey(req: Request, server?: { requestIP(r: Request): { address: string } | null }): string {
+  const flyIp = req.headers.get("fly-client-ip")?.trim();
+  if (flyIp) return flyIp;
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    // Use the rightmost proxy-appended hop rather than the client-spoofable leftmost hop
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
+  return server?.requestIP(req)?.address || "local";
 }
 
 function isLoginRateLimited(key: string): boolean {
@@ -391,6 +398,8 @@ class OmpRpcBridge {
   private pending = new Map<string, PendingRequest>();
   private reqCounter = 0;
   private holdHeartbeat: NodeJS.Timeout | null = null;
+  private holdStartedAt = 0;
+  private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
   public busy = false;
   public activity = "Thinking...";
 
@@ -409,16 +418,28 @@ class OmpRpcBridge {
   }
 
   public async holdSpriteActive(): Promise<void> {
+    if (!this.holdStartedAt) this.holdStartedAt = Date.now();
     await this.putSpriteHold();
     if (!this.holdHeartbeat && fs.existsSync("/.sprite/api.sock")) {
-      // Refresh 10m TTL every 5 minutes during long multi-tool / ffmpeg turns
+      // Refresh 10m TTL every 5 minutes during long multi-tool / ffmpeg turns,
+      // capped at MAX_HOLD_MS (30m) so a hung turn can never renew indefinitely.
       this.holdHeartbeat = setInterval(() => {
-        if (this.busy) void this.putSpriteHold();
+        if (!this.busy) return;
+        if (Date.now() - this.holdStartedAt >= OmpRpcBridge.MAX_HOLD_MS) {
+          console.warn("[lma-web] Tasks API hold reached 30m ceiling; stopping renewals.");
+          if (this.holdHeartbeat) {
+            clearInterval(this.holdHeartbeat);
+            this.holdHeartbeat = null;
+          }
+          return;
+        }
+        void this.putSpriteHold();
       }, 5 * 60 * 1000);
     }
   }
 
   private releaseSpriteHold() {
+    this.holdStartedAt = 0;
     if (this.holdHeartbeat) {
       clearInterval(this.holdHeartbeat);
       this.holdHeartbeat = null;
@@ -692,8 +713,11 @@ class OmpRpcBridge {
     try {
       await this.sendCommand("prompt", { message });
     } catch (err) {
-      this.busy = false;
-      this.releaseSpriteHold();
+      const isTimeout = err instanceof Error && /timed out/i.test(err.message);
+      if (!isTimeout) {
+        this.busy = false;
+        this.releaseSpriteHold();
+      }
       throw err;
     }
   }
@@ -719,7 +743,7 @@ const rpc = new OmpRpcBridge();
 Bun.serve({
   port: PORT,
   idleTimeout: 255,
-  async fetch(req) {
+  async fetch(req, server) {
     const url = new URL(req.url);
 
     // Public health check
@@ -735,7 +759,7 @@ Bun.serve({
           { status: 503 }
         );
       }
-      const clientKey = getClientKey(req);
+      const clientKey = getClientKey(req, server);
       if (isLoginRateLimited(clientKey)) {
         return Response.json(
           { error: "Too many login attempts. Try again in 1 minute." },

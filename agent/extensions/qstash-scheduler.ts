@@ -1,26 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 let cachedGatewayUrl: string | null = null;
 
-function readWebEnvValue(key: string): string | undefined {
-  if (process.env[key]) return process.env[key];
-  const home = process.env.HOME || "/home/sprite";
-  const envFile = path.join(home, ".config", "lma", "web.env");
-  if (!fs.existsSync(envFile)) return undefined;
-  for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && m[1] === key) {
-      return m[2].replace(/^['"]|['"]$/g, "").trim();
-    }
-  }
-  return undefined;
-}
-
 async function getQStashGatewayUrl(): Promise<string> {
   if (cachedGatewayUrl) return cachedGatewayUrl;
-  const fromEnv = readWebEnvValue("SPRITES_QSTASH_GATEWAY_URL");
+  const fromEnv = process.env.SPRITES_QSTASH_GATEWAY_URL?.trim();
   if (fromEnv) {
     cachedGatewayUrl = fromEnv.replace(/\/$/, "");
     return cachedGatewayUrl;
@@ -51,10 +35,10 @@ async function getQStashGatewayUrl(): Promise<string> {
 }
 
 function getWakeupTargetUrl(): string {
-  const base = readWebEnvValue("LMA_PUBLIC_URL");
+  const base = process.env.LMA_PUBLIC_URL?.trim();
   if (!base) {
     throw new Error(
-      "LMA_PUBLIC_URL is not configured in ~/.config/lma/web.env (e.g. https://<sprite>.sprites.app)."
+      "LMA_PUBLIC_URL is not set in environment (set it in ~/.config/lma/web.env for lma-web or export LMA_PUBLIC_URL for CLI sessions)."
     );
   }
   return `${base.replace(/\/$/, "")}/api/wakeup`;
@@ -71,12 +55,12 @@ export default function (pi: ExtensionAPI) {
       properties: {
         label: {
           type: "string",
-          description: "Short human-readable label (e.g. 'Pre-stream check for Hans collab').",
+          description: "Short human-readable label (e.g. 'Pre-stream check for Friday collab').",
         },
         prompt: {
           type: "string",
           description:
-            "Exact instruction for Professor L to execute when woken up (e.g. 'Remind Roffi his stream with Hans starts in 1 hour and check his Buffer drafts').",
+            "Exact instruction for Professor L to execute when woken up (e.g. 'Remind the streamer their collab starts in 1 hour and check their Buffer drafts').",
         },
         runAt: {
           type: "string",
@@ -109,6 +93,7 @@ export default function (pi: ExtensionAPI) {
       const targetUrl = getWakeupTargetUrl();
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        "Upstash-Retries": "3",
       };
 
       let endpoint: string;

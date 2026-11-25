@@ -29,7 +29,6 @@ lma/
 ├── DESIGN.md                   # CafeBlend Studio design system tokens & rules
 ├── README.md                   # Project overview + 1-prompt agent-first setup
 ├── setup.sh                    # Idempotent Sprite bootstrap (omp, ffmpeg, yt-dlp, web build, lma-web service)
-├── .kanban/                    # File-based task & roadmap cards
 ├── docs/                       # Human architecture deep dive (architecture.md) + agent-first setup guides (setup/)
 ├── agent/
 │   ├── APPEND_SYSTEM.md        # Professor L persona, guardrails, cutoff-proof VM & tool map

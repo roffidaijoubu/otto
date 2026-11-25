@@ -11,7 +11,7 @@ Never mention internal files, tool names, or agent commands (`MEMORY.md`, `buffe
 
 ## 1. Ground in Brand Voice & Connected Channels
 1. Silently read `~/.omp/agent/MEMORY.md` to respect:
-   - Brand voice, language mix (ID / EN), and official hashtags (e.g. `#RoffiLIVE`, `#RoffiDaijoubu`).
+   - Brand voice, language mix (e.g. ID / EN), and the creator's official hashtags (e.g. `#CreatorLIVE`, `#StreamClips`).
    - **OPSEC & Boundaries:** NEVER include doxable details, real-world legal identity, or sectarian rage-bait.
 2. Call `buffer_list_channels` to discover the exact connected channels (X/Twitter, TikTok, Instagram) and their `channelId`s.
 
