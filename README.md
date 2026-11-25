@@ -50,14 +50,14 @@ Meanwhile, most "AI creator tools" try to replace the exact craft your community
 
 ```mermaid
 flowchart LR
-    U["Streamer (sprite console / omp)"] --> S["Fly.io Sprite: lma<br/>APPEND_SYSTEM.md + MEMORY.md + Mnemopi"]
+    U["Streamer (CafeBlend Web UI / CLI)"] --> S["Fly.io Sprite: lma<br/>Bun + omp RPC · MEMORY.md · Mnemopi"]
     S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
-    G --> M["Google Gemini<br/>(Brain)"]
-    G --> E["Exa, Firecrawl, YouTube, Buffer &amp; QStash<br/>(Research, Social &amp; Proactive Scheduling)"]
+    G --> M["Google Gemini<br/>(Brain + Multimodal Review)"]
+    G --> E["Exa, Firecrawl, YouTube, Buffer &amp; QStash<br/>(Research, Social &amp; Proactive Wake-Ups)"]
 ```
 
-- **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw material for human artists and clippers — never replaces them.
-- **Zero API keys inside the VM:** Every call to Google Gemini, Exa, and Firecrawl routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md). Even if you inspect the Sprite's disk or environment, no credentials exist to leak.
+- **Strictly no AI-generated images or video:** Enforced both in the agent's persona and at the tool-permission layer (`generate_image: deny`). `lma` helps you prep sharper briefs and cleaner raw `.mp4`/`.srt` material for human artists and clippers — never replaces them.
+- **Zero API keys inside the VM:** Every call to Gemini, Exa, Firecrawl, YouTube, Buffer, and Upstash QStash routes through [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md). Even if you inspect the Sprite's disk or environment, no credentials exist to leak.
 - **Sleeps when idle, wakes up remembering everything:** Powered by a persistent NVMe filesystem on Fly.io Sprites, combining a structured `MEMORY.md` talent dossier (3 Goals, Ideal Schedule, 3 GOATs, 3+1 tracker) with built-in **Mnemopi** SQLite memory across sessions.
 - **Professor L coaching playbook:** Grounded in Ludwig's *Streamer University* lectures — healthy delusion paired with data honesty, segment-first content funnels, the 3+1 experiment rule, zero-friction collabs, and protecting the talent's humanity.
 
@@ -97,9 +97,8 @@ sprite create --skip-console lma && sprite use lma
 # 2. Clone the repo inside the Sprite and run the idempotent installer
 sprite exec -- bash -c "git clone <this-repo-url> ~/lma && bash ~/lma/setup.sh"
 
-# 3. Open an interactive session with Professor L
-sprite console
-omp
+# 3. Open the CafeBlend Web Chat UI at https://<your-sprite>.sprites.app
+#    (or chat directly from your terminal via: sprite console && omp)
 ```
 
 <br>
@@ -157,6 +156,14 @@ Built actively during **Fly.io Hacksgiving 2026**:
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, YouTube (Composio v3), Buffer (X/TikTok/IG), and Upstash QStash (proactive wake-ups)
 - ✅ Professor L persona, strict no-AI-art/video guardrails, 5 streamer ops skills, `vod-clipper` live-chat hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
 - ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
+
+<br>
+
+---
+
+## Built By
+
+**Roffi Daijoubu** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu) · [YouTube](https://www.youtube.com/@roffi_daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
 
 <br>
 
