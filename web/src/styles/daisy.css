@@ -1,37 +1,37 @@
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: lofi --default;
+  themes: light --default;
 }
 
-/* Swappable Monochrome Wireframe DaisyUI Theme — replace palette when applying DESIGN.md */
+/* CafeBlend Studio DaisyUI v5 Theme (from DESIGN.md) */
 @plugin "daisyui/theme" {
-  name: "lma-wire";
+  name: "lma-cafe";
   default: true;
   prefersdark: false;
   color-scheme: light;
-  --color-base-100: #ffffff;
-  --color-base-200: #f7f7f7;
-  --color-base-300: #eeeeee;
-  --color-base-content: #111111;
-  --color-primary: #111111;
+  --color-base-100: #fdf6ec;
+  --color-base-200: #faf0e1;
+  --color-base-300: #f0e6d6;
+  --color-base-content: #3e2723;
+  --color-primary: #8b5e3c;
   --color-primary-content: #ffffff;
-  --color-secondary: #333333;
+  --color-secondary: #c4956a;
   --color-secondary-content: #ffffff;
-  --color-accent: #111111;
+  --color-accent: #8b5e3c;
   --color-accent-content: #ffffff;
-  --color-neutral: #111111;
-  --color-neutral-content: #ffffff;
-  --color-info: #333333;
+  --color-neutral: #3e2723;
+  --color-neutral-content: #fdf6ec;
+  --color-info: #6366f1;
   --color-info-content: #ffffff;
-  --color-success: #16a34a;
+  --color-success: #059669;
   --color-success-content: #ffffff;
   --color-warning: #d97706;
   --color-warning-content: #ffffff;
-  --color-error: #dc2626;
+  --color-error: #ef4444;
   --color-error-content: #ffffff;
-  --radius-selector: 0rem;
-  --radius-field: 0rem;
-  --radius-box: 0rem;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.75rem;
+  --radius-box: 0.75rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;

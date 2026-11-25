@@ -17,7 +17,7 @@ const emit = defineEmits<{
 <template>
   <header class="header">
     <div class="header-left">
-      <button class="btn btn-sm btn-outline font-mono" type="button" @click="emit('toggleSidebar')">
+      <button class="btn btn-sm btn-cafe-secondary" type="button" @click="emit('toggleSidebar')">
         {{ sidebarOpen ? "Hide" : "Chats" }}
       </button>
       <div class="brand">
@@ -29,14 +29,16 @@ const emit = defineEmits<{
       </div>
     </div>
     <div class="header-actions">
-      <span class="status">
+      <span class="status-pill" :class="statusState">
         <span class="status-dot" :class="statusState"></span>
         <span>{{ statusLabel }}</span>
       </span>
-      <button class="btn btn-sm btn-outline font-mono" type="button" @click="emit('toggleMissionControl')">
+      <button class="btn btn-sm btn-cafe-secondary" type="button" @click="emit('toggleMissionControl')">
         {{ missionControlOpen ? "Close Panel" : "Mission Control" }}
       </button>
-      <button class="btn btn-sm btn-outline font-mono" type="button" :disabled="busy" @click="emit('newChat')">New Chat</button>
+      <button class="btn btn-sm btn-cafe-primary" type="button" :disabled="busy" @click="emit('newChat')">
+        + New Chat
+      </button>
     </div>
   </header>
 </template>
@@ -48,14 +50,14 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-strong);
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 .brand {
   display: flex;
@@ -63,25 +65,26 @@ const emit = defineEmits<{
   gap: 10px;
 }
 .avatar {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-circle);
-  border: 1px solid var(--border-strong);
   display: grid;
   place-items: center;
-  font-weight: 700;
-  font-size: 13px;
-  font-family: var(--font-mono);
-  background: var(--surface);
-  color: var(--fg);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: var(--shadow-raised-sm);
 }
 .brand-title {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.01em;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.1;
+  color: var(--fg);
 }
 .brand-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--fg-muted);
   font-family: var(--font-mono);
 }
@@ -90,25 +93,39 @@ const emit = defineEmits<{
   align-items: center;
   gap: 10px;
 }
-.status {
+.status-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-circle);
+  font-size: 11.5px;
   font-family: var(--font-mono);
-  color: var(--fg-muted);
+  font-weight: 500;
+}
+.status-pill.ready {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.status-pill.busy {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.status-pill.error {
+  background: var(--error-bg);
+  color: var(--error);
 }
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-circle);
-  background: var(--warning);
 }
 .status-dot.ready { background: var(--success); }
 .status-dot.busy { background: var(--warning); }
 .status-dot.error { background: var(--error); }
 
 @media (max-width: 768px) {
-  .brand-sub { display: none; }
+  .header { padding: 0 12px; }
+  .brand-sub, .status-pill { display: none; }
 }
 </style>

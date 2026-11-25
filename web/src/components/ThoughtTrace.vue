@@ -29,7 +29,7 @@ watch(
         {{ live ? "Thinking..." : "Thought trace" }}
         <template v-if="steps && steps.length"> · {{ steps.length }} step{{ steps.length > 1 ? "s" : "" }}</template>
       </span>
-      <span class="trace-caret">{{ expanded ? "[-]" : "[+]" }}</span>
+      <span class="trace-caret">{{ expanded ? "▲" : "▼" }}</span>
     </button>
 
     <div v-if="expanded" class="trace-body">
@@ -39,7 +39,7 @@ watch(
           <span>{{ step.label }}</span>
         </div>
       </div>
-      <div v-if="thinking && thinking.trim()" class="trace-text" v-html="thinkingHtml"></div>
+      <div v-if="thinking && thinking.trim()" class="trace-text md-content" v-html="thinkingHtml"></div>
     </div>
   </div>
 </template>
@@ -47,94 +47,80 @@ watch(
 <style scoped>
 .trace {
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .trace-toggle {
-  width: 100%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 5px 12px;
   border: none;
-  background: var(--surface);
-  color: var(--fg-muted);
+  border-radius: var(--radius-circle);
+  background: var(--surface-alt);
+  color: var(--accent);
+  box-shadow: var(--shadow-raised-sm);
   font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: left;
+  font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .trace-toggle:hover {
-  background: var(--surface-alt);
-  color: var(--fg);
+  background: var(--surface);
 }
 .trace-dot {
   width: 7px;
   height: 7px;
   border-radius: var(--radius-circle);
-  background: var(--success);
-  flex-shrink: 0;
+  background: var(--accent-secondary);
 }
 .trace-dot.live {
   background: var(--warning);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-.trace-label {
-  flex: 1;
+  animation: pulse 1.1s ease-in-out infinite;
 }
 .trace-caret {
-  font-weight: 700;
+  font-size: 9px;
+  opacity: 0.7;
 }
 .trace-body {
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .trace-steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .trace-step {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg);
 }
 .step-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-circle);
   background: var(--warning);
+  flex-shrink: 0;
 }
 .step-dot.done {
   background: var(--success);
 }
 .trace-text {
-  margin: 0;
-  word-break: break-word;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
   color: var(--fg-muted);
   max-height: 220px;
   overflow-y: auto;
-}
-.trace-text :deep(p) { margin: 0 0 6px 0; }
-.trace-text :deep(p:last-child) { margin-bottom: 0; }
-.trace-text :deep(strong) { color: var(--fg); }
-.trace-text :deep(ul),
-.trace-text :deep(ol) { margin: 4px 0 6px 0; padding-left: 16px; }
-.trace-text :deep(code) {
-  padding: 0 3px;
-  border: 1px solid var(--border);
-  background: var(--surface);
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }

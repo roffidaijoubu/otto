@@ -106,36 +106,53 @@ const LOGIN_HTML = `<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Professor L — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Mono:wght@400;500&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body {
-      margin: 0; height: 100%; background: #ffffff; color: #111111;
-      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-      display: grid; place-items: center;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; background: #fdf6ec; color: #3e2723;
+      font-family: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: grid; place-items: center; padding: 16px;
     }
     .card {
-      width: min(92vw, 360px); border: 1px solid #111111; padding: 24px; background: #f7f7f7;
+      width: min(92vw, 380px); padding: 28px; background: #ffffff;
+      border-radius: 16px; box-shadow: 6px 6px 12px #d5c9b8, -6px -6px 12px #ffffff;
     }
-    h1 { margin: 0 0 6px 0; font-size: 16px; }
-    p { margin: 0 0 16px 0; font-size: 13px; color: #595959; }
+    .avatar {
+      width: 40px; height: 40px; border-radius: 9999px; background: #8b5e3c; color: #ffffff;
+      display: grid; place-items: center; font-family: "DM Serif Display", Georgia, serif;
+      font-size: 20px; margin-bottom: 14px; box-shadow: 3px 3px 7px #d5c9b8, -3px -3px 7px #ffffff;
+    }
+    h1 {
+      margin: 0 0 6px 0; font-family: "DM Serif Display", Georgia, serif;
+      font-weight: 400; font-size: 26px; color: #3e2723;
+    }
+    p { margin: 0 0 18px 0; font-size: 13.5px; color: #6d4c41; line-height: 1.5; }
     input {
-      width: 100%; padding: 10px 12px; border: 1px solid #111111; background: #ffffff;
-      font-size: 14px; margin-bottom: 10px; outline: none;
+      width: 100%; padding: 11px 14px; border: none; border-radius: 12px;
+      background: #f0e6d6; box-shadow: inset 4px 4px 8px #d5c9b8, inset -4px -4px 8px #ffffff;
+      color: #3e2723; font-family: "Work Sans", sans-serif; font-size: 14px;
+      margin-bottom: 14px; outline: none;
     }
+    input:focus { box-shadow: inset 4px 4px 8px #d5c9b8, inset -4px -4px 8px #ffffff, 0 0 0 3px rgba(139,94,60,0.25); }
     button {
-      width: 100%; padding: 10px 12px; border: 1px solid #111111; background: #111111;
-      color: #ffffff; font-family: ui-monospace, monospace; font-size: 13px;
-      font-weight: 700; cursor: pointer;
+      width: 100%; padding: 11px 16px; border: none; border-radius: 12px; background: #8b5e3c;
+      color: #ffffff; font-family: "Work Sans", sans-serif; font-size: 14px; font-weight: 600;
+      cursor: pointer; box-shadow: 3px 3px 7px #d5c9b8, -3px -3px 7px #ffffff;
     }
-    .err { color: #b91c1c; font-family: ui-monospace, monospace; font-size: 12px; margin-top: 10px; }
+    button:hover { background: #6b4226; }
+    .err { color: #ef4444; font-family: "IBM Plex Mono", monospace; font-size: 12px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <form class="card" id="f">
-    <h1>Professor L — Talent Manager</h1>
-    <p>Enter your passcode to open this private Sprite.</p>
+    <div class="avatar">L</div>
+    <h1>Professor L</h1>
+    <p>Enter your passcode to open this private talent studio.</p>
     <input type="password" id="pw" placeholder="Passcode" autocomplete="current-password" autofocus required />
-    <button type="submit">Unlock</button>
+    <button type="submit">Unlock Studio</button>
     <div class="err" id="err"></div>
   </form>
   <script>

@@ -49,8 +49,10 @@ function onKeydown(e: KeyboardEvent) {
         @input="onInput"
         @keydown="onKeydown"
       ></textarea>
-      <button v-if="busy" class="btn btn-danger" type="button" @click="emit('stop')">Stop</button>
-      <button class="btn btn-primary" type="submit" :disabled="busy || !modelValue.trim()">Send</button>
+      <button v-if="busy" class="btn btn-md btn-danger" type="button" @click="emit('stop')">Stop</button>
+      <button class="btn btn-md btn-cafe-primary" type="submit" :disabled="busy || !modelValue.trim()">
+        Send
+      </button>
     </form>
   </div>
 </template>
@@ -58,33 +60,44 @@ function onKeydown(e: KeyboardEvent) {
 <style scoped>
 .composer-wrap {
   flex-shrink: 0;
-  border-top: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border);
   background: var(--bg);
-  padding: 12px 16px;
+  padding: 14px 20px 18px;
 }
 .composer {
   max-width: var(--max-width);
   margin: 0 auto;
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: flex-end;
 }
 .composer textarea {
   flex: 1;
-  min-height: 42px;
+  min-height: 44px;
   max-height: 160px;
   resize: none;
-  padding: 10px 12px;
-  border: 1px solid var(--border-strong);
+  padding: 11px 15px;
+  border: none;
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-inset);
   color: var(--fg);
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
   outline: none;
+  transition: background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.composer textarea::placeholder {
+  color: var(--fg-muted);
+  opacity: 0.75;
+}
+.composer textarea:hover {
+  background: var(--surface-inset-hover);
 }
 .composer textarea:focus {
-  background: var(--surface);
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-inset), var(--shadow-focus);
 }
 </style>

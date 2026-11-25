@@ -110,38 +110,35 @@ watch(
         <div class="mc-sub">Live Sprite State</div>
       </div>
       <div class="flex items-center gap-2">
-        <button class="btn btn-xs btn-outline" type="button" :disabled="loading" @click="fetchAll">
+        <button class="btn btn-xs btn-cafe-secondary" type="button" :disabled="loading" @click="fetchAll">
           {{ loading ? "..." : "Refresh" }}
         </button>
         <button class="btn btn-xs btn-ghost" type="button" @click="emit('close')">✕</button>
       </div>
     </div>
 
-    <!-- DaisyUI Tabs -->
-    <div role="tablist" class="tabs tabs-border px-3 pt-2 border-b border-base-300 bg-base-100">
+    <!-- CafeBlend Pill Tabs -->
+    <div class="mc-tabs">
       <button
-        role="tab"
         type="button"
-        class="tab text-xs font-mono"
-        :class="{ 'tab-active font-bold': activeTab === 'dossier' }"
+        class="mc-tab"
+        :class="{ active: activeTab === 'dossier' }"
         @click="activeTab = 'dossier'"
       >
         Dossier
       </button>
       <button
-        role="tab"
         type="button"
-        class="tab text-xs font-mono"
-        :class="{ 'tab-active font-bold': activeTab === 'connectors' }"
+        class="mc-tab"
+        :class="{ active: activeTab === 'connectors' }"
         @click="activeTab = 'connectors'"
       >
         Connectors ({{ connectors.length }})
       </button>
       <button
-        role="tab"
         type="button"
-        class="tab text-xs font-mono"
-        :class="{ 'tab-active font-bold': activeTab === 'clips' }"
+        class="mc-tab"
+        :class="{ active: activeTab === 'clips' }"
         @click="activeTab = 'clips'"
       >
         Clips ({{ clips.length }})
@@ -151,24 +148,20 @@ watch(
     <!-- Panel Body -->
     <div class="mc-body">
       <!-- TAB 1: TALENT DOSSIER -->
-      <section v-if="activeTab === 'dossier'" class="space-y-3">
-        <div class="flex items-center justify-between text-xs font-mono opacity-70">
+      <section v-if="activeTab === 'dossier'" class="space-y-4">
+        <div class="flex items-center justify-between text-xs font-mono opacity-75">
           <span>Persistent Talent Dossier</span>
           <span v-if="dossierUpdatedAt">Updated {{ formatTime(dossierUpdatedAt) }}</span>
         </div>
 
-        <div
-          v-if="dossierHtml"
-          class="dossier-md md-content border border-base-300 bg-base-200 p-3 text-sm leading-relaxed"
-          v-html="dossierHtml"
-        ></div>
-        <div v-else class="border border-base-300 bg-base-200 p-4 text-xs font-mono opacity-75">
+        <div v-if="dossierHtml" class="cafe-card md-content text-sm" v-html="dossierHtml"></div>
+        <div v-else class="cafe-card text-xs font-mono opacity-80">
           No talent dossier recorded yet. Start onboarding with Professor L to populate your Goals,
           Ideal Schedule, 3 GOATs, and 3+1 Stream Tracker.
         </div>
 
         <button
-          class="btn btn-sm btn-outline w-full font-mono"
+          class="btn btn-sm btn-cafe-primary w-full"
           type="button"
           @click="emit('askPrompt', 'Review my current goals, schedule, and 3+1 stream tracker and tell me what needs attention next.')"
         >
@@ -177,46 +170,48 @@ watch(
       </section>
 
       <!-- TAB 2: ZERO-KEY CONNECTORS & GUARDRAILS -->
-      <section v-else-if="activeTab === 'connectors'" class="space-y-3">
-        <div class="grid grid-cols-2 gap-2">
-          <div class="border border-base-300 bg-base-200 p-2.5">
-            <div class="text-[11px] font-mono opacity-65">LOCAL API KEYS</div>
-            <div class="mt-1 flex items-center gap-1.5 font-mono text-sm font-bold">
-              <span class="badge badge-xs badge-success"></span>
-              <span>{{ zeroLocalKeys ? "0 Keys in VM" : "Check Env" }}</span>
+      <section v-else-if="activeTab === 'connectors'" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="cafe-card !p-3">
+            <div class="text-[11px] font-mono opacity-70">LOCAL API KEYS</div>
+            <div class="mt-2">
+              <span class="chip-pill chip-success">
+                {{ zeroLocalKeys ? "0 Keys in VM" : "Check Env" }}
+              </span>
             </div>
           </div>
-          <div class="border border-base-300 bg-base-200 p-2.5">
-            <div class="text-[11px] font-mono opacity-65">AI ART &amp; VIDEO</div>
-            <div class="mt-1 flex items-center gap-1.5 font-mono text-sm font-bold">
-              <span class="badge badge-xs badge-error"></span>
-              <span>{{ aiMediaDisabled ? "Disabled" : "Enabled" }}</span>
+          <div class="cafe-card !p-3">
+            <div class="text-[11px] font-mono opacity-70">AI ART &amp; VIDEO</div>
+            <div class="mt-2">
+              <span class="chip-pill chip-error">
+                {{ aiMediaDisabled ? "Disabled" : "Enabled" }}
+              </span>
             </div>
           </div>
         </div>
 
-        <div class="text-xs font-mono opacity-70 pt-1">
+        <div class="text-xs font-mono opacity-75 pt-1">
           Live Fly.io Sprites Gateway Connectors
         </div>
 
-        <div v-if="connectors.length === 0" class="border border-base-300 bg-base-200 p-3 text-xs font-mono opacity-70">
+        <div v-if="connectors.length === 0" class="cafe-card text-xs font-mono opacity-75">
           No active connectors reported by gateway.
         </div>
 
-        <div v-else class="space-y-2">
+        <div v-else class="space-y-3">
           <div
             v-for="c in connectors"
             :key="c.displayName + c.provider"
-            class="border border-base-300 bg-base-100 p-3"
+            class="cafe-card !p-3.5"
           >
             <div class="flex items-center justify-between gap-2">
               <span class="font-semibold text-sm">{{ c.displayName }}</span>
-              <span class="badge badge-xs badge-success font-mono">LIVE</span>
+              <span class="chip-pill chip-success">LIVE</span>
             </div>
-            <div class="mt-1 text-[11px] font-mono opacity-65">
+            <div class="mt-1 text-[11px] font-mono opacity-70">
               provider: {{ c.provider }} · auth: {{ c.connectionType }}
             </div>
-            <p v-if="c.description" class="mt-1 text-xs opacity-80">
+            <p v-if="c.description" class="mt-1.5 text-xs opacity-80">
               {{ c.description }}
             </p>
           </div>
@@ -224,16 +219,16 @@ watch(
       </section>
 
       <!-- TAB 3: RAW CLIP HAND-OFF SHELF -->
-      <section v-else class="space-y-3">
-        <div class="border border-base-300 bg-base-200 p-2.5 text-xs font-mono">
+      <section v-else class="space-y-4">
+        <div class="cafe-card !p-3 text-xs font-mono">
           Human-Editor Hand-Off Shelf — raw <code>.mp4</code> + synced <code>.srt</code> cuts
           (strictly zero AI video editing).
         </div>
 
-        <div v-if="clips.length === 0" class="border border-base-300 bg-base-200 p-4 text-xs font-mono opacity-75 space-y-2">
+        <div v-if="clips.length === 0" class="cafe-card text-xs font-mono opacity-80 space-y-3">
           <div>No raw clips cut yet.</div>
           <button
-            class="btn btn-xs btn-outline w-full font-mono"
+            class="btn btn-sm btn-cafe-primary w-full"
             type="button"
             @click="emit('askPrompt', 'Scan my latest YouTube livestream VOD for the top 3 clippable hype moments.')"
           >
@@ -245,17 +240,17 @@ watch(
           <div
             v-for="clip in clips"
             :key="clip.mp4Url"
-            class="border border-base-300 bg-base-100 p-3 space-y-2"
+            class="cafe-card !p-3.5 space-y-2.5"
           >
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="font-semibold text-sm truncate">{{ clip.name }}</div>
-                <div class="text-[11px] font-mono opacity-65">
+                <div class="text-[11px] font-mono opacity-70">
                   VOD {{ clip.videoId }} · {{ formatBytes(clip.sizeBytes) }} · {{ formatTime(clip.updatedAt) }}
                 </div>
               </div>
               <button
-                class="btn btn-xs btn-outline font-mono shrink-0"
+                class="btn btn-xs btn-cafe-secondary shrink-0"
                 type="button"
                 @click="previewClipUrl = previewClipUrl === clip.mp4Url ? null : clip.mp4Url"
               >
@@ -268,20 +263,20 @@ watch(
               :src="clip.mp4Url"
               controls
               preload="metadata"
-              class="w-full border border-base-300 bg-black max-h-56"
+              class="w-full rounded-lg bg-black max-h-56"
             ></video>
 
             <div class="flex items-center gap-2">
               <a
                 :href="`${clip.mp4Url}?download=1`"
-                class="btn btn-xs btn-primary font-mono flex-1"
+                class="btn btn-xs btn-cafe-primary flex-1"
               >
                 Download .mp4
               </a>
               <a
                 v-if="clip.srtUrl"
                 :href="`${clip.srtUrl}?download=1`"
-                class="btn btn-xs btn-outline font-mono flex-1"
+                class="btn btn-xs btn-cafe-secondary flex-1"
               >
                 Download .srt
               </a>
@@ -297,7 +292,7 @@ watch(
 .mc-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(62, 39, 35, 0.25);
   z-index: 25;
 }
 .mc-drawer {
@@ -305,15 +300,16 @@ watch(
   top: 0;
   right: 0;
   bottom: 0;
-  width: 400px;
-  max-width: 92vw;
+  width: 420px;
+  max-width: 94vw;
   background: var(--bg);
-  border-left: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
   z-index: 30;
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
-  transition: transform 180ms ease;
+  transition: transform 200ms var(--ease-out);
 }
 .mc-drawer.open {
   transform: translateX(0);
@@ -321,52 +317,74 @@ watch(
 .mc-head {
   height: var(--header-height);
   flex-shrink: 0;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-strong);
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 .mc-title {
-  font-weight: 700;
-  font-size: 14px;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--fg);
 }
 .mc-sub {
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--fg-muted);
 }
+.mc-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.mc-tab {
+  flex: 1;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-circle);
+  background: var(--surface-alt);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.mc-tab.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
 .mc-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 18px 16px;
 }
-.dossier-md :deep(h1),
-.dossier-md :deep(h2),
-.dossier-md :deep(h3) {
-  font-weight: 700;
-  margin: 10px 0 4px;
-  font-size: 13px;
+.cafe-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
+  padding: 16px;
 }
-.dossier-md :deep(h1) {
-  font-size: 14px;
-  margin-top: 0;
-}
-.dossier-md :deep(p) {
-  margin: 4px 0;
-  font-size: 12.5px;
-}
-.dossier-md :deep(ul),
-.dossier-md :deep(ol) {
-  margin: 4px 0;
-  padding-left: 18px;
-  font-size: 12.5px;
-}
-.dossier-md :deep(code) {
+.chip-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-circle);
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  background: var(--bg);
-  padding: 0 3px;
-  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+}
+.chip-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.chip-error {
+  background: var(--error-bg);
+  color: var(--error);
 }
 </style>

@@ -32,8 +32,10 @@ function formatTime(iso: string): string {
   <div v-if="open" class="backdrop" @click="emit('close')"></div>
   <aside v-if="open" class="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">Chats</span>
-      <button class="btn" type="button" :disabled="busy" @click="emit('newChat')">+ New</button>
+      <span class="sidebar-title">Conversations</span>
+      <button class="btn btn-xs btn-cafe-secondary" type="button" :disabled="busy" @click="emit('newChat')">
+        + New
+      </button>
     </div>
     <div class="session-list">
       <div v-if="sessions.length === 0" class="session-empty">No previous chats yet.</div>
@@ -54,106 +56,93 @@ function formatTime(iso: string): string {
 </template>
 
 <style scoped>
+.backdrop {
+  display: none;
+}
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-strong);
-  background: var(--surface);
+  height: 100%;
 }
 .sidebar-header {
   height: var(--header-height);
   flex-shrink: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border-strong);
-  background: var(--bg);
 }
 .sidebar-title {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  color: var(--fg);
 }
 .session-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 8px 0;
+}
+.session-empty {
+  padding: 18px 16px;
+  font-size: 13px;
+  color: var(--fg-muted);
 }
 .session-item {
   width: 100%;
   text-align: left;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  background: transparent;
+  padding: 12px 16px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  transition: background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .session-item:hover:not(:disabled) {
-  border-color: var(--border-strong);
   background: var(--surface-alt);
 }
 .session-item.active {
-  border-color: var(--border-strong);
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-.session-item:disabled {
-  opacity: 0.65;
+  background: var(--surface-inset);
+  border-left-color: var(--accent);
   cursor: default;
 }
 .session-item-title {
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .session-item-meta {
-  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--fg-muted);
-}
-.session-item.active .session-item-meta {
-  color: var(--accent-fg);
-  opacity: 0.8;
-}
-.session-empty {
-  padding: 12px 8px;
   font-family: var(--font-mono);
-  font-size: 12px;
   color: var(--fg-muted);
 }
-.backdrop {
-  display: none;
-}
+
 @media (max-width: 768px) {
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(62, 39, 35, 0.28);
+    z-index: 15;
+  }
   .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
     z-index: 20;
-  }
-  .backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 15;
+    box-shadow: var(--shadow-lg);
   }
 }
 </style>

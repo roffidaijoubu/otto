@@ -368,48 +368,57 @@ onMounted(async () => {
 }
 .empty-state {
   margin: auto;
-  max-width: 460px;
-  padding: 24px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
+  max-width: 500px;
+  padding: 28px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-raised);
   text-align: left;
 }
 .empty-state h2 {
   margin: 0 0 8px 0;
-  font-size: 16px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.25;
+  color: var(--fg);
 }
 .empty-state p {
-  margin: 0 0 12px 0;
-  font-size: 13px;
+  margin: 0 0 18px 0;
+  font-size: 14px;
   color: var(--fg-muted);
+  line-height: 1.55;
 }
 .starters {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 .starter-btn {
   text-align: left;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
+  padding: 11px 14px;
+  border: none;
   border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 13px;
+  background: var(--surface-alt);
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 500;
   cursor: pointer;
+  box-shadow: var(--shadow-raised-sm);
+  transition: background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 .starter-btn:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-alt);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
 }
 .activity {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 20px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-alt);
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--fg-muted);
@@ -421,9 +430,9 @@ onMounted(async () => {
   background: var(--warning);
 }
 .error-banner {
-  padding: 8px 16px;
+  padding: 10px 20px;
   border-top: 1px solid var(--error);
-  background: var(--bg);
+  background: var(--error-bg);
   color: var(--error);
   font-family: var(--font-mono);
   font-size: 12px;
