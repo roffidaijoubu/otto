@@ -106,4 +106,9 @@ if command -v sprite-env >/dev/null 2>&1 && [ -f "${REPO_DIR}/web/server.ts" ]; 
     --dir "${HOME}"
 fi
 
+# 7. One-time auto-bootstrap Draft Talent Dossier from connected OAuth accounts (if MEMORY.md is still blank)
+if [ "${LMA_SKIP_BOOTSTRAP:-0}" != "1" ] && [ -f "${REPO_DIR}/scripts/bootstrap-dossier.sh" ]; then
+  bash "${REPO_DIR}/scripts/bootstrap-dossier.sh" || true
+fi
+
 echo "==> Done! Open your Sprite HTTPS URL for Web Chat UI, or run: omp"

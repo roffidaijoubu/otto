@@ -10,7 +10,7 @@ Never mention internal files, tool names, or agent commands (`MEMORY.md`, `exa_s
 ---
 
 ## 1. Check Baseline & Sustainability First
-1. Silently read `~/.omp/agent/MEMORY.md` to review:
+1. Silently read `~/.omp/agent/MEMORY.md` (and optionally call `calendar_sync_google` + `calendar_list_events` to check upcoming Google Calendar commitments/conflicts) to review:
    - The talent's **Ideal Schedule** & **Mandatory Days Off** (if they are trying to stream on a mandatory day off or push past 6 hours without a plan, push back!).
    - The **3+1 Stream Tracker** (last 4 streams) to see whether this stream should be a **Tried & True** format or the 1-in-4 **Experiment** swing.
    - Their niche, content pillars, 3 GOATs, upcoming **"Christmas"** milestone, and **OPSEC boundaries**.

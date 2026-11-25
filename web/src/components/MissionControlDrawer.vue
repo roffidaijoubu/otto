@@ -41,6 +41,9 @@ export interface CalendarEventItem {
   cron: string | null;
   notes: string;
   status: "planned" | "done" | "cancelled";
+  source?: "local" | "google";
+  googleEventId?: string | null;
+  googleHtmlLink?: string | null;
   wakeups: CalendarWakeupHook[];
   createdAt: string;
   updatedAt: string;
@@ -68,7 +71,8 @@ const clips = ref<ClipItem[]>([]);
 const previewClipUrl = ref<string | null>(null);
 const calendarEvents = ref<CalendarEventItem[]>([]);
 const cancellingEventId = ref<string | null>(null);
-
+const syncingGoogle = ref(false);
+const googleSyncNote = ref("");
 const nowDate = new Date();
 const viewYear = ref(nowDate.getFullYear());
 const viewMonth = ref(nowDate.getMonth());
@@ -218,6 +222,34 @@ async function cancelEvent(eventId: string) {
   }
 }
 
+async function syncGoogleCalendar() {
+  syncingGoogle.value = true;
+  googleSyncNote.value = "";
+  try {
+    const res = await fetch("/api/calendar/sync", { method: "POST" });
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      connected?: boolean;
+      added?: number;
+      updated?: number;
+      events?: CalendarEventItem[];
+      error?: string;
+    } | null;
+    if (data?.ok) {
+      if (Array.isArray(data.events)) calendarEvents.value = data.events;
+      googleSyncNote.value = `Synced (+${data.added ?? 0}, ~${data.updated ?? 0})`;
+    } else if (data && data.connected === false) {
+      googleSyncNote.value = "Google Calendar not connected in Composio";
+    } else {
+      googleSyncNote.value = data?.error || "Sync failed";
+    }
+  } catch {
+    googleSyncNote.value = "Sync failed";
+  } finally {
+    syncingGoogle.value = false;
+  }
+}
+
 async function fetchAll() {
   loading.value = true;
   try {
@@ -339,18 +371,32 @@ watch(
       <section v-else-if="activeTab === 'schedule'" class="space-y-4">
         <div class="cafe-card !p-3.5">
           <div class="flex items-center justify-between gap-2 mb-2.5">
-            <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1">
               <button class="btn btn-xs btn-ghost px-1.5" type="button" @click="shiftMonth(-1)">‹</button>
               <span class="text-sm font-medium">{{ monthLabel }}</span>
               <button class="btn btn-xs btn-ghost px-1.5" type="button" @click="shiftMonth(1)">›</button>
             </div>
-            <a
-              href="/api/calendar/export.ics"
-              download="lma-schedule.ics"
-              class="btn btn-xs btn-cafe-secondary"
-            >
-              Export .ics
-            </a>
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                class="btn btn-xs btn-cafe-secondary"
+                :disabled="syncingGoogle"
+                @click="syncGoogleCalendar"
+              >
+                {{ syncingGoogle ? "Syncing..." : "Sync GCal" }}
+              </button>
+              <a
+                href="/api/calendar/export.ics"
+                download="lma-schedule.ics"
+                class="btn btn-xs btn-ghost"
+                title="Download .ics calendar file"
+              >
+                .ics
+              </a>
+            </div>
+          </div>
+          <div v-if="googleSyncNote" class="text-[11px] font-mono opacity-75 mb-2">
+            {{ googleSyncNote }}
           </div>
 
           <div class="cal-weekdays">
@@ -388,14 +434,14 @@ watch(
 
         <div v-if="visibleAgendaEvents.length === 0" class="cafe-card space-y-3">
           <div class="text-xs font-mono opacity-75">
-            {{ selectedDayKey ? "No events scheduled on this day." : "No streams, collabs, or wake-ups scheduled yet." }}
+            {{ selectedDayKey ? "No events scheduled on this day." : "No streams, collabs, or reminders scheduled yet." }}
           </div>
           <button
             class="btn btn-sm btn-cafe-primary w-full"
             type="button"
-            @click="emit('askPrompt', 'Help me schedule my next stream on the calendar with pre-stream and post-stream VOD wake-up hooks.')"
+            @click="emit('askPrompt', 'Help me schedule my next stream on the calendar with an automatic pre-stream check-in and post-stream clip reminder.')"
           >
-            Plan a Stream with Wake-Up Hooks
+            Plan My Next Stream
           </button>
         </div>
 
@@ -406,6 +452,23 @@ watch(
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="chip-pill" :class="eventTypeBadgeClass(evt.type)">
                     {{ evt.type.toUpperCase() }}
+                  </span>
+                  <a
+                    v-if="evt.googleHtmlLink && /^https:\/\//i.test(evt.googleHtmlLink)"
+                    :href="evt.googleHtmlLink"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="chip-pill chip-success no-underline"
+                    title="Open in Google Calendar"
+                  >
+                    GCal ↗
+                  </a>
+                  <span
+                    v-else-if="evt.googleEventId"
+                    class="chip-pill chip-success"
+                    title="Synced with Google Calendar"
+                  >
+                    GCal
                   </span>
                   <span class="text-[11px] font-mono opacity-75">
                     {{ evt.cron ? `Cron: ${evt.cron}` : formatTime(evt.startAt) }}

@@ -117,14 +117,14 @@ export default function (pi: ExtensionAPI) {
     name: "youtube_tool",
     label: "YouTube Tool (Composio)",
     description:
-      "Execute a YouTube action via the Composio v3 Sprites Connector (auto-discovers gateway & connected account). Use youtube_list_tools first if unsure about argument names. NEVER call mutating actions (YOUTUBE_UPDATE_VIDEO, YOUTUBE_UPDATE_THUMBNAIL, YOUTUBE_UPLOAD_VIDEO) without explicit user approval.",
+      "Execute a YouTube action via the Composio v3 Sprites Connector (auto-discovers gateway & connected account). Required top-level parameter is `slug` (NOT `action`). Key schema rules: (1) To discover the authenticated user's own channelId without knowing their handle, call `YOUTUBE_LIST_USER_PLAYLISTS` with `arguments: {}`; (2) `YOUTUBE_GET_CHANNEL_ID_BY_HANDLE` requires `channel_handle` WITH a leading `@` (e.g. `@handle`); (3) `YOUTUBE_GET_CHANNEL_STATISTICS` requires `id` (the UC... channelId), NOT `mine: true`. Use youtube_list_tools if unsure about other slugs. NEVER call mutating actions (YOUTUBE_UPDATE_VIDEO, YOUTUBE_UPDATE_THUMBNAIL, YOUTUBE_UPLOAD_VIDEO) without explicit user approval.",
     parameters: {
       type: "object",
       properties: {
         slug: {
           type: "string",
           description:
-            "Composio YouTube tool slug (e.g. YOUTUBE_GET_CHANNEL_ID_BY_HANDLE, YOUTUBE_GET_CHANNEL_STATISTICS, YOUTUBE_LIST_CHANNEL_VIDEOS, YOUTUBE_VIDEO_DETAILS, YOUTUBE_LOAD_CAPTIONS, YOUTUBE_SEARCH_YOU_TUBE).",
+            "Composio YouTube tool slug (e.g. YOUTUBE_LIST_USER_PLAYLISTS, YOUTUBE_GET_CHANNEL_ID_BY_HANDLE, YOUTUBE_GET_CHANNEL_STATISTICS, YOUTUBE_LIST_CHANNEL_VIDEOS, YOUTUBE_VIDEO_DETAILS, YOUTUBE_LOAD_CAPTIONS, YOUTUBE_SEARCH_YOU_TUBE).",
         },
         arguments: {
           type: "object",

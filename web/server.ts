@@ -759,6 +759,9 @@ interface ServerCalendarEvent {
   cron: string | null;
   notes: string;
   status: "planned" | "done" | "cancelled";
+  source?: "local" | "google";
+  googleEventId?: string | null;
+  googleHtmlLink?: string | null;
   wakeups: ServerCalendarWakeupHook[];
   createdAt: string;
   updatedAt: string;
@@ -873,6 +876,72 @@ function buildCalendarIcs(events: ServerCalendarEvent[]): string {
   lines.push("END:VCALENDAR");
   return lines.join("\r\n") + "\r\n";
 }
+interface ServerGCalCtx {
+  baseUrl: string;
+  connectedAccountId: string;
+  userId: string;
+}
+
+async function resolveServerGoogleCalendar(): Promise<ServerGCalCtx | null> {
+  try {
+    let baseUrl = process.env.SPRITES_COMPOSIO_GATEWAY_URL?.trim()?.replace(/\/$/, "");
+    if (!baseUrl) {
+      const gwRes = await fetch("https://api.sprites.dev/v1/gateway/list", {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!gwRes.ok) return null;
+      const gwData = (await gwRes.json()) as {
+        connections?: Array<{ provider?: string; display_name?: string; gateway_base_url?: string }>;
+      };
+      const conn = gwData.connections?.find(
+        (c) =>
+          c.provider === "composio" ||
+          (c.provider === "custom_api" && /composio/i.test(c.display_name ?? ""))
+      );
+      if (!conn?.gateway_base_url) return null;
+      baseUrl = conn.gateway_base_url.replace(/\/$/, "");
+    }
+    const accRes = await fetch(
+      `${baseUrl}/api/v3/connected_accounts?toolkit_slugs=googlecalendar&limit=20`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!accRes.ok) return null;
+    const accData = (await accRes.json()) as {
+      items?: Array<{ id: string; status: string; user_id?: string; userId?: string }>;
+    };
+    const active = accData.items?.find((a) => a.status === "ACTIVE");
+    if (!active) return null;
+    return {
+      baseUrl,
+      connectedAccountId: active.id,
+      userId: active.user_id || active.userId || "default",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function execServerGCalTool(
+  ctx: ServerGCalCtx,
+  slug: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${ctx.baseUrl}/api/v3/tools/execute/${encodeURIComponent(slug)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connected_account_id: ctx.connectedAccountId,
+      user_id: ctx.userId,
+      arguments: args,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    throw new Error(`Composio ${slug} HTTP ${res.status}`);
+  }
+  return (await res.json()) as Record<string, unknown>;
+}
+
 
 
 Bun.serve({
@@ -1111,6 +1180,101 @@ Bun.serve({
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/calendar/sync") {
+      const ctx = await resolveServerGoogleCalendar();
+      if (!ctx) {
+        return Response.json({ ok: false, connected: false, added: 0, updated: 0 });
+      }
+      try {
+        const now = new Date();
+        const timeMin = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const timeMax = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const raw = await execServerGCalTool(ctx, "GOOGLECALENDAR_EVENTS_LIST", {
+          calendarId: "primary",
+          singleEvents: true,
+          orderBy: "startTime",
+          timeMin,
+          timeMax,
+          maxResults: 50,
+        });
+        const d1 = (raw.data && typeof raw.data === "object" ? raw.data : raw) as Record<string, unknown>;
+        const payload = (
+          d1.response_data && typeof d1.response_data === "object" ? d1.response_data : d1
+        ) as Record<string, unknown>;
+        const items = (Array.isArray(payload.items) ? payload.items : []) as Array<{
+          id?: string;
+          summary?: string;
+          description?: string;
+          status?: string;
+          htmlLink?: string;
+          start?: { dateTime?: string; date?: string };
+          end?: { dateTime?: string; date?: string };
+        }>;
+
+        const events = readCalendarEvents();
+        const nowIso = new Date().toISOString();
+        let added = 0;
+        let updated = 0;
+        for (const item of items) {
+          if (!item.id || item.status === "cancelled") continue;
+          const startRaw =
+            item.start?.dateTime || (item.start?.date ? `${item.start.date}T00:00:00Z` : null);
+          if (!startRaw) continue;
+          const endRaw =
+            item.end?.dateTime || (item.end?.date ? `${item.end.date}T23:59:59Z` : null);
+          const rawTitle = (item.summary || "(Untitled Google Event)").trim();
+          const cleanTitle = rawTitle.replace(/^\[(STREAM|COLLAB|UPLOAD|REMINDER|DEADLINE)\]\s*/i, "");
+          const existing = events.find((e) => e.googleEventId === item.id);
+          if (existing) {
+            existing.title = cleanTitle;
+            existing.startAt = startRaw;
+            existing.endAt = endRaw;
+            if (item.description) existing.notes = item.description.trim();
+            if (item.htmlLink) existing.googleHtmlLink = item.htmlLink;
+            existing.updatedAt = nowIso;
+            updated++;
+          } else {
+            const inferredType: ServerCalendarEvent["type"] = /collab/i.test(rawTitle)
+              ? "collab"
+              : /stream|live/i.test(rawTitle)
+                ? "stream"
+                : /upload|video|premiere/i.test(rawTitle)
+                  ? "upload"
+                  : /deadline|due/i.test(rawTitle)
+                    ? "deadline"
+                    : "reminder";
+            events.push({
+              id: `evt_${crypto.randomBytes(5).toString("hex")}`,
+              title: cleanTitle,
+              type: inferredType,
+              startAt: startRaw,
+              endAt: endRaw,
+              cron: null,
+              notes: (item.description || "").trim(),
+              status: "planned",
+              source: "google",
+              googleEventId: item.id,
+              googleHtmlLink: item.htmlLink ?? null,
+              wakeups: [],
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+            added++;
+          }
+        }
+        writeCalendarEvents(events);
+        return Response.json({
+          ok: true,
+          connected: true,
+          added,
+          updated,
+          events: events.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)),
+        });
+      } catch (err: unknown) {
+        return Response.json({ ok: false, connected: true, error: errorMessage(err) }, { status: 502 });
+      }
+    }
+
     if (req.method === "DELETE" && url.pathname.startsWith("/api/calendar/")) {
       const eventId = decodeURIComponent(url.pathname.slice("/api/calendar/".length)).trim();
       if (!/^[A-Za-z0-9_-]{4,64}$/.test(eventId)) {
@@ -1135,10 +1299,24 @@ Bun.serve({
         w.status = "cancelled";
         revoked.push(w.qstashId);
       }
+      let googleDeleted = false;
+      if (evt.googleEventId) {
+        const gCtx = await resolveServerGoogleCalendar();
+        if (gCtx) {
+          await execServerGCalTool(gCtx, "GOOGLECALENDAR_DELETE_EVENT", {
+            calendar_id: "primary",
+            event_id: evt.googleEventId,
+          })
+            .then(() => {
+              googleDeleted = true;
+            })
+            .catch(() => {});
+        }
+      }
       evt.status = "cancelled";
       evt.updatedAt = new Date().toISOString();
       writeCalendarEvents(events);
-      return Response.json({ ok: true, event: evt, revokedQStashIds: revoked });
+      return Response.json({ ok: true, event: evt, revokedQStashIds: revoked, googleDeleted });
     }
 
     if (req.method === "GET" && url.pathname === "/api/connectors") {
