@@ -37,8 +37,8 @@ const loading = ref(false);
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
 const connectors = ref<ConnectorInfo[]>([]);
-const zeroLocalKeys = ref(true);
-const aiMediaDisabled = ref(true);
+const zeroLocalKeys = ref<boolean | null>(null);
+const aiMediaDisabled = ref<boolean | null>(null);
 const clips = ref<ClipItem[]>([]);
 const previewClipUrl = ref<string | null>(null);
 
@@ -80,8 +80,11 @@ async function fetchAll() {
     }
     if (cRes && typeof cRes === "object") {
       connectors.value = Array.isArray(cRes.connectors) ? cRes.connectors : [];
-      zeroLocalKeys.value = cRes.zeroLocalKeys !== false;
-      aiMediaDisabled.value = cRes.aiMediaDisabled !== false;
+      zeroLocalKeys.value = typeof cRes.zeroLocalKeys === "boolean" ? cRes.zeroLocalKeys : null;
+      aiMediaDisabled.value = typeof cRes.aiMediaDisabled === "boolean" ? cRes.aiMediaDisabled : null;
+    } else {
+      zeroLocalKeys.value = null;
+      aiMediaDisabled.value = null;
     }
     if (clRes && typeof clRes === "object") {
       clips.value = Array.isArray(clRes.clips) ? clRes.clips : [];
@@ -173,18 +176,24 @@ watch(
       <section v-else-if="activeTab === 'connectors'" class="space-y-4">
         <div class="grid grid-cols-2 gap-3">
           <div class="cafe-card !p-3">
-            <div class="text-[11px] font-mono opacity-70">LOCAL API KEYS</div>
+            <div class="text-[11px] font-mono opacity-70">OUTBOUND API KEYS</div>
             <div class="mt-2">
-              <span class="chip-pill chip-success">
-                {{ zeroLocalKeys ? "0 Keys in VM" : "Check Env" }}
+              <span
+                class="chip-pill"
+                :class="zeroLocalKeys === true ? 'chip-success' : zeroLocalKeys === false ? 'chip-error' : 'chip-warn'"
+              >
+                {{ zeroLocalKeys === true ? "0 Keys in VM" : zeroLocalKeys === false ? "Check Env" : "Unverified" }}
               </span>
             </div>
           </div>
           <div class="cafe-card !p-3">
             <div class="text-[11px] font-mono opacity-70">AI ART &amp; VIDEO</div>
             <div class="mt-2">
-              <span class="chip-pill chip-error">
-                {{ aiMediaDisabled ? "Disabled" : "Enabled" }}
+              <span
+                class="chip-pill"
+                :class="aiMediaDisabled === true ? 'chip-error' : 'chip-warn'"
+              >
+                {{ aiMediaDisabled === true ? "Disabled" : aiMediaDisabled === false ? "Enabled" : "Unverified" }}
               </span>
             </div>
           </div>
@@ -386,5 +395,9 @@ watch(
 .chip-error {
   background: var(--error-bg);
   color: var(--error);
+}
+.chip-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 </style>
