@@ -60,6 +60,7 @@ const props = defineProps<{
   mascotColor: string;
   statusState: "ready" | "busy" | "error";
   swatches: string[];
+  hideMobileNav?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -469,7 +470,7 @@ defineExpose({ fetchAll });
 <template>
   <section class="mc-workspace">
     <!-- MOBILE SECTION PILLS (visible <= 1024px since header hides desktop nav) -->
-    <div class="mobile-nav-strip">
+    <div v-if="!props.hideMobileNav" class="mobile-nav-strip">
       <button
         v-for="tab in (['overview', 'schedule', 'files', 'database', 'playbooks', 'dossier', 'connectors'] as StudioTab[])"
         :key="tab"

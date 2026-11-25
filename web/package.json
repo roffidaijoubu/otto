@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.80.0",
+    "@novnc/novnc": "^1.7.0",
     "@vueuse/core": "^15.1.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",

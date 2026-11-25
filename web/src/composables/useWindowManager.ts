@@ -1,0 +1,990 @@
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+  type ComputedRef,
+  type InjectionKey,
+  type Ref,
+} from "vue";
+
+export type StudioAppId =
+  | "otto-chat"
+  | "mission-control"
+  | "files"
+  | "chrome"
+  | "studio-db"
+  | "playbooks"
+  | "settings";
+
+export type StudioAppIconName =
+  | "message"
+  | "layout"
+  | "folder"
+  | "globe"
+  | "database"
+  | "sparkles"
+  | "settings";
+
+export type SnapZone = "left" | "right" | "maximize";
+
+export type LayoutPreset =
+  | "tile-2up"
+  | "focus-chat"
+  | "cascade"
+  | "show-desktop"
+  | "reset";
+
+export interface WindowRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface StudioAppDefinition {
+  id: StudioAppId;
+  title: string;
+  shortLabel: string;
+  icon: StudioAppIconName;
+  minWidth: number;
+  minHeight: number;
+  defaultWidth: number;
+  defaultHeight: number;
+  dockSection: "primary" | "utility";
+  shortcutDigit?: string;
+}
+
+export interface StudioWindowState extends WindowRect {
+  id: StudioAppId;
+  isOpen: boolean;
+  isMinimized: boolean;
+  isMaximized: boolean;
+  snapZone: SnapZone | null;
+  restoreRect: WindowRect | null;
+  zIndex: number;
+  attention: boolean;
+  badgeText: string;
+  subtitle: string;
+}
+
+export interface OpenWindowOptions {
+  focus?: boolean;
+  subtitle?: string;
+  attention?: boolean;
+  badgeText?: string;
+  snapZone?: SnapZone | null;
+}
+
+export interface WindowManagerOptions {
+  storageKey?: string;
+  persist?: boolean;
+}
+
+export interface DesktopShortcut {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon: StudioAppIconName;
+  appId: StudioAppId;
+  filesPath?: string;
+}
+
+export interface DesktopShellExposed {
+  wm: WindowManagerInstance;
+  openSpotlight: () => void;
+}
+
+export interface WindowManagerInstance {
+  apps: readonly StudioAppDefinition[];
+  appMap: Record<StudioAppId, StudioAppDefinition>;
+  viewport: { width: number; height: number };
+  windows: Record<StudioAppId, StudioWindowState>;
+  isMobile: ComputedRef<boolean>;
+  isInteracting: ComputedRef<boolean>;
+  interactingWindowId: Ref<StudioAppId | null>;
+  activeSnapPreview: Ref<SnapZone | null>;
+  visibleWindows: ComputedRef<StudioWindowState[]>;
+  openWindows: ComputedRef<StudioWindowState[]>;
+  focusedWindowId: ComputedRef<StudioAppId | null>;
+  focusedApp: ComputedRef<StudioAppDefinition | null>;
+  openWindow: (id: StudioAppId, opts?: OpenWindowOptions) => void;
+  closeWindow: (id: StudioAppId) => void;
+  minimizeWindow: (id: StudioAppId) => void;
+  restoreWindow: (id: StudioAppId) => void;
+  toggleMaximize: (id: StudioAppId) => void;
+  focusWindow: (id: StudioAppId) => void;
+  toggleFromDock: (id: StudioAppId) => void;
+  moveWindow: (id: StudioAppId, x: number, y: number) => void;
+  detachFromSnapForDrag: (id: StudioAppId, pointerX: number, pointerY: number) => WindowRect;
+  resizeWindow: (id: StudioAppId, rect: WindowRect) => void;
+  snapWindow: (id: StudioAppId, zone: SnapZone) => void;
+  getSnapRect: (zone: SnapZone) => WindowRect;
+  detectSnapZone: (clientX: number, clientY: number) => SnapZone | null;
+  applyPreset: (preset: LayoutPreset) => void;
+  setWindowMeta: (
+    id: StudioAppId,
+    patch: { subtitle?: string; attention?: boolean; badgeText?: string }
+  ) => void;
+  clearAttention: (id: StudioAppId) => void;
+  mountListeners: () => void;
+  unmountListeners: () => void;
+}
+
+export const TOP_BAR_HEIGHT = 36;
+export const DOCK_SAFE_BOTTOM = 78;
+export const WINDOW_GAP = 12;
+export const MOBILE_BREAKPOINT = 1024;
+export const Z_INDEX_MIN = 10;
+export const Z_INDEX_MAX = 40;
+export const STORAGE_KEY = "otto-studio-os-layout-v1";
+
+export const STUDIO_APPS: readonly StudioAppDefinition[] = [
+  {
+    id: "otto-chat",
+    title: "Otto Chat",
+    shortLabel: "Otto",
+    icon: "message",
+    minWidth: 360,
+    minHeight: 360,
+    defaultWidth: 520,
+    defaultHeight: 680,
+    dockSection: "primary",
+    shortcutDigit: "1",
+  },
+  {
+    id: "chrome",
+    title: "Chrome",
+    shortLabel: "Chrome",
+    icon: "globe",
+    minWidth: 460,
+    minHeight: 360,
+    defaultWidth: 820,
+    defaultHeight: 600,
+    dockSection: "primary",
+    shortcutDigit: "2",
+  },
+  {
+    id: "files",
+    title: "Studio Files",
+    shortLabel: "Files",
+    icon: "folder",
+    minWidth: 480,
+    minHeight: 360,
+    defaultWidth: 780,
+    defaultHeight: 600,
+    dockSection: "primary",
+    shortcutDigit: "3",
+  },
+  {
+    id: "mission-control",
+    title: "Mission Control",
+    shortLabel: "Mission",
+    icon: "layout",
+    minWidth: 440,
+    minHeight: 360,
+    defaultWidth: 720,
+    defaultHeight: 680,
+    dockSection: "primary",
+    shortcutDigit: "4",
+  },
+  {
+    id: "studio-db",
+    title: "Studio DB",
+    shortLabel: "Studio DB",
+    icon: "database",
+    minWidth: 460,
+    minHeight: 360,
+    defaultWidth: 760,
+    defaultHeight: 580,
+    dockSection: "primary",
+    shortcutDigit: "5",
+  },
+  {
+    id: "playbooks",
+    title: "Playbooks",
+    shortLabel: "Playbooks",
+    icon: "sparkles",
+    minWidth: 420,
+    minHeight: 340,
+    defaultWidth: 640,
+    defaultHeight: 540,
+    dockSection: "primary",
+    shortcutDigit: "6",
+  },
+  {
+    id: "settings",
+    title: "System Settings",
+    shortLabel: "Settings",
+    icon: "settings",
+    minWidth: 420,
+    minHeight: 380,
+    defaultWidth: 620,
+    defaultHeight: 560,
+    dockSection: "utility",
+    shortcutDigit: "7",
+  },
+] as const;
+
+export const STUDIO_APP_MAP: Record<StudioAppId, StudioAppDefinition> = STUDIO_APPS.reduce(
+  (acc, app) => {
+    acc[app.id] = app;
+    return acc;
+  },
+  {} as Record<StudioAppId, StudioAppDefinition>
+);
+
+interface PersistedWindowSnapshot {
+  isOpen: boolean;
+  isMinimized: boolean;
+  isMaximized: boolean;
+  snapZone: SnapZone | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  restoreRect: WindowRect | null;
+  zIndex: number;
+}
+
+interface PersistedLayoutPayload {
+  version: 1;
+  windows: Partial<Record<StudioAppId, PersistedWindowSnapshot>>;
+}
+
+function getWorkArea(vw: number, vh: number) {
+  const safeW = Math.max(320, vw);
+  const safeH = Math.max(320, vh);
+  const left = WINDOW_GAP;
+  const top = TOP_BAR_HEIGHT + WINDOW_GAP;
+  const width = Math.max(300, safeW - WINDOW_GAP * 2);
+  const height = Math.max(240, safeH - TOP_BAR_HEIGHT - DOCK_SAFE_BOTTOM - WINDOW_GAP);
+  return { left, top, width, height, viewportWidth: safeW, viewportHeight: safeH };
+}
+
+function clampRectToViewport(
+  id: StudioAppId,
+  rect: WindowRect,
+  vw: number,
+  vh: number
+): WindowRect {
+  const def = STUDIO_APP_MAP[id];
+  const area = getWorkArea(vw, vh);
+
+  const maxW = Math.max(280, area.viewportWidth - WINDOW_GAP * 2);
+  const maxH = Math.max(220, area.viewportHeight - TOP_BAR_HEIGHT - DOCK_SAFE_BOTTOM);
+  const minW = Math.min(def.minWidth, maxW);
+  const minH = Math.min(def.minHeight, maxH);
+
+  const width = Math.min(maxW, Math.max(minW, Math.round(rect.width)));
+  const height = Math.min(maxH, Math.max(minH, Math.round(rect.height)));
+
+  // Keep at least 120px of titlebar horizontally grabbable and never above top bar
+  const minVisibleX = 120;
+  const minX = -width + minVisibleX;
+  const maxX = area.viewportWidth - minVisibleX;
+  const minY = TOP_BAR_HEIGHT + 4;
+  const maxY = Math.max(minY, area.viewportHeight - DOCK_SAFE_BOTTOM - 44);
+
+  const x = Math.min(maxX, Math.max(minX, Math.round(rect.x)));
+  const y = Math.min(maxY, Math.max(minY, Math.round(rect.y)));
+
+  return { x, y, width, height };
+}
+
+function buildDefaultCenteredRect(
+  id: StudioAppId,
+  vw: number,
+  vh: number,
+  indexOffset = 0
+): WindowRect {
+  const def = STUDIO_APP_MAP[id];
+  const area = getWorkArea(vw, vh);
+  const width = Math.min(def.defaultWidth, area.width);
+  const height = Math.min(def.defaultHeight, area.height);
+  const x = area.left + Math.round((area.width - width) / 2) + indexOffset * 26;
+  const y = area.top + Math.round((area.height - height) / 2) + indexOffset * 22;
+  return clampRectToViewport(id, { x, y, width, height }, vw, vh);
+}
+
+function createInitialWindows(vw: number, vh: number): Record<StudioAppId, StudioWindowState> {
+  const area = getWorkArea(vw, vh);
+  const leftWidth = Math.max(
+    STUDIO_APP_MAP["otto-chat"].minWidth,
+    Math.round((area.width - WINDOW_GAP) * 0.42)
+  );
+  const rightWidth = Math.max(
+    STUDIO_APP_MAP["mission-control"].minWidth,
+    area.width - WINDOW_GAP - leftWidth
+  );
+
+  const result = {} as Record<StudioAppId, StudioWindowState>;
+
+  STUDIO_APPS.forEach((app, idx) => {
+    const centered = buildDefaultCenteredRect(app.id, vw, vh, idx % 4);
+    result[app.id] = {
+      id: app.id,
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      snapZone: null,
+      restoreRect: null,
+      x: centered.x,
+      y: centered.y,
+      width: centered.width,
+      height: centered.height,
+      zIndex: Z_INDEX_MIN + idx,
+      attention: false,
+      badgeText: "",
+      subtitle: "",
+    };
+  });
+
+  // Clean default Studio OS layout: Otto Chat (left) + Mission Control (right)
+  result["otto-chat"].isOpen = true;
+  result["otto-chat"].x = area.left;
+  result["otto-chat"].y = area.top;
+  result["otto-chat"].width = Math.min(leftWidth, area.width);
+  result["otto-chat"].height = area.height;
+  result["otto-chat"].zIndex = Z_INDEX_MIN + 2;
+
+  result["mission-control"].isOpen = true;
+  result["mission-control"].x = area.left + Math.min(leftWidth, area.width) + WINDOW_GAP;
+  result["mission-control"].y = area.top;
+  result["mission-control"].width = Math.max(320, rightWidth);
+  result["mission-control"].height = area.height;
+  result["mission-control"].zIndex = Z_INDEX_MIN + 1;
+
+  return result;
+}
+
+export function createWindowManager(options: WindowManagerOptions = {}): WindowManagerInstance {
+  const storageKey = options.storageKey ?? STORAGE_KEY;
+  const shouldPersist = options.persist ?? true;
+
+  const viewport = reactive({
+    width: typeof window !== "undefined" ? window.innerWidth : 1440,
+    height: typeof window !== "undefined" ? window.innerHeight : 900,
+  });
+
+  const windows = reactive<Record<StudioAppId, StudioWindowState>>(
+    createInitialWindows(viewport.width, viewport.height)
+  );
+
+  const activeSnapPreview = ref<SnapZone | null>(null);
+  const interactingWindowId = ref<StudioAppId | null>(null);
+  const isInteracting = computed(() => interactingWindowId.value !== null);
+  const isMobile = computed(() => viewport.width < MOBILE_BREAKPOINT);
+
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function normalizeZOrder() {
+    const ordered = STUDIO_APPS.map((a) => windows[a.id]).sort((a, b) => a.zIndex - b.zIndex);
+    const span = Math.max(1, Z_INDEX_MAX - Z_INDEX_MIN);
+    ordered.forEach((win, i) => {
+      // Strictly keep every managed window inside [Z_INDEX_MIN..Z_INDEX_MAX] (< 50)
+      win.zIndex = Z_INDEX_MIN + Math.min(span, i);
+    });
+  }
+
+  function schedulePersist() {
+    if (!shouldPersist || typeof window === "undefined") return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined;
+      try {
+        const snapshot: PersistedLayoutPayload = { version: 1, windows: {} };
+        for (const app of STUDIO_APPS) {
+          const w = windows[app.id];
+          snapshot.windows[app.id] = {
+            isOpen: w.isOpen,
+            isMinimized: w.isMinimized,
+            isMaximized: w.isMaximized,
+            snapZone: w.snapZone,
+            x: w.x,
+            y: w.y,
+            width: w.width,
+            height: w.height,
+            restoreRect: w.restoreRect ? { ...w.restoreRect } : null,
+            zIndex: w.zIndex,
+          };
+        }
+        window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
+      } catch {
+        // Ignore quota / privacy mode storage errors
+      }
+    }, 180);
+  }
+
+  function hydrateFromStorage() {
+    if (!shouldPersist || typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as PersistedLayoutPayload;
+      if (!parsed || parsed.version !== 1 || !parsed.windows) return;
+
+      let restoredAnyOpen = false;
+      for (const app of STUDIO_APPS) {
+        const saved = parsed.windows[app.id];
+        if (!saved || typeof saved.x !== "number" || typeof saved.width !== "number") continue;
+        const win = windows[app.id];
+        const clamped = clampRectToViewport(
+          app.id,
+          { x: saved.x, y: saved.y, width: saved.width, height: saved.height },
+          viewport.width,
+          viewport.height
+        );
+        win.isOpen = Boolean(saved.isOpen);
+        win.isMinimized = Boolean(saved.isMinimized);
+        win.isMaximized = Boolean(saved.isMaximized);
+        win.snapZone =
+          saved.snapZone === "left" || saved.snapZone === "right" || saved.snapZone === "maximize"
+            ? saved.snapZone
+            : null;
+        win.x = clamped.x;
+        win.y = clamped.y;
+        win.width = clamped.width;
+        win.height = clamped.height;
+        win.restoreRect = saved.restoreRect
+          ? clampRectToViewport(app.id, saved.restoreRect, viewport.width, viewport.height)
+          : null;
+        if (typeof saved.zIndex === "number" && Number.isFinite(saved.zIndex)) {
+          win.zIndex = saved.zIndex;
+        }
+        if (win.isOpen) restoredAnyOpen = true;
+      }
+      normalizeZOrder();
+      if (!restoredAnyOpen) {
+        applyPreset("reset");
+      }
+    } catch {
+      // Malformed saved layout; keep clean default
+    }
+  }
+
+  const visibleWindows = computed(() =>
+    STUDIO_APPS.map((a) => windows[a.id])
+      .filter((w) => w.isOpen && !w.isMinimized)
+      .sort((a, b) => a.zIndex - b.zIndex)
+  );
+
+  const openWindows = computed(() =>
+    STUDIO_APPS.map((a) => windows[a.id]).filter((w) => w.isOpen)
+  );
+
+  const focusedWindowId = computed<StudioAppId | null>(() => {
+    const visible = visibleWindows.value;
+    if (visible.length === 0) return null;
+    return visible[visible.length - 1].id;
+  });
+
+  const focusedApp = computed<StudioAppDefinition | null>(() => {
+    const id = focusedWindowId.value;
+    return id ? STUDIO_APP_MAP[id] : null;
+  });
+
+  function getSnapRect(zone: SnapZone): WindowRect {
+    const area = getWorkArea(viewport.width, viewport.height);
+    if (zone === "maximize") {
+      return {
+        x: area.left,
+        y: area.top,
+        width: area.width,
+        height: area.height,
+      };
+    }
+    const halfWidth = Math.max(300, Math.floor((area.width - WINDOW_GAP) / 2));
+    if (zone === "left") {
+      return {
+        x: area.left,
+        y: area.top,
+        width: halfWidth,
+        height: area.height,
+      };
+    }
+    return {
+      x: area.left + halfWidth + WINDOW_GAP,
+      y: area.top,
+      width: Math.max(300, area.width - halfWidth - WINDOW_GAP),
+      height: area.height,
+    };
+  }
+
+  function detectSnapZone(clientX: number, clientY: number): SnapZone | null {
+    if (isMobile.value) return null;
+    if (clientY <= TOP_BAR_HEIGHT + 10) return "maximize";
+    if (clientX <= 18) return "left";
+    if (clientX >= viewport.width - 18) return "right";
+    return null;
+  }
+
+  function focusWindow(id: StudioAppId) {
+    const win = windows[id];
+    if (!win) return;
+    if (!win.isOpen) win.isOpen = true;
+    if (win.isMinimized) win.isMinimized = false;
+    win.attention = false;
+
+    const maxZ = Math.max(...STUDIO_APPS.map((a) => windows[a.id].zIndex));
+    win.zIndex = maxZ + 1;
+    normalizeZOrder();
+    schedulePersist();
+  }
+
+  function openWindow(id: StudioAppId, opts: OpenWindowOptions = {}) {
+    const win = windows[id];
+    if (!win) return;
+
+    const wasClosed = !win.isOpen;
+    win.isOpen = true;
+    win.isMinimized = false;
+
+    if (opts.subtitle !== undefined) win.subtitle = opts.subtitle;
+    if (opts.badgeText !== undefined) win.badgeText = opts.badgeText;
+
+    if (wasClosed && !win.isMaximized && !win.snapZone) {
+      const openCount = openWindows.value.length;
+      const fresh = buildDefaultCenteredRect(
+        id,
+        viewport.width,
+        viewport.height,
+        (openCount - 1) % 4
+      );
+      win.x = fresh.x;
+      win.y = fresh.y;
+      win.width = fresh.width;
+      win.height = fresh.height;
+    } else {
+      const clamped = clampRectToViewport(id, win, viewport.width, viewport.height);
+      win.x = clamped.x;
+      win.y = clamped.y;
+      win.width = clamped.width;
+      win.height = clamped.height;
+    }
+
+    if (opts.snapZone) {
+      snapWindow(id, opts.snapZone);
+    }
+
+    if (opts.focus !== false) {
+      focusWindow(id);
+    }
+
+    if (opts.attention !== undefined) {
+      win.attention = opts.attention;
+    }
+
+    schedulePersist();
+  }
+
+  function closeWindow(id: StudioAppId) {
+    const win = windows[id];
+    if (!win) return;
+    win.isOpen = false;
+    win.isMinimized = false;
+    win.isMaximized = false;
+    win.snapZone = null;
+    win.attention = false;
+    schedulePersist();
+  }
+
+  function minimizeWindow(id: StudioAppId) {
+    const win = windows[id];
+    if (!win || !win.isOpen) return;
+    win.isMinimized = true;
+    schedulePersist();
+  }
+
+  function snapWindow(id: StudioAppId, zone: SnapZone) {
+    const win = windows[id];
+    if (!win) return;
+    if (!win.isOpen) win.isOpen = true;
+    win.isMinimized = false;
+
+    if (!win.isMaximized && !win.snapZone) {
+      win.restoreRect = { x: win.x, y: win.y, width: win.width, height: win.height };
+    }
+
+    const target = getSnapRect(zone);
+    win.x = target.x;
+    win.y = target.y;
+    win.width = target.width;
+    win.height = target.height;
+    win.snapZone = zone;
+    win.isMaximized = zone === "maximize";
+    focusWindow(id);
+  }
+
+  function restoreWindow(id: StudioAppId) {
+    const win = windows[id];
+    if (!win) return;
+    const base =
+      win.restoreRect ?? buildDefaultCenteredRect(id, viewport.width, viewport.height, 0);
+    const clamped = clampRectToViewport(id, base, viewport.width, viewport.height);
+    win.x = clamped.x;
+    win.y = clamped.y;
+    win.width = clamped.width;
+    win.height = clamped.height;
+    win.isMaximized = false;
+    win.snapZone = null;
+    win.restoreRect = null;
+    schedulePersist();
+  }
+
+  function toggleMaximize(id: StudioAppId) {
+    const win = windows[id];
+    if (!win) return;
+    if (win.isMaximized) {
+      restoreWindow(id);
+      focusWindow(id);
+    } else {
+      snapWindow(id, "maximize");
+    }
+  }
+
+  function toggleFromDock(id: StudioAppId) {
+    const win = windows[id];
+    if (!win) return;
+
+    if (isMobile.value) {
+      openWindow(id, { focus: true });
+      return;
+    }
+
+    if (!win.isOpen) {
+      openWindow(id, { focus: true });
+      return;
+    }
+    if (win.isMinimized) {
+      win.isMinimized = false;
+      focusWindow(id);
+      return;
+    }
+    if (focusedWindowId.value === id) {
+      minimizeWindow(id);
+    } else {
+      focusWindow(id);
+    }
+  }
+
+  function moveWindow(id: StudioAppId, x: number, y: number) {
+    const win = windows[id];
+    if (!win) return;
+    const clamped = clampRectToViewport(
+      id,
+      { x, y, width: win.width, height: win.height },
+      viewport.width,
+      viewport.height
+    );
+    win.x = clamped.x;
+    win.y = clamped.y;
+    schedulePersist();
+  }
+
+  function detachFromSnapForDrag(id: StudioAppId, pointerX: number, pointerY: number): WindowRect {
+    const win = windows[id];
+    const fallback = buildDefaultCenteredRect(id, viewport.width, viewport.height, 0);
+    const targetW =
+      win.restoreRect?.width ?? Math.min(STUDIO_APP_MAP[id].defaultWidth, fallback.width);
+    const targetH =
+      win.restoreRect?.height ?? Math.min(STUDIO_APP_MAP[id].defaultHeight, fallback.height);
+
+    const clamped = clampRectToViewport(
+      id,
+      {
+        x: Math.round(pointerX - targetW / 2),
+        y: Math.max(TOP_BAR_HEIGHT + 4, Math.round(pointerY - 18)),
+        width: targetW,
+        height: targetH,
+      },
+      viewport.width,
+      viewport.height
+    );
+
+    win.x = clamped.x;
+    win.y = clamped.y;
+    win.width = clamped.width;
+    win.height = clamped.height;
+    win.isMaximized = false;
+    win.snapZone = null;
+    win.restoreRect = null;
+    return clamped;
+  }
+
+  function resizeWindow(id: StudioAppId, rect: WindowRect) {
+    const win = windows[id];
+    if (!win) return;
+    const clamped = clampRectToViewport(id, rect, viewport.width, viewport.height);
+    win.x = clamped.x;
+    win.y = clamped.y;
+    win.width = clamped.width;
+    win.height = clamped.height;
+    win.isMaximized = false;
+    win.snapZone = null;
+    schedulePersist();
+  }
+
+  function setWindowMeta(
+    id: StudioAppId,
+    patch: { subtitle?: string; attention?: boolean; badgeText?: string }
+  ) {
+    const win = windows[id];
+    if (!win) return;
+    if (patch.subtitle !== undefined) win.subtitle = patch.subtitle;
+    if (patch.attention !== undefined) win.attention = patch.attention;
+    if (patch.badgeText !== undefined) win.badgeText = patch.badgeText;
+  }
+
+  function clearAttention(id: StudioAppId) {
+    const win = windows[id];
+    if (win) win.attention = false;
+  }
+
+  function applyPreset(preset: LayoutPreset) {
+    const area = getWorkArea(viewport.width, viewport.height);
+
+    if (preset === "show-desktop") {
+      const anyVisible = visibleWindows.value.length > 0;
+      if (anyVisible) {
+        for (const app of STUDIO_APPS) {
+          if (windows[app.id].isOpen) windows[app.id].isMinimized = true;
+        }
+      } else {
+        let restored = false;
+        for (const app of STUDIO_APPS) {
+          if (windows[app.id].isOpen) {
+            windows[app.id].isMinimized = false;
+            restored = true;
+          }
+        }
+        if (!restored) applyPreset("tile-2up");
+      }
+      schedulePersist();
+      return;
+    }
+
+    if (preset === "focus-chat") {
+      for (const app of STUDIO_APPS) {
+        if (app.id !== "otto-chat" && windows[app.id].isOpen) {
+          windows[app.id].isMinimized = true;
+        }
+      }
+      const w = Math.min(820, Math.round(area.width * 0.68));
+      const h = Math.min(area.height, Math.round(area.height * 0.92));
+      const chat = windows["otto-chat"];
+      chat.isOpen = true;
+      chat.isMinimized = false;
+      chat.isMaximized = false;
+      chat.snapZone = null;
+      chat.restoreRect = null;
+      chat.x = area.left + Math.round((area.width - w) / 2);
+      chat.y = area.top + Math.round((area.height - h) / 2);
+      chat.width = w;
+      chat.height = h;
+      focusWindow("otto-chat");
+      return;
+    }
+
+    if (preset === "cascade") {
+      const targets =
+        openWindows.value.length > 0
+          ? openWindows.value
+          : [windows["otto-chat"], windows["mission-control"], windows["files"]];
+      targets.forEach((win, i) => {
+        const def = STUDIO_APP_MAP[win.id];
+        const step = i * 34;
+        const clamped = clampRectToViewport(
+          win.id,
+          {
+            x: area.left + 20 + step,
+            y: area.top + 12 + step,
+            width: Math.min(def.defaultWidth, area.width - 60),
+            height: Math.min(def.defaultHeight, area.height - 40),
+          },
+          viewport.width,
+          viewport.height
+        );
+        win.isOpen = true;
+        win.isMinimized = false;
+        win.isMaximized = false;
+        win.snapZone = null;
+        win.restoreRect = null;
+        win.x = clamped.x;
+        win.y = clamped.y;
+        win.width = clamped.width;
+        win.height = clamped.height;
+        win.zIndex = Z_INDEX_MIN + i + 1;
+      });
+      normalizeZOrder();
+      schedulePersist();
+      return;
+    }
+
+    if (preset === "reset") {
+      if (shouldPersist && typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(storageKey);
+        } catch {
+          // ignore
+        }
+      }
+      const fresh = createInitialWindows(viewport.width, viewport.height);
+      for (const app of STUDIO_APPS) {
+        const prevSub = windows[app.id].subtitle;
+        const prevAtt = windows[app.id].attention;
+        const prevBadge = windows[app.id].badgeText;
+        Object.assign(windows[app.id], fresh[app.id], {
+          subtitle: prevSub,
+          attention: prevAtt,
+          badgeText: prevBadge,
+        });
+      }
+      normalizeZOrder();
+      schedulePersist();
+      return;
+    }
+
+    // Default: tile-2up (Otto Chat left 42%, most-recent secondary or Mission Control right 58%)
+    const secondaryCandidates = visibleWindows.value
+      .filter((w) => w.id !== "otto-chat")
+      .sort((a, b) => b.zIndex - a.zIndex);
+    const secondaryId: StudioAppId = secondaryCandidates[0]?.id ?? "mission-control";
+
+    for (const app of STUDIO_APPS) {
+      if (app.id !== "otto-chat" && app.id !== secondaryId && windows[app.id].isOpen) {
+        windows[app.id].isMinimized = true;
+      }
+    }
+
+    const leftWidth = Math.max(
+      STUDIO_APP_MAP["otto-chat"].minWidth,
+      Math.round((area.width - WINDOW_GAP) * 0.42)
+    );
+    const rightWidth = Math.max(
+      STUDIO_APP_MAP[secondaryId].minWidth,
+      area.width - WINDOW_GAP - leftWidth
+    );
+
+    const chat = windows["otto-chat"];
+    chat.isOpen = true;
+    chat.isMinimized = false;
+    chat.isMaximized = false;
+    chat.snapZone = "left";
+    chat.restoreRect = null;
+    chat.x = area.left;
+    chat.y = area.top;
+    chat.width = Math.min(leftWidth, area.width);
+    chat.height = area.height;
+
+    const right = windows[secondaryId];
+    right.isOpen = true;
+    right.isMinimized = false;
+    right.isMaximized = false;
+    right.snapZone = "right";
+    right.restoreRect = null;
+    right.x = area.left + chat.width + WINDOW_GAP;
+    right.y = area.top;
+    right.width = Math.max(300, rightWidth);
+    right.height = area.height;
+
+    focusWindow(secondaryId);
+    focusWindow("otto-chat");
+  }
+
+  function handleViewportResize() {
+    if (typeof window === "undefined") return;
+    viewport.width = window.innerWidth;
+    viewport.height = window.innerHeight;
+    for (const app of STUDIO_APPS) {
+      const win = windows[app.id];
+      if (win.isMaximized) {
+        const rect = getSnapRect("maximize");
+        win.x = rect.x;
+        win.y = rect.y;
+        win.width = rect.width;
+        win.height = rect.height;
+      } else if (win.snapZone) {
+        const rect = getSnapRect(win.snapZone);
+        win.x = rect.x;
+        win.y = rect.y;
+        win.width = rect.width;
+        win.height = rect.height;
+      } else {
+        const clamped = clampRectToViewport(app.id, win, viewport.width, viewport.height);
+        win.x = clamped.x;
+        win.y = clamped.y;
+        win.width = clamped.width;
+        win.height = clamped.height;
+      }
+    }
+  }
+
+  function mountListeners() {
+    hydrateFromStorage();
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", handleViewportResize, { passive: true });
+    }
+  }
+
+  function unmountListeners() {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("resize", handleViewportResize);
+    }
+  }
+
+  watch(
+    () => viewport.width,
+    () => {
+      if (isMobile.value && visibleWindows.value.length === 0) {
+        openWindow("otto-chat", { focus: true });
+      }
+    }
+  );
+
+  return {
+    apps: STUDIO_APPS,
+    appMap: STUDIO_APP_MAP,
+    viewport,
+    windows,
+    isMobile,
+    isInteracting,
+    interactingWindowId,
+    activeSnapPreview,
+    visibleWindows,
+    openWindows,
+    focusedWindowId,
+    focusedApp,
+    openWindow,
+    closeWindow,
+    minimizeWindow,
+    restoreWindow,
+    toggleMaximize,
+    focusWindow,
+    toggleFromDock,
+    moveWindow,
+    detachFromSnapForDrag,
+    resizeWindow,
+    snapWindow,
+    getSnapRect,
+    detectSnapZone,
+    applyPreset,
+    setWindowMeta,
+    clearAttention,
+    mountListeners,
+    unmountListeners,
+  };
+}
+
+export const WINDOW_MANAGER_KEY: InjectionKey<WindowManagerInstance> = Symbol("otto-window-manager");
+
+export function useWindowManagerLifecycle(options?: WindowManagerOptions): WindowManagerInstance {
+  const wm = createWindowManager(options);
+  onMounted(() => wm.mountListeners());
+  onBeforeUnmount(() => wm.unmountListeners());
+  return wm;
+}

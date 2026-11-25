@@ -10,6 +10,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: "esnext",
+    },
+    exclude: ["@novnc/novnc"],
+  },
   server: {
     port: 5173,
     proxy: {

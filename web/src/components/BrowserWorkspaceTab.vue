@@ -25,6 +25,10 @@ const props = defineProps<{
   refreshTick?: number;
 }>();
 
+const emit = defineEmits<{
+  statusChanged: [payload: { running: boolean; sessionCount: number }];
+}>();
+
 const status = ref<BrowserStatus>({
   running: false,
   chromeBinary: null,
@@ -94,6 +98,17 @@ async function revokeSession(site: string) {
   }
 }
 
+watch(
+  status,
+  (next) => {
+    emit("statusChanged", {
+      running: Boolean(next.running),
+      sessionCount: next.sessions.length,
+    });
+  },
+  { deep: true, immediate: true }
+);
+
 watch(() => props.refreshTick, () => {
   void loadStatus();
 });
@@ -101,6 +116,15 @@ watch(() => props.refreshTick, () => {
 onMounted(() => {
   void loadStatus();
 });
+
+async function openUrl(url: string) {
+  const cleaned = url.trim();
+  if (!cleaned) return;
+  navUrl.value = cleaned;
+  await startBrowser(cleaned);
+}
+
+defineExpose({ openUrl, loadStatus });
 </script>
 
 <template>

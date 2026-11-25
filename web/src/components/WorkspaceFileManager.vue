@@ -154,6 +154,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   askPrompt: [prompt: string];
   statsUpdated: [payload: { stats: WorkspaceStats; recentFiles: WorkspaceEntry[] }];
+  pathChanged: [relDir: string];
 }>();
 
 function normalizeDirPath(relDir: string): string {
@@ -849,7 +850,15 @@ onUnmounted(() => {
   activeTextAbortController?.abort();
 });
 
-defineExpose({ loadDirectory, navigateTo });
+watch(
+  currentPath,
+  (next) => {
+    emit("pathChanged", next);
+  },
+  { immediate: true }
+);
+
+defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog });
 </script>
 
 <template>
