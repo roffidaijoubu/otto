@@ -313,6 +313,22 @@ export class BrowserManager {
       }
       return;
     }
+    // Clean stale Chrome profile singleton locks left by abrupt Sprite stops/restarts
+    for (const lockName of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+      const lockPath = path.join(CHROME_PROFILE_DIR, lockName);
+      try {
+        if (fs.lstatSync(lockPath)) fs.unlinkSync(lockPath);
+      } catch {
+        // ignore if absent
+      }
+    }
+    // Clean stale Xvfb lock for our display if no Xvfb is running
+    const dispNum = DISPLAY_NUM.replace(/^:/, "");
+    try {
+      fs.unlinkSync(`/tmp/.X${dispNum}-lock`);
+    } catch {
+      // ignore
+    }
 
     this.startingPromise = this.startInternal(initialUrl);
     try {
@@ -406,8 +422,8 @@ export class BrowserManager {
     });
 
     const [vncReady, cdpReady] = await Promise.all([
-      waitForPort(VNC_PORT, 10000),
-      waitForPort(CDP_PORT, 12000),
+      waitForPort(VNC_PORT, 15000),
+      waitForPort(CDP_PORT, 20000),
     ]);
 
     if (!vncReady || !cdpReady) {
