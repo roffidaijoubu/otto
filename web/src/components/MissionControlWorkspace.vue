@@ -574,7 +574,7 @@ defineExpose({ fetchAll });
                 {{ syncingGoogle ? "..." : "sync" }}
               </button>
               <button type="button" class="head-link" @click="emit('update:activeTab', 'schedule')">
-                all →
+                all
               </button>
             </div>
           </div>
@@ -664,7 +664,7 @@ defineExpose({ fetchAll });
             <span>(Y)our dossier.</span>
             <div class="otto-card-head-right">
               <button type="button" class="head-link" @click="emit('update:activeTab', 'dossier')">
-                open →
+                open
               </button>
             </div>
           </div>
@@ -732,7 +732,7 @@ defineExpose({ fetchAll });
                 clips ({{ workspaceStats.clipCount }})
               </button>
               <button type="button" class="head-link" @click="openFilesAt('')">
-                all →
+                all
               </button>
             </div>
           </div>
@@ -788,7 +788,7 @@ defineExpose({ fetchAll });
             <div class="db-mini-strip mt-auto">
               <span>(Y)our 3+1: <strong>{{ dbSummary.coreCount }}</strong> Core / <strong>{{ dbSummary.experimentCount }}</strong> Exp · {{ dbSummary.contactsCount }} contacts</span>
               <button type="button" class="head-link" @click="emit('update:activeTab', 'database')">
-                db →
+                db
               </button>
             </div>
           </div>
@@ -800,7 +800,7 @@ defineExpose({ fetchAll });
             <span>(Y)our connectors.</span>
             <div class="otto-card-head-right">
               <button type="button" class="head-link" @click="emit('update:activeTab', 'connectors')">
-                details →
+                details
               </button>
             </div>
           </div>
@@ -824,7 +824,7 @@ defineExpose({ fetchAll });
             <span>(Y)our playbooks.</span>
             <div class="otto-card-head-right">
               <button type="button" class="head-link" @click="emit('update:activeTab', 'playbooks')">
-                {{ learningSummary.pendingCount > 0 ? `review (${learningSummary.pendingCount}) →` : "manage →" }}
+                {{ learningSummary.pendingCount > 0 ? `review (${learningSummary.pendingCount})` : "manage" }}
               </button>
             </div>
           </div>

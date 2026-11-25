@@ -398,7 +398,7 @@ defineExpose({ fetchAllDb });
         <!-- TAB 1: 3+1 CONTENT PIPELINE -->
         <div v-if="subTab === 'pipeline'" class="flex flex-col gap-3">
           <div class="db-panel-head">
-            <div class="db-sub">Shared live with Otto — track Core vs Experiment streams, videos &amp; packaging.</div>
+            <div class="db-sub">Shared live with Otto. Track Core vs Experiment streams, videos &amp; packaging.</div>
             <Button
               type="button"
               variant="secondary"

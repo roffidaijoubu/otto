@@ -93,7 +93,7 @@ const liveThinking = ref("");
 const liveSteps = ref<TraceStep[]>([]);
 
 const starters = [
-  "Let's get started — do your homework on my channel.",
+  "Let's get started. Do your homework on my channel.",
   "Audit my latest YouTube uploads and roast my titles.",
   "Help me plan a 4-hour segment-first stream for tonight.",
 ];

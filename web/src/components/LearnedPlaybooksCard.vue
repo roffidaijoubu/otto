@@ -114,7 +114,7 @@ async function runReflectNow() {
       return;
     }
     config.value.running = true;
-    notice.value = "Silent reflection started in background — new playbooks will appear here shortly.";
+    notice.value = "Silent reflection started in background. New playbooks will appear here shortly.";
   } catch (err) {
     errorMsg.value = err instanceof Error ? err.message : "Network error";
   } finally {

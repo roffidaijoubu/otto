@@ -173,7 +173,7 @@ onMounted(() => {
             :disabled="saving"
             @click="skipSetup"
           >
-            skip →
+            skip
           </button>
         </div>
       </div>
@@ -255,7 +255,7 @@ onMounted(() => {
               Skip for now
             </Button>
             <Button type="button" size="sm" @click="goStep2">
-              Next: Passcode →
+              Next: Passcode
             </Button>
           </div>
         </div>
@@ -265,7 +265,7 @@ onMounted(() => {
           <div class="wizard-hero">
             <OttoMascot :size="48" :color="mascotColor" state="ready" />
             <h1>Lock <span class="mark-y">(y)</span>our studio passcode.</h1>
-            <p>Optional — replace the auto-generated passcode with one you'll remember, or leave blank to keep your current passcode.</p>
+            <p>Optional. Replace the auto-generated passcode with one you'll remember, or leave blank to keep your current passcode.</p>
           </div>
 
           <div class="field-group">
@@ -300,7 +300,7 @@ onMounted(() => {
               ← Back
             </Button>
             <Button type="button" size="sm" @click="goStep3">
-              {{ newPassword.trim() ? "Next: Check Connectors →" : "Keep Current & Next →" }}
+              {{ newPassword.trim() ? "Next: Check Connectors" : "Keep Current & Next" }}
             </Button>
           </div>
         </div>
@@ -348,7 +348,7 @@ onMounted(() => {
               ← Back
             </Button>
             <Button type="button" size="sm" :disabled="saving" @click="finishSetup">
-              {{ saving ? "Opening Studio..." : "Enter (y)our studio →" }}
+              {{ saving ? "Opening Studio..." : "Enter (y)our studio" }}
             </Button>
           </div>
         </div>
