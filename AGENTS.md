@@ -30,7 +30,7 @@ lma/
 ├── README.md                   # Project overview + 1-prompt agent-first setup
 ├── setup.sh                    # Idempotent Sprite bootstrap (omp, ffmpeg, yt-dlp, web build, lma-web service)
 ├── .kanban/                    # File-based task & roadmap cards
-├── docs/                       # Architecture deep dive + agent-first connector setup guides
+├── docs/                       # Human architecture deep dive (architecture.md) + agent-first setup guides (setup/)
 ├── agent/
 │   ├── APPEND_SYSTEM.md        # Professor L persona, guardrails, cutoff-proof VM & tool map
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny

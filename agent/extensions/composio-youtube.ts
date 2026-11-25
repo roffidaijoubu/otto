@@ -33,7 +33,7 @@ async function getComposioContext(): Promise<ComposioContext> {
     );
     if (!conn) {
       throw new Error(
-        "No authorized Composio Sprites Connector found. Add a Custom API connector named 'Composio v3' pointing to https://backend.composio.dev with header x-api-key (see docs/composio-youtube-setup.md)."
+        "No authorized Composio Sprites Connector found. Add a Custom API connector named 'Composio v3' pointing to https://backend.composio.dev with header x-api-key (see docs/setup/composio-youtube.md)."
       );
     }
     baseUrl = conn.gateway_base_url.replace(/\/$/, "");

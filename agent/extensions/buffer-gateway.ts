@@ -26,7 +26,7 @@ async function getBufferGatewayUrl(): Promise<string> {
   );
   if (!conn) {
     throw new Error(
-      "No authorized Buffer Sprites Connector found. Add a Custom API connector named 'Buffer' pointing to https://api.buffer.com with Bearer auth (see docs/buffer-setup.md)."
+      "No authorized Buffer Sprites Connector found. Add a Custom API connector named 'Buffer' pointing to https://api.buffer.com with Bearer auth (see docs/setup/buffer.md)."
     );
   }
   cachedBaseUrl = conn.gateway_base_url.replace(/\/$/, "");

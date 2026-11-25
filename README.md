@@ -74,13 +74,10 @@ Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprite
 1. Follow https://fly.io/sprites/agent-ready.md to verify the Sprite CLI and Fly.io auth.
 2. Create a Sprite named "lma" and set it active (`sprite create --skip-console lma && sprite use lma`).
 3. Inside the Sprite, clone this repo into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
-4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` to see which Sprites Connectors are authorized:
-   - Required: Google Gemini (for LLM). If missing, provision it via `sprite api /oauth/connections/api_key` (ask me for my key if not in env) and re-run `bash ~/lma/setup.sh` so `~/.omp/agent/models.yml` is generated.
-   - Optional research: Exa and Firecrawl (same BYOK connector flow).
-   - Optional YouTube channel ops: read `docs/composio-youtube-setup.md` and set up the Composio v3 Custom API connector via `sprite api`.
-   - Optional X / TikTok / Instagram posting: read `docs/buffer-setup.md` and set up the Buffer Custom API connector via `sprite api`.
-   Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.
-5. Verify with `sprite exec -- omp -p "reply with just: OK" --no-session` (plus one read-only test per connected tool), then tell me how to start chatting with Professor L.
+4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors:
+   - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl.
+   - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
+   - Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.
 ```
 
 > **Zero local secrets:** All connector keys stay in Fly.io's encrypted organization gateway — never inside the Sprite VM or this repo. `setup.sh` and `agent/extensions/*.ts` auto-discover every authorized connector at runtime.
@@ -118,9 +115,9 @@ omp
 | **Google Gemini** | LLM brain (`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-3.5-flash-lite`) | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
 | **Exa** | First-class `exa_search` & `exa_get_contents` research tools | Auto-discovered at runtime via `agent/extensions/exa-gateway.ts` |
 | **Firecrawl** | First-class `firecrawl_scrape` clean Markdown scraper | Auto-discovered at runtime via `agent/extensions/firecrawl-gateway.ts` |
-| **YouTube (Composio v3)** | Channel stats, recent videos, captions &amp; packaging ops (`youtube_tool`) | Auto-discovered Custom API connector ([setup guide](docs/composio-youtube-setup.md)) |
-| **Buffer (X / TikTok / IG)** | Draft &amp; schedule posts across X, TikTok, and Instagram (`buffer_create_post`) | Auto-discovered Custom API connector ([setup guide](docs/buffer-setup.md)) |
-| **Upstash QStash** | Agent self-scheduled one-shot &amp; cron wake-ups (`schedule_wakeup`) | Auto-discovered Custom API connector ([setup guide](docs/qstash-scheduler-setup.md)) |
+| **YouTube (Composio v3)** | Channel stats, recent videos, captions &amp; packaging ops (`youtube_tool`) | Auto-discovered Custom API connector ([setup guide](docs/setup/composio-youtube.md)) |
+| **Buffer (X / TikTok / IG)** | Draft &amp; schedule posts across X, TikTok, and Instagram (`buffer_create_post`) | Auto-discovered Custom API connector ([setup guide](docs/setup/buffer.md)) |
+| **Upstash QStash** | Agent self-scheduled one-shot &amp; cron wake-ups (`schedule_wakeup`) | Auto-discovered Custom API connector ([setup guide](docs/setup/qstash-scheduler.md)) |
 
 > All extensions query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box.
 
@@ -161,7 +158,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ---
 
 <p align="center">
-  <a href="docs/architecture.md">Architecture Deep Dive</a> · <a href="docs/composio-youtube-setup.md">YouTube Setup</a> · <a href="docs/buffer-setup.md">Buffer Setup</a> · <a href="docs/qstash-scheduler-setup.md">QStash Setup</a> · <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a>
+  <a href="docs/architecture.md">Architecture Deep Dive</a> · <a href="docs/setup/README.md">Agent Setup Guides</a> · <a href="DESIGN.md">Design System</a> · <a href="AGENTS.md">Agentic Workflow</a> · <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a>
 </p>
 
 <p align="center">

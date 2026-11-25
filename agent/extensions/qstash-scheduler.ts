@@ -43,7 +43,7 @@ async function getQStashGatewayUrl(): Promise<string> {
   );
   if (!conn) {
     throw new Error(
-      "No authorized QStash Sprites Connector found. Add a Custom API connector named 'QStash' (see docs/qstash-scheduler-setup.md)."
+      "No authorized QStash Sprites Connector found. Add a Custom API connector named 'QStash' (see docs/setup/qstash-scheduler.md)."
     );
   }
   cachedGatewayUrl = conn.gateway_base_url.replace(/\/$/, "");
