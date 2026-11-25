@@ -256,6 +256,11 @@ const LOGIN_HTML = `<!DOCTYPE html>
 
 type SSEClient = ReadableStreamDefaultController<Uint8Array>;
 
+interface TodoPhase {
+  name: string;
+  tasks: Array<{ content: string; status: string }>;
+}
+
 interface RpcEvent {
   type?: string;
   id?: string;
@@ -264,10 +269,10 @@ interface RpcEvent {
   error?: string;
   data?: unknown;
   toolName?: string;
+  result?: { details?: { phases?: unknown } };
   message?: { role?: string; content?: unknown };
   assistantMessageEvent?: { type?: string; delta?: unknown };
 }
-
 interface PendingRequest {
   resolve: (val: unknown) => void;
   reject: (err: Error) => void;
@@ -299,7 +304,8 @@ function broadcast(payload: Record<string, unknown>) {
 function friendlyToolLabel(toolName: string): string {
   if (/youtube/i.test(toolName)) return "Checking YouTube...";
   if (/buffer/i.test(toolName)) return "Checking social channels...";
-  if (/wakeup|schedule/i.test(toolName)) return "Managing schedule...";
+  if (/wakeup|schedule|calendar/i.test(toolName)) return "Managing schedule...";
+  if (/^todo/i.test(toolName)) return "Updating checklist...";
   if (/vod_scan_hype/i.test(toolName)) return "Scanning VOD live chat & hype spikes...";
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
@@ -310,6 +316,33 @@ function friendlyToolLabel(toolName: string): string {
   if (/read/i.test(toolName)) return "Reviewing dossier...";
   if (/bash/i.test(toolName)) return "Running workspace tools...";
   return "Working on it...";
+}
+
+function stripHiddenTags(text: string): string {
+  return text.replace(/<hidden>[\s\S]*?<\/hidden>/gi, "").trim();
+}
+
+function normalizeTodoPhases(raw: unknown): TodoPhase[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TodoPhase[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== "object") continue;
+    const pObj = p as Record<string, unknown>;
+    const name = typeof pObj.name === "string" ? pObj.name : "Tasks";
+    const rawTasks = Array.isArray(pObj.tasks) ? pObj.tasks : [];
+    const tasks: Array<{ content: string; status: string }> = [];
+    for (const t of rawTasks) {
+      if (!t || typeof t !== "object") continue;
+      const tObj = t as Record<string, unknown>;
+      if (typeof tObj.content !== "string") continue;
+      tasks.push({
+        content: tObj.content,
+        status: typeof tObj.status === "string" ? tObj.status : "pending",
+      });
+    }
+    if (tasks.length > 0) out.push({ name, tasks });
+  }
+  return out;
 }
 
 function extractTextContent(content: unknown): string {
@@ -364,7 +397,8 @@ function summarizeSessionFile(filePath: string, activePath: string | null): Sess
       } else if (obj.type === "message" && obj.message && typeof obj.message === "object") {
         const msg = obj.message as { role?: string; content?: unknown };
         if (msg.role === "user" || msg.role === "assistant") {
-          const text = extractTextContent(msg.content).trim();
+          const rawText = extractTextContent(msg.content).trim();
+          const text = msg.role === "user" ? stripHiddenTags(rawText) : rawText;
           if (text) {
             messageCount++;
             if (!title && msg.role === "user") {
@@ -402,6 +436,7 @@ class OmpRpcBridge {
   private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
   public busy = false;
   public activity = "Thinking...";
+  public todos: TodoPhase[] = [];
 
   constructor() {
     this.spawn();
@@ -531,7 +566,7 @@ class OmpRpcBridge {
       this.ready = true;
       for (const r of this.readyResolvers) r();
       this.readyResolvers = [];
-      broadcast({ type: "status", busy: this.busy, activity: this.activity });
+      broadcast({ type: "status", busy: this.busy, activity: this.activity, todos: this.todos });
       return;
     }
 
@@ -562,6 +597,10 @@ class OmpRpcBridge {
     }
 
     if (ev.type === "tool_execution_end") {
+      if ((ev.toolName === "todo" || ev.toolName === "todo_write") && ev.result?.details) {
+        this.todos = normalizeTodoPhases(ev.result.details.phases);
+        broadcast({ type: "todos", phases: this.todos });
+      }
       broadcast({ type: "tool_end" });
       return;
     }
@@ -676,6 +715,7 @@ class OmpRpcBridge {
       throw new Error("Invalid session path.");
     }
     await this.sendCommand("switch_session", { sessionPath: resolvedTarget });
+    this.todos = [];
     broadcast({ type: "session_changed" });
   }
 
@@ -693,7 +733,8 @@ class OmpRpcBridge {
       const role = "role" in item ? item.role : undefined;
       if (role !== "user" && role !== "assistant") continue;
       const content = "content" in item ? item.content : undefined;
-      const text = extractTextContent(content).trim();
+      const rawText = extractTextContent(content).trim();
+      const text = role === "user" ? stripHiddenTags(rawText) : rawText;
       if (!text) continue;
       const thinking = role === "assistant" ? extractThinkingContent(content).trim() : "";
       out.push(thinking ? { role, text, thinking } : { role, text });
@@ -708,7 +749,7 @@ class OmpRpcBridge {
     this.busy = true;
     this.activity = "Thinking...";
     this.holdSpriteActive();
-    broadcast({ type: "user_message", text: message });
+    broadcast({ type: "user_message", text: stripHiddenTags(message) });
     broadcast({ type: "activity", label: this.activity });
     try {
       await this.sendCommand("prompt", { message });
@@ -734,6 +775,7 @@ class OmpRpcBridge {
       await this.abort();
     }
     await this.sendCommand("new_session");
+    this.todos = [];
     broadcast({ type: "session_changed" });
   }
 }
@@ -1052,7 +1094,7 @@ Bun.serve({
           sseClients.add(ctrl);
           ctrl.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "status", busy: rpc.busy, activity: rpc.activity })}\n\n`
+              `data: ${JSON.stringify({ type: "status", busy: rpc.busy, activity: rpc.activity, todos: rpc.todos })}\n\n`
             )
           );
           // Keep SSE alive during long (>4m) VOD hype-scan / ffmpeg turns
@@ -1082,7 +1124,7 @@ Bun.serve({
     if (req.method === "GET" && url.pathname === "/api/messages") {
       try {
         const messages = await rpc.getMessages();
-        return Response.json({ messages, busy: rpc.busy, activity: rpc.activity });
+        return Response.json({ messages, busy: rpc.busy, activity: rpc.activity, todos: rpc.todos });
       } catch (err: unknown) {
         return Response.json({ error: errorMessage(err) }, { status: 500 });
       }

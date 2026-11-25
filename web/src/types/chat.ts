@@ -19,3 +19,13 @@ export interface SessionSummary {
   messageCount: number;
   active: boolean;
 }
+
+export interface TodoTask {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "done" | "abandoned" | string;
+}
+
+export interface TodoPhase {
+  name: string;
+  tasks: TodoTask[];
+}

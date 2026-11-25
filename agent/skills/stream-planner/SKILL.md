@@ -43,5 +43,6 @@ Structure the plan clearly:
 
 ## 3. Lock It In & Offer Proactive Ops
 1. Once the talent approves the plan, immediately append it to the **3+1 Stream Tracker** table in `~/.omp/agent/MEMORY.md`.
-2. If they have a confirmed date & time, offer to put it straight onto their **Schedule Calendar** (`calendar_add_event`) with proactive lifecycle wake-up hooks (`promo_24h` for Buffer draft check, `pre_stream_1h` for mic/OBS readiness, and `post_stream_vod_3h` for VOD hype clip scanning).
-3. Offer to prep tailored X, TikTok, and Instagram announcement drafts in Buffer (`saveToDraft: true`).
+2. If they have a confirmed date & time, lock it straight onto their **Schedule Calendar** (`calendar_add_event`, which auto-syncs to Google Calendar when connected) with proactive check-in reminders (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`).
+3. Right alongside locking a `stream` / `collab` onto the calendar, include a ready-to-paste **YouTube Studio Waiting Room Pack** (Final Title, Description with timestamps/links, Tags, and Squint-Test Thumbnail Brief for their human artist — note: YouTube Studio waiting rooms cannot be created directly via API, so give them a clean 1-click copy block).
+4. Offer to prep tailored X, TikTok, and Instagram announcement drafts in Buffer (`saveToDraft: true`).

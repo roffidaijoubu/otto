@@ -5,10 +5,12 @@ import ChatHeader from "./components/ChatHeader.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
 import MissionControlDrawer from "./components/MissionControlDrawer.vue";
-import type { ChatMessage, SessionSummary, TraceStep } from "./types/chat";
+import TodoChecklistCard from "./components/TodoChecklistCard.vue";
+import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
 
 const messages = ref<ChatMessage[]>([]);
 const sessions = ref<SessionSummary[]>([]);
+const todos = ref<TodoPhase[]>([]);
 const draft = ref("");
 const busy = ref(false);
 const activity = ref("Thinking...");
@@ -78,6 +80,7 @@ async function loadMessages() {
       messages?: Array<{ role: "user" | "assistant"; text: string; thinking?: string }>;
       busy?: boolean;
       activity?: string;
+      todos?: TodoPhase[];
     };
     messages.value = (data.messages || []).map((m, idx) => ({
       id: `hist-${idx}`,
@@ -88,6 +91,7 @@ async function loadMessages() {
     resetLiveBuffers();
     busy.value = Boolean(data.busy);
     if (data.activity) activity.value = data.activity;
+    if (Array.isArray(data.todos)) todos.value = data.todos;
     scrollToBottom();
   } catch (err) {
     connectionState.value = "error";
@@ -142,8 +146,10 @@ function connectEvents() {
     if (type === "status") {
       busy.value = Boolean(msg.busy);
       if (typeof msg.activity === "string") activity.value = msg.activity;
+      if (Array.isArray(msg.todos)) todos.value = msg.todos as TodoPhase[];
+    } else if (type === "todos" && Array.isArray(msg.phases)) {
+      todos.value = msg.phases as TodoPhase[];
     } else if (type === "activity") {
-      busy.value = true;
       activity.value = typeof msg.label === "string" ? msg.label : "Thinking...";
     } else if (type === "tool_start") {
       busy.value = true;
@@ -176,6 +182,7 @@ function connectEvents() {
       missionRefreshTick.value += 1;
     } else if (type === "session_changed") {
       resetLiveBuffers();
+      todos.value = [];
       busy.value = false;
       loadMessages();
       loadSessions();
@@ -331,6 +338,8 @@ onMounted(async () => {
       </div>
 
       <div v-if="error" class="error-banner">{{ error }}</div>
+
+      <TodoChecklistCard :phases="todos" @dismiss="todos = []" />
 
       <ChatComposer v-model="draft" :busy="busy" @send="sendMessage" @stop="stopReply" />
     </div>

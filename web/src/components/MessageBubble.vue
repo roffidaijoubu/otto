@@ -12,7 +12,10 @@ const props = defineProps<{
   live?: boolean;
 }>();
 
-const html = computed(() => renderMarkdown(props.text));
+const visibleText = computed(() =>
+  props.text.replace(/<hidden>[\s\S]*?<\/hidden>/gi, "").trim()
+);
+const html = computed(() => renderMarkdown(visibleText.value));
 </script>
 
 <template>
@@ -24,7 +27,7 @@ const html = computed(() => renderMarkdown(props.text));
       :steps="steps"
       :live="live"
     />
-    <div v-if="text.trim()" class="msg-body md-content" v-html="html"></div>
+    <div v-if="visibleText" class="msg-body md-content" v-html="html"></div>
   </div>
 </template>
 

@@ -227,7 +227,9 @@ function submitQuickAdd() {
   const text = quickAddText.value.trim();
   if (!text) return;
   quickAddText.value = "";
-  emit("askPrompt", `I want to add this to calendar: ${text}`);
+  const hiddenDirective =
+    '<hidden>Use the todo tool to track missing details needed to finalize this schedule (and copy-paste YouTube Studio waiting room pack if it is a stream/collab). Prefix non-blocking items with "(Optional)". Once all required items are clear, immediately create the calendar event and mark required tasks done.</hidden>';
+  emit("askPrompt", `I want to add this to calendar: ${text}\n${hiddenDirective}`);
 }
 
 async function syncGoogleCalendar() {
