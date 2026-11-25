@@ -135,11 +135,16 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
 | `agent/MEMORY.md.example` | Starter dossier template for 3 Goals, Ideal Schedule, 3 GOATs, and 3+1 stream tracking |
 | `agent/extensions/*.ts` | Auto-discovering `omp` tools for Exa, Firecrawl, Composio YouTube, Buffer, QStash, and `--new` |
-| `web/` | Vue 3 + Vite Web Chat UI (`ThoughtTrace`, session switcher, passcode gate, `/api/wakeup`) |
+| `web/` | Vue 3 + Vite + DaisyUI v5 Web Chat UI &amp; Mission Control Drawer (`ThoughtTrace`, passcode gate, `/api/wakeup`) |
+| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), 14-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
 | `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, builds `web/`, registers `lma-web` |
 
-> **For judges &amp; engineers:** Read the [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how **Upstash QStash + `/.sprite/api.sock` Tasks API** enables proactive self-scheduling on a $0-idle sleeping Sprite, and how we use **Checkpoint Time-Travel** for stateful E2E testing.
+### Why Fly.io Sprites Made Building `lma` 10× Faster
+Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
+- Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, clean Mnemopi SQLite, rebuilt `web/`).
+- Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Professor L's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
 
+> **For judges &amp; engineers:** Read the full [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how proactive wake-ups survive 30s auto-sleep, and our defense-in-depth security model.
 <br>
 
 ---

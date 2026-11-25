@@ -81,14 +81,24 @@ Every extension queries `GET https://api.sprites.dev/v1/gateway/list` at runtime
 
 ---
 
-## 4. Checkpoint Time-Travel E2E Testing
+## 4. Checkpoint Time-Travel &amp; Agentic E2E Testing
 
-Stateful personal agents are notoriously hard to test end-to-end because persistent memory (`MEMORY.md`, Mnemopi SQLite) and conversation logs bleed across runs.
+Stateful personal agents are notoriously painful to test end-to-end: persistent memory (`MEMORY.md`, Mnemopi SQLite) and conversation history bleed across runs, and LLM replies are non-deterministic so brittle exact-string unit tests break constantly.
 
-`lma` leverages Fly.io Sprites' immutable copy-on-write checkpoints via `scripts/sync-initialized-checkpoint.sh` (hooked into `.git/hooks/post-commit`):
-1. Every commit automatically syncs the repo to the Sprite, clears runtime sessions/memories, resets `MEMORY.md` to `MEMORY.md.example`, builds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints (never touching live/prod checkpoints).
-2. To E2E test onboarding or a new skill from a truly blank slate: snapshot live state (`sprite checkpoint create --comment "prod"`), `sprite restore <initialized-id>`, run multi-turn tests, and jump right back forward (`sprite restore <prod-id>`).
+**Fly.io Sprites' immutable copy-on-write checkpoints turned that bottleneck into our biggest development speed multiplier:**
 
+```mermaid
+flowchart LR
+    C["git commit"] --> H["post-commit hook<br/>sync-initialized-checkpoint.sh"]
+    H --> I["Clean 'initialized: &lt;sha&gt;'<br/>Checkpoint (blank MEMORY.md)"]
+    I -->|"sprite restore &lt;id&gt; (~1s)"| T["Blank-Slate Testing Agent<br/>(reads scripts/e2e/INDEX.md)"]
+    T -->|"Multi-turn omp -p + JSONL inspection"| G["Semantic Rubric Grade<br/>(vs expected-memory.md)"]
+    G -->|"sprite restore &lt;prod-id&gt;"| P["Live Prod State<br/>(Zero Data Loss)"]
+```
+
+1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh`):** Hooked into `.git/hooks/post-commit`, every code commit automatically syncs the repo to the Sprite, clears runtime sessions/memories, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints (never touching live/prod snapshots).
+2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs 14 deterministic checks in ~11 seconds — TypeScript/Vite build, all 5 skill &amp; 8 extension symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, and authenticated Mission Control APIs.
+3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Instead of flaky regex assertions, behavioral tests live as Markdown playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with a programmatic communication guide (`scripts/e2e/INDEX.md`) and a golden reference dossier (`scripts/e2e/expected-memory.md`). A completely blank-slate coding agent can restore `initialized:`, execute multi-turn conversations against Professor L, inspect raw JSONL tool calls, semantically grade the resulting `MEMORY.md` against `expected-memory.md`, and jump straight back to live state in seconds — making iteration dramatically faster and consistently reproducible.
 ---
 
 ## 5. Defense-in-Depth Security
