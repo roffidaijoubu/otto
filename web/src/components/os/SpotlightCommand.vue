@@ -73,18 +73,30 @@ const QUICK_FOLDERS = [
   { path: "rundowns", title: "Stream Rundowns", subtitle: "/rundowns · Episode outlines" },
 ];
 
-const LAYOUT_ACTIONS: Array<{
-  preset: LayoutPreset;
-  title: string;
-  subtitle: string;
-  badge?: string;
-}> = [
-  { preset: "tile-2up", title: "Tile 2-Up", subtitle: "Otto Chat left + secondary window right", badge: "⌥⇧T" },
+const layoutActions = computed<
+  Array<{
+    preset: LayoutPreset;
+    title: string;
+    subtitle: string;
+    badge?: string;
+  }>
+>(() => [
+  {
+    preset: "tile-2up",
+    title: "Tile 2-Up",
+    subtitle: "Otto Chat left + secondary window right",
+    badge: props.wm.shortcutLabels.value.tile,
+  },
   { preset: "focus-chat", title: "Focus Otto Chat", subtitle: "Center Otto Chat and minimize others" },
   { preset: "cascade", title: "Cascade Windows", subtitle: "Stack open windows cleanly" },
-  { preset: "show-desktop", title: "Show Desktop", subtitle: "Toggle minimize all open windows", badge: "⌥⇧D" },
+  {
+    preset: "show-desktop",
+    title: "Show Desktop",
+    subtitle: "Toggle minimize all open windows",
+    badge: props.wm.shortcutLabels.value.desktop,
+  },
   { preset: "reset", title: "Reset Layout", subtitle: "Restore default Otto Studio OS geometry" },
-];
+]);
 
 const allItems = computed<SpotlightItem[]>(() => {
   const items: SpotlightItem[] = [];
@@ -118,7 +130,7 @@ const allItems = computed<SpotlightItem[]>(() => {
         : "Launch Studio app",
       keywords: `${app.id} ${app.title} ${app.shortLabel} app open`,
       appIcon: app.icon,
-      badge: app.shortcutDigit ? `⌥${app.shortcutDigit}` : undefined,
+      badge: app.shortcutDigit ? `${props.wm.shortcutLabels.value.altPrefix}${app.shortcutDigit}` : undefined,
       run: () => props.wm.openWindow(app.id as StudioAppId),
     });
   }
@@ -137,7 +149,7 @@ const allItems = computed<SpotlightItem[]>(() => {
     });
   }
 
-  for (const layout of LAYOUT_ACTIONS) {
+  for (const layout of layoutActions.value) {
     items.push({
       id: `layout:${layout.preset}`,
       group: "Layouts",

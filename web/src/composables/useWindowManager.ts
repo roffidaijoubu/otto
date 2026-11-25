@@ -97,6 +97,31 @@ export interface DesktopShellExposed {
   openSpotlight: () => void;
 }
 
+export type WindowControlsMode = "auto" | "mac" | "windows";
+export type ResolvedPlatform = "mac" | "windows";
+
+export interface ShortcutLabels {
+  spotlight: string;
+  altPrefix: string;
+  tile: string;
+  desktop: string;
+}
+
+interface NavigatorWithUAData extends Navigator {
+  userAgentData?: {
+    platform?: string;
+  };
+}
+
+export function detectHostPlatform(): ResolvedPlatform {
+  if (typeof navigator === "undefined") return "mac";
+  const nav = navigator as NavigatorWithUAData;
+  const uaPlatform = nav.userAgentData?.platform || "";
+  const fallbackPlatform = navigator.platform || navigator.userAgent || "";
+  const combined = `${uaPlatform} ${fallbackPlatform}`;
+  return /mac|iphone|ipad|ipod/i.test(combined) ? "mac" : "windows";
+}
+
 export interface WindowManagerInstance {
   apps: readonly StudioAppDefinition[];
   appMap: Record<StudioAppId, StudioAppDefinition>;
@@ -110,6 +135,11 @@ export interface WindowManagerInstance {
   openWindows: ComputedRef<StudioWindowState[]>;
   focusedWindowId: ComputedRef<StudioAppId | null>;
   focusedApp: ComputedRef<StudioAppDefinition | null>;
+  detectedPlatform: ResolvedPlatform;
+  controlsMode: Ref<WindowControlsMode>;
+  effectivePlatform: ComputedRef<ResolvedPlatform>;
+  shortcutLabels: ComputedRef<ShortcutLabels>;
+  setControlsMode: (mode: WindowControlsMode) => void;
   openWindow: (id: StudioAppId, opts?: OpenWindowOptions) => void;
   closeWindow: (id: StudioAppId) => void;
   minimizeWindow: (id: StudioAppId) => void;
@@ -140,6 +170,7 @@ export const MOBILE_BREAKPOINT = 1024;
 export const Z_INDEX_MIN = 10;
 export const Z_INDEX_MAX = 40;
 export const STORAGE_KEY = "otto-studio-os-layout-v1";
+export const CONTROLS_MODE_STORAGE_KEY = "otto-studio-os-controls-mode";
 
 export const STUDIO_APPS: readonly StudioAppDefinition[] = [
   {
@@ -377,6 +408,36 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   const interactingWindowId = ref<StudioAppId | null>(null);
   const isInteracting = computed(() => interactingWindowId.value !== null);
   const isMobile = computed(() => viewport.width < MOBILE_BREAKPOINT);
+  const detectedPlatform: ResolvedPlatform = detectHostPlatform();
+  const initialControlsMode = (() => {
+    if (!shouldPersist || typeof window === "undefined") return "auto" as WindowControlsMode;
+    try {
+      const saved = window.localStorage.getItem(CONTROLS_MODE_STORAGE_KEY);
+      if (saved === "auto" || saved === "mac" || saved === "windows") return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return "auto" as WindowControlsMode;
+  })();
+  const controlsMode = ref<WindowControlsMode>(initialControlsMode);
+  const effectivePlatform = computed<ResolvedPlatform>(() =>
+    controlsMode.value === "auto" ? detectedPlatform : controlsMode.value
+  );
+  const shortcutLabels = computed<ShortcutLabels>(() =>
+    effectivePlatform.value === "mac"
+      ? { spotlight: "⌘K", altPrefix: "⌥", tile: "⌥⇧T", desktop: "⌥⇧D" }
+      : { spotlight: "Ctrl+K", altPrefix: "Alt+", tile: "Alt+Shift+T", desktop: "Alt+Shift+D" }
+  );
+
+  function setControlsMode(mode: WindowControlsMode) {
+    controlsMode.value = mode;
+    if (!shouldPersist || typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(CONTROLS_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -959,6 +1020,11 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     openWindows,
     focusedWindowId,
     focusedApp,
+    detectedPlatform,
+    controlsMode,
+    effectivePlatform,
+    shortcutLabels,
+    setControlsMode,
     openWindow,
     closeWindow,
     minimizeWindow,

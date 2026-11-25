@@ -110,7 +110,7 @@ const focusedWin = computed(() => {
             <DropdownMenuItem @select="emit('open-spotlight')">
               <Search class="size-4" aria-hidden="true" />
               <span>Spotlight Search</span>
-              <DropdownMenuShortcut>⌘K</DropdownMenuShortcut>
+              <DropdownMenuShortcut>{{ wm.shortcutLabels.value.spotlight }}</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem @select="wm.openWindow('settings')">
               <Settings class="size-4" aria-hidden="true" />
@@ -122,7 +122,7 @@ const focusedWin = computed(() => {
             <DropdownMenuItem @select="wm.applyPreset('show-desktop')">
               <Minimize2 class="size-4" aria-hidden="true" />
               <span>Show Desktop</span>
-              <DropdownMenuShortcut>⌥⇧D</DropdownMenuShortcut>
+              <DropdownMenuShortcut>{{ wm.shortcutLabels.value.desktop }}</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem @select="wm.applyPreset('reset')">
               <RotateCcw class="size-4" aria-hidden="true" />
@@ -160,7 +160,7 @@ const focusedWin = computed(() => {
             <DropdownMenuItem @select="wm.applyPreset('tile-2up')">
               <Columns2 class="size-4" aria-hidden="true" />
               <span>Tile 2-Up</span>
-              <DropdownMenuShortcut>⌥⇧T</DropdownMenuShortcut>
+              <DropdownMenuShortcut>{{ wm.shortcutLabels.value.tile }}</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem @select="wm.applyPreset('focus-chat')">
               <Maximize2 class="size-4" aria-hidden="true" />
@@ -173,7 +173,7 @@ const focusedWin = computed(() => {
             <DropdownMenuItem @select="wm.applyPreset('show-desktop')">
               <LayoutGrid class="size-4" aria-hidden="true" />
               <span>Show Desktop</span>
-              <DropdownMenuShortcut>⌥⇧D</DropdownMenuShortcut>
+              <DropdownMenuShortcut>{{ wm.shortcutLabels.value.desktop }}</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem @select="wm.applyPreset('reset')">
               <RotateCcw class="size-4" aria-hidden="true" />
@@ -233,7 +233,7 @@ const focusedWin = computed(() => {
         <Search class="size-3" aria-hidden="true" />
         <span class="hidden sm:inline">Spotlight</span>
         <kbd class="rounded bg-[#f2f2f2] px-1 py-px text-[10px] font-semibold text-[#303030]">
-          ⌘K
+          {{ wm.shortcutLabels.value.spotlight }}
         </kbd>
       </button>
 

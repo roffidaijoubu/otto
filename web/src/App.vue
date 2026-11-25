@@ -788,10 +788,57 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Window Layouts & Shortcuts -->
+          <!-- Window Layouts, Controls & Shortcuts -->
           <div class="otto-card p-4">
-            <div class="mb-3 font-mono text-xs font-semibold text-[#303030]">
-              Window Layouts &amp; Shortcuts
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <span class="font-mono text-xs font-semibold text-[#303030]">
+                Window Controls &amp; Layouts
+              </span>
+              <div
+                v-if="shellRef"
+                data-settings-controls-mode
+                class="flex items-center gap-0.5 rounded-full bg-[#f2f2f2] p-0.5"
+              >
+                <button
+                  type="button"
+                  data-controls-mode="auto"
+                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
+                  :class="
+                    shellRef.wm.controlsMode.value === 'auto'
+                      ? 'bg-[#303030] text-white'
+                      : 'text-[#666] hover:text-[#303030]'
+                  "
+                  @click="shellRef.wm.setControlsMode('auto')"
+                >
+                  Auto ({{ shellRef.wm.detectedPlatform === 'mac' ? 'macOS' : 'Windows' }})
+                </button>
+                <button
+                  type="button"
+                  data-controls-mode="mac"
+                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
+                  :class="
+                    shellRef.wm.controlsMode.value === 'mac'
+                      ? 'bg-[#303030] text-white'
+                      : 'text-[#666] hover:text-[#303030]'
+                  "
+                  @click="shellRef.wm.setControlsMode('mac')"
+                >
+                  macOS (Left)
+                </button>
+                <button
+                  type="button"
+                  data-controls-mode="windows"
+                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
+                  :class="
+                    shellRef.wm.controlsMode.value === 'windows'
+                      ? 'bg-[#303030] text-white'
+                      : 'text-[#666] hover:text-[#303030]'
+                  "
+                  @click="shellRef.wm.setControlsMode('windows')"
+                >
+                  Windows (Right)
+                </button>
+              </div>
             </div>
             <div class="flex flex-wrap gap-2">
               <Button size="xs" variant="secondary" type="button" @click="shellRef?.wm.applyPreset('tile-2up')">
@@ -816,10 +863,30 @@ onMounted(async () => {
               </Button>
             </div>
             <div class="mt-3 grid grid-cols-2 gap-2 font-mono text-[11px] text-[#666]">
-              <div><kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">⌘K</kbd> Spotlight</div>
-              <div><kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">⌥1–7</kbd> Toggle Apps</div>
-              <div><kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">⌥⇧T</kbd> Tile 2-Up</div>
-              <div><kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">⌥⇧D</kbd> Show Desktop</div>
+              <div>
+                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
+                  {{ shellRef?.wm.shortcutLabels.value.spotlight ?? 'Ctrl+K' }}
+                </kbd>
+                Spotlight
+              </div>
+              <div>
+                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
+                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–7
+                </kbd>
+                Toggle Apps
+              </div>
+              <div>
+                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
+                  {{ shellRef?.wm.shortcutLabels.value.tile ?? 'Alt+Shift+T' }}
+                </kbd>
+                Tile 2-Up
+              </div>
+              <div>
+                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
+                  {{ shellRef?.wm.shortcutLabels.value.desktop ?? 'Alt+Shift+D' }}
+                </kbd>
+                Show Desktop
+              </div>
             </div>
           </div>
 

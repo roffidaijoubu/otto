@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Maximize2, Minimize2, Minus, X } from "@lucide/vue";
+import { Copy, Maximize2, Minimize2, Minus, Square, X } from "@lucide/vue";
 import { cn } from "@/lib/utils";
 import StudioAppIcon from "./StudioAppIcon.vue";
 import type {
@@ -21,6 +21,7 @@ const isDragging = ref(false);
 const isResizing = ref(false);
 
 const isFocused = computed(() => props.wm.focusedWindowId.value === props.win.id);
+const isMacControls = computed(() => props.wm.effectivePlatform.value === "mac");
 const isMobile = computed(() => props.wm.isMobile.value);
 const showPointerShield = computed(() => props.wm.isInteracting.value);
 
@@ -257,9 +258,11 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
       @pointerdown="handleTitlebarPointerDown"
       @dblclick="handleTitlebarDoubleClick"
     >
-      <!-- Left: Traffic lights + App icon + Title + Subtitle -->
+      <!-- Left: macOS traffic lights (mac only) + App icon + Title + Subtitle -->
       <div class="flex min-w-0 items-center gap-2.5">
         <div
+          v-if="isMacControls"
+          data-window-controls="mac"
           class="flex items-center gap-1.5"
           data-no-drag="true"
           role="group"
@@ -359,14 +362,56 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
         </div>
       </div>
 
-      <!-- Right: Custom per-window actions slot + focus indicator -->
+      <!-- Right: Custom per-window actions slot + Windows/Linux controls (— □ ×) -->
       <div class="flex shrink-0 items-center gap-1.5" data-no-drag="true">
         <slot name="actions" />
-        <span
-          v-if="isFocused"
-          class="size-1.5 rounded-full bg-[#303030]"
-          aria-hidden="true"
-        />
+
+        <template v-if="!isMacControls">
+          <span
+            v-if="$slots.actions"
+            class="mx-0.5 h-4 w-px bg-black/10"
+            aria-hidden="true"
+          />
+          <div
+            data-window-controls="windows"
+            class="flex items-center gap-0.5"
+            role="group"
+            :aria-label="`${app.title} window controls`"
+          >
+            <button
+              v-if="!isMobile"
+              type="button"
+              :aria-label="`Minimize ${app.title}`"
+              title="Minimize"
+              class="flex size-6 items-center justify-center rounded-md text-[#525252] transition-colors hover:bg-black/8 hover:text-[#303030]"
+              @click.stop="wm.minimizeWindow(win.id)"
+            >
+              <Minus class="size-3.5 stroke-[2]" aria-hidden="true" />
+            </button>
+
+            <button
+              v-if="!isMobile"
+              type="button"
+              :aria-label="win.isMaximized ? `Restore ${app.title}` : `Maximize ${app.title}`"
+              :title="win.isMaximized ? 'Restore' : 'Maximize'"
+              class="flex size-6 items-center justify-center rounded-md text-[#525252] transition-colors hover:bg-black/8 hover:text-[#303030]"
+              @click.stop="wm.toggleMaximize(win.id)"
+            >
+              <Copy v-if="win.isMaximized" class="size-3 stroke-[2]" aria-hidden="true" />
+              <Square v-else class="size-3 stroke-[2]" aria-hidden="true" />
+            </button>
+
+            <button
+              type="button"
+              :aria-label="`Close ${app.title}`"
+              title="Close"
+              class="flex size-6 items-center justify-center rounded-md text-[#525252] transition-colors hover:bg-[#e81123] hover:text-white"
+              @click.stop="wm.closeWindow(win.id)"
+            >
+              <X class="size-3.5 stroke-[2]" aria-hidden="true" />
+            </button>
+          </div>
+        </template>
       </div>
     </header>
 

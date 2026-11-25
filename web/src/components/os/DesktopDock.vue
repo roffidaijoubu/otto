@@ -99,7 +99,7 @@ function statusLabel(app: StudioAppDefinition): string {
                 v-if="app.shortcutDigit && !wm.isMobile.value"
                 class="rounded bg-white/15 px-1 py-px text-[10px]"
               >
-                ⌥{{ app.shortcutDigit }}
+                {{ wm.shortcutLabels.value.altPrefix }}{{ app.shortcutDigit }}
               </kbd>
             </TooltipContent>
           </Tooltip>
@@ -181,7 +181,7 @@ function statusLabel(app: StudioAppDefinition): string {
               v-if="app.shortcutDigit && !wm.isMobile.value"
               class="rounded bg-white/15 px-1 py-px text-[10px]"
             >
-              ⌥{{ app.shortcutDigit }}
+              {{ wm.shortcutLabels.value.altPrefix }}{{ app.shortcutDigit }}
             </kbd>
           </TooltipContent>
         </Tooltip>

@@ -119,7 +119,7 @@ function launchShortcut(item: DesktopShortcut) {
                   {{ statusSubtitle }}
                 </span>
                 <span class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-[#f9f5a2] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#303030]">
-                  Click to summon Otto · ⌘K
+                  Click to summon Otto · {{ wm.shortcutLabels.value.spotlight }}
                 </span>
               </div>
             </button>
@@ -134,7 +134,7 @@ function launchShortcut(item: DesktopShortcut) {
         <ContextMenuItem @select="emit('open-spotlight')">
           <Search class="size-4" aria-hidden="true" />
           <span>Spotlight Search</span>
-          <ContextMenuShortcut>⌘K</ContextMenuShortcut>
+          <ContextMenuShortcut>{{ wm.shortcutLabels.value.spotlight }}</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
@@ -172,7 +172,7 @@ function launchShortcut(item: DesktopShortcut) {
         <ContextMenuItem @select="wm.applyPreset('tile-2up')">
           <Columns2 class="size-4" aria-hidden="true" />
           <span>Tile 2-Up</span>
-          <ContextMenuShortcut>⌥⇧T</ContextMenuShortcut>
+          <ContextMenuShortcut>{{ wm.shortcutLabels.value.tile }}</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem @select="wm.applyPreset('cascade')">
           <Layers class="size-4" aria-hidden="true" />
@@ -181,7 +181,7 @@ function launchShortcut(item: DesktopShortcut) {
         <ContextMenuItem @select="wm.applyPreset('show-desktop')">
           <LayoutGrid class="size-4" aria-hidden="true" />
           <span>Show Desktop</span>
-          <ContextMenuShortcut>⌥⇧D</ContextMenuShortcut>
+          <ContextMenuShortcut>{{ wm.shortcutLabels.value.desktop }}</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem @select="wm.applyPreset('reset')">
           <RotateCcw class="size-4" aria-hidden="true" />
