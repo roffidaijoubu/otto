@@ -1,6 +1,6 @@
 # AGENTS.md — `lma` (Professor L Livestreamer Manager Agent)
 
-> If `AGENTS.local.md` exists in the repo root (gitignored), read it first for private workstation, git identity, and Fly.io org bindings.
+> If `WORKSTATION.md` exists in the repo root (gitignored; copy from [`WORKSTATION.md.example`](WORKSTATION.md.example)), read it first for private workstation, git identity, and Fly.io org bindings.
 
 ## Project Overview
 `lma` is a **Fly.io Hacksgiving 2026** personal Talent Manager & Ops Agent for indie livestreamers and VTubers (**Professor L**), running persistently inside a Fly.io Sprite with **zero raw API keys in the VM or repository**.
@@ -25,6 +25,7 @@ Do **not** turn `/home/sprite/.omp/` directly into a git repo (it holds runtime 
 ```text
 lma/
 ├── AGENTS.md                   # Public agentic engineering guide (this file)
+├── WORKSTATION.md.example      # Template for private local bindings (copy to gitignored WORKSTATION.md)
 ├── DESIGN.md                   # CafeBlend Studio design system tokens & rules
 ├── README.md                   # Project overview + 1-prompt agent-first setup
 ├── setup.sh                    # Idempotent Sprite bootstrap (omp, ffmpeg, yt-dlp, web build, lma-web service)

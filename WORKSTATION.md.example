@@ -1,0 +1,26 @@
+# WORKSTATION.md — Private Local Workstation & Sprite Bindings (Template)
+
+Copy this file to `WORKSTATION.md` (gitignored) so your local coding agent knows your Fly.io org, Sprite URL, and git identity without ever committing private details to the repository.
+
+```bash
+cp WORKSTATION.md.example WORKSTATION.md
+```
+
+## Git Identity & OPSEC (Optional)
+- **Repo-local Git Author:** `<Your Public Name> <your-public@email.com>`
+- **Pre-commit Check:** `git grep -i "<sensitive-keyword>"` (must return 0 matches)
+
+## Local Fly.io Sprite Environment
+- **Fly.io Organization:** `<your-fly-org>`
+- **Default Sprite for this directory:** `lma` (configured via `.sprite`)
+- **Live Sprite URL:** `https://<your-sprite>.sprites.app` (Passcode stored in `/home/sprite/.config/lma/web.env` on the Sprite)
+
+## Active Org Sprites Connectors (Reference Only — Auto-Discovered at Runtime)
+| Provider | Connector ID | Gateway Base URL |
+| :--- | :--- | :--- |
+| **Google Gemini** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/gemini/<connector-id>` |
+| **Exa** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/exa/<connector-id>` |
+| **Firecrawl** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/firecrawl/<connector-id>` |
+| **Composio v3 (YouTube)** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/custom_api/<connector-id>` |
+| **Buffer (X/TikTok/IG)** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/custom_api/<connector-id>` |
+| **Upstash QStash** | `<connector-id>` | `https://api.sprites.dev/v1/gateway/custom_api/<connector-id>` |

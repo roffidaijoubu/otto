@@ -5,6 +5,6 @@
 node_modules/
 agent/models.yml
 agent/MEMORY.md
-AGENTS.local.md
+WORKSTATION.md
 .tests/
 web/dist/
