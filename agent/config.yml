@@ -3,10 +3,10 @@ colorBlindMode: true
 setupVersion: 3
 
 modelRoles:
-  default: google/gemini-4-neon:auto
-  slow: google/gemini-4-neon:high
-  plan: google/gemini-4-neon:high
-  advisor: google/gemini-4-neon:high
+  default: google/gemini-4-hydrogen:auto
+  slow: google/gemini-4-hydrogen:high
+  plan: google/gemini-4-hydrogen:high
+  advisor: google/gemini-4-hydrogen:high
   designer: google/gemini-4-hydrogen:high
   task: google/gemini-4-hydrogen:auto
   vision: google/gemini-4-hydrogen:high
