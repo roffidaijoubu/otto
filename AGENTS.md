@@ -1,9 +1,9 @@
-# AGENTS.md — `lma` (Professor L Livestreamer Manager Agent)
+# AGENTS.md — LMA (`lma` — Livestreamer Manager Agent)
 
 > If `WORKSTATION.md` exists in the repo root (gitignored; copy from [`WORKSTATION.md.example`](WORKSTATION.md.example)), read it first for private workstation, git identity, and Fly.io org bindings.
 
 ## Project Overview
-`lma` is a **Fly.io Hacksgiving 2026** personal Talent Manager & Ops Agent for indie livestreamers and VTubers (**Professor L**), running persistently inside a Fly.io Sprite with **zero raw API keys in the VM or repository**.
+**LMA (`lma` — Livestreamer Manager Agent)** is a **Fly.io Hacksgiving 2026** personal Talent Manager & Ops Agent for indie livestreamers and VTubers (**Professor L**), running persistently inside a Fly.io Sprite with **zero outbound API keys in the VM or repository**.
 
 - **Agent Runtime:** `omp` (`@oh-my-pi/pi-coding-agent`) running as a persistent `--mode rpc --no-ui` subprocess supervised by Bun (`web/server.ts`), paired with Mnemopi SQLite memory + structured `~/.omp/agent/MEMORY.md` talent dossier.
 - **Architecture Deep Dive:** Read [`docs/architecture.md`](docs/architecture.md) for why we chose `omp` RPC, how **Upstash QStash + `/.sprite/api.sock` Tasks API** powers proactive wake-ups on a $0-idle sleeping Sprite, and how zero-key Sprites Connectors auto-discover at runtime.

@@ -1,6 +1,6 @@
-# `lma` Design System — CafeBlend Studio
+# LMA (Livestreamer Manager Agent) Design System — CafeBlend Studio
 
-Adapted from the **CafeBlend Design System** for **Professor L — Livestreamer Manager Agent** (`web/`).
+Adapted from the **CafeBlend Design System** for **LMA (`lma` — Livestreamer Manager Agent, Professor L)** (`web/`).
 
 ## Overview
 Instead of another generic dark-mode neon AI dashboard, `lma` uses a **warm, tactile, coffee-toned studio aesthetic** ("Professor L's Green Room"). Warm cream surfaces (`#FDF6EC`), espresso ink (`#3E2723`), roasted brown accents (`#8B5E3C`), and soft neumorphic `raised`/`inset` elevation make long coaching sessions, stream planning, and clip reviews feel calm, focused, and unmistakably human.

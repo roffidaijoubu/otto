@@ -1,7 +1,7 @@
-<h1 align="center">lma</h1>
+<h1 align="center">LMA — Livestreamer Manager Agent</h1>
 
 <p align="center">
-  <b>Professor L, a persistent personal Talent Manager &amp; Ops Agent for indie livestreamers &amp; VTubers on Fly.io Sprites — zero stored API keys, strictly zero AI-generated art or video.</b>
+  <b><code>lma</code> (Livestreamer Manager Agent) puts Professor L — a persistent personal Talent Manager &amp; Ops Agent for indie livestreamers &amp; VTubers — inside a Fly.io Sprite with zero outbound API keys and strictly zero AI-generated art or video.</b>
   <br>
   Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a> on <a href="https://sprites.dev">Sprites</a>, <a href="https://github.com/can1357/oh-my-pi">omp</a>, and Sprites Connectors.
 </p>

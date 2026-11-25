@@ -1,8 +1,7 @@
-# Agent-First Setup Guide — Fly.io Sprites Connectors (`docs/setup/`)
+# Agent-First Setup Guide — LMA (Livestreamer Manager Agent) Sprites Connectors (`docs/setup/`)
 
-> **Audience:** AI coding agents setting up `lma` on a fresh Fly.io Sprite for a user (with human fallback steps where OAuth or API key retrieval is needed).
+> **Audience:** AI coding agents setting up **LMA (`lma` — Livestreamer Manager Agent)** on a fresh Fly.io Sprite for a user (with human fallback steps where OAuth or API key retrieval is needed).
 > **For humans & judges looking for architectural design rationale:** Read [`docs/architecture.md`](../architecture.md).
-
 `lma` uses **zero raw API keys inside the Sprite VM or repository**. Every external integration routes through `https://api.sprites.dev/v1/gateway/...` and auto-discovers its `gateway_base_url` via `GET /v1/gateway/list` at runtime.
 
 ---
