@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { renderMarkdown } from "../lib/markdown";
+import WorkspaceFileSkeleton from "./WorkspaceFileSkeleton.vue";
 
 export interface WorkspaceEntry {
   name: string;
@@ -31,18 +32,42 @@ const emit = defineEmits<{
   statsUpdated: [payload: { stats: WorkspaceStats; recentFiles: WorkspaceEntry[] }];
 }>();
 
-const currentPath = ref(props.initialPath || "");
-const breadcrumbs = ref<Array<{ name: string; path: string }>>([{ name: "workspace", path: "" }]);
+function normalizeDirPath(relDir: string): string {
+  return relDir.replace(/^\/+|\/+$/g, "");
+}
+
+function buildBreadcrumbs(relDir: string): Array<{ name: string; path: string }> {
+  const out: Array<{ name: string; path: string }> = [{ name: "workspace", path: "" }];
+  const normalized = normalizeDirPath(relDir);
+  if (!normalized) return out;
+  const parts = normalized.split("/").filter(Boolean);
+  let acc = "";
+  for (const part of parts) {
+    acc = acc ? `${acc}/${part}` : part;
+    out.push({ name: part, path: acc });
+  }
+  return out;
+}
+
+const currentPath = ref(normalizeDirPath(props.initialPath || ""));
+const breadcrumbs = ref<Array<{ name: string; path: string }>>(buildBreadcrumbs(currentPath.value));
 const items = ref<WorkspaceEntry[]>([]);
 const dirs = ref<string[]>([""]);
 const stats = ref<WorkspaceStats>({ totalBytes: 0, fileCount: 0, clipCount: 0 });
 const searchQuery = ref("");
 const loading = ref(false);
+const hasLoadedDirs = ref(false);
+const showListSkeleton = ref(true);
 const uploading = ref(false);
 const dragOver = ref(false);
 const statusMsg = ref("");
 const errorMsg = ref("");
 
+const dirCache = new Map<string, WorkspaceEntry[]>();
+let latestRequestId = 0;
+let activeAbortController: AbortController | null = null;
+let latestTextRequestId = 0;
+let activeTextAbortController: AbortController | null = null;
 const creatingFolder = ref(false);
 const newFolderName = ref("");
 const creatingNote = ref(false);
@@ -115,13 +140,38 @@ function setFlash(msg: string) {
   }, 3500);
 }
 
-async function loadDirectory(targetPath = currentPath.value) {
+interface LoadDirectoryOptions {
+  showSkeleton?: boolean;
+  silent?: boolean;
+  rollbackPath?: string;
+}
+
+async function loadDirectory(targetPath = currentPath.value, opts: LoadDirectoryOptions = {}) {
+  const normalizedTarget = normalizeDirPath(targetPath);
+  const trimmedQuery = searchQuery.value.trim();
+  const reqId = ++latestRequestId;
+
+  activeAbortController?.abort();
+  const controller = new AbortController();
+  activeAbortController = controller;
+
+  if (normalizedTarget !== currentPath.value) {
+    currentPath.value = normalizedTarget;
+    breadcrumbs.value = buildBreadcrumbs(normalizedTarget);
+  }
+
   loading.value = true;
+  if (opts.showSkeleton || (!opts.silent && !hasLoadedDirs.value)) {
+    showListSkeleton.value = true;
+  }
   errorMsg.value = "";
+
   try {
-    const q = new URLSearchParams({ path: targetPath });
-    if (searchQuery.value.trim()) q.set("q", searchQuery.value.trim());
-    const res = await fetch(`/api/workspace/list?${q.toString()}`);
+    const q = new URLSearchParams({ path: normalizedTarget });
+    if (trimmedQuery) q.set("q", trimmedQuery);
+    const res = await fetch(`/api/workspace/list?${q.toString()}`, {
+      signal: controller.signal,
+    });
     const data = (await res.json()) as {
       path?: string;
       breadcrumbs?: Array<{ name: string; path: string }>;
@@ -131,14 +181,31 @@ async function loadDirectory(targetPath = currentPath.value) {
       recentFiles?: WorkspaceEntry[];
       error?: string;
     };
+    if (reqId !== latestRequestId) return;
     if (!res.ok) {
       errorMsg.value = data.error || "Could not load folder";
+      if (opts.rollbackPath !== undefined && opts.rollbackPath !== normalizedTarget) {
+        currentPath.value = opts.rollbackPath;
+        breadcrumbs.value = buildBreadcrumbs(opts.rollbackPath);
+        const cachedPrev = dirCache.get(opts.rollbackPath);
+        if (cachedPrev) {
+          items.value = cachedPrev;
+        }
+      }
+      showListSkeleton.value = false;
       return;
     }
-    currentPath.value = data.path ?? "";
-    breadcrumbs.value = data.breadcrumbs || [{ name: "workspace", path: "" }];
-    items.value = data.items || [];
+    const resolvedPath = normalizeDirPath(data.path ?? normalizedTarget);
+    const resolvedItems = data.items || [];
+    currentPath.value = resolvedPath;
+    breadcrumbs.value = data.breadcrumbs || buildBreadcrumbs(resolvedPath);
+    items.value = resolvedItems;
     dirs.value = data.dirs || [""];
+    hasLoadedDirs.value = true;
+    showListSkeleton.value = false;
+    if (!trimmedQuery) {
+      dirCache.set(resolvedPath, resolvedItems);
+    }
     if (data.stats) {
       stats.value = data.stats;
       emit("statsUpdated", {
@@ -147,16 +214,56 @@ async function loadDirectory(targetPath = currentPath.value) {
       });
     }
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") return;
+    if (reqId !== latestRequestId) return;
     errorMsg.value = err instanceof Error ? err.message : "Network error";
+    if (opts.rollbackPath !== undefined && opts.rollbackPath !== normalizedTarget) {
+      currentPath.value = opts.rollbackPath;
+      breadcrumbs.value = buildBreadcrumbs(opts.rollbackPath);
+      const cachedPrev = dirCache.get(opts.rollbackPath);
+      if (cachedPrev) {
+        items.value = cachedPrev;
+      }
+    }
+    showListSkeleton.value = false;
   } finally {
-    loading.value = false;
+    if (reqId === latestRequestId) {
+      loading.value = false;
+      if (activeAbortController === controller) {
+        activeAbortController = null;
+      }
+    }
   }
 }
 
 function navigateTo(relDir: string) {
+  const nextDir = normalizeDirPath(relDir);
+  const prevPath = currentPath.value;
+  const hadSearch = Boolean(searchQuery.value.trim());
+
+  if (nextDir === prevPath && loading.value && !hadSearch) {
+    return;
+  }
+
+  clearTimeout(searchTimer ?? undefined);
   searchQuery.value = "";
   movingItem.value = null;
-  loadDirectory(relDir);
+  errorMsg.value = "";
+  // Optimistic client update: move sidebar active indicator and breadcrumbs immediately
+  currentPath.value = nextDir;
+  breadcrumbs.value = buildBreadcrumbs(nextDir);
+
+  const cached = dirCache.get(nextDir);
+  if (cached && !hadSearch) {
+    items.value = cached;
+    showListSkeleton.value = false;
+    void loadDirectory(nextDir, { silent: true, rollbackPath: prevPath });
+    return;
+  }
+
+  items.value = [];
+  showListSkeleton.value = true;
+  void loadDirectory(nextDir, { showSkeleton: true, rollbackPath: prevPath });
 }
 
 async function openEntry(entry: WorkspaceEntry) {
@@ -167,11 +274,19 @@ async function openEntry(entry: WorkspaceEntry) {
   selectedFile.value = entry;
   editMode.value = false;
   if (entry.kind === "markdown" || entry.kind === "text") {
+    const textReqId = ++latestTextRequestId;
+    activeTextAbortController?.abort();
+    const controller = new AbortController();
+    activeTextAbortController = controller;
+
     textLoading.value = true;
     errorMsg.value = "";
     try {
-      const res = await fetch(`/api/workspace/text?path=${encodeURIComponent(entry.relPath)}`);
+      const res = await fetch(`/api/workspace/text?path=${encodeURIComponent(entry.relPath)}`, {
+        signal: controller.signal,
+      });
       const data = (await res.json()) as { content?: string; error?: string };
+      if (textReqId !== latestTextRequestId) return;
       if (!res.ok) {
         errorMsg.value = data.error || "Unable to read file";
         textContent.value = "";
@@ -180,10 +295,17 @@ async function openEntry(entry: WorkspaceEntry) {
         textContent.value = data.content || "";
         originalTextContent.value = data.content || "";
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (textReqId !== latestTextRequestId) return;
       errorMsg.value = "Unable to read file";
     } finally {
-      textLoading.value = false;
+      if (textReqId === latestTextRequestId) {
+        textLoading.value = false;
+        if (activeTextAbortController === controller) {
+          activeTextAbortController = null;
+        }
+      }
     }
   }
 }
@@ -208,7 +330,8 @@ async function saveTextFile() {
     }
     originalTextContent.value = textContent.value;
     setFlash(`Saved ${selectedFile.value.name}`);
-    await loadDirectory();
+    dirCache.clear();
+    await loadDirectory(currentPath.value, { silent: true });
   } finally {
     textSaving.value = false;
   }
@@ -239,10 +362,11 @@ async function uploadFileList(fileList: FileList | File[]) {
     }
     const count = data.uploaded?.length || arr.length;
     setFlash(`Uploaded ${count} file${count === 1 ? "" : "s"} to /${currentPath.value || "uploads"}`);
+    dirCache.clear();
     if (!currentPath.value) {
-      await loadDirectory("uploads");
+      await loadDirectory("uploads", { showSkeleton: true });
     } else {
-      await loadDirectory();
+      await loadDirectory(currentPath.value, { silent: true });
     }
   } catch (err) {
     errorMsg.value = err instanceof Error ? err.message : "Upload error";
@@ -283,7 +407,8 @@ async function submitNewFolder() {
   newFolderName.value = "";
   creatingFolder.value = false;
   setFlash(`Created folder "${name}"`);
-  await loadDirectory();
+  dirCache.clear();
+  await loadDirectory(currentPath.value, { silent: true });
 }
 
 async function submitNewNote() {
@@ -310,7 +435,8 @@ async function submitNewNote() {
   newNoteName.value = "";
   creatingNote.value = false;
   setFlash(`Created ${relPath}`);
-  await loadDirectory(dir);
+  dirCache.clear();
+  await loadDirectory(dir, { silent: dir === currentPath.value, showSkeleton: dir !== currentPath.value });
   const created = items.value.find((i) => i.relPath === relPath);
   if (created) {
     await openEntry(created);
@@ -346,7 +472,8 @@ async function submitMove() {
   }
   movingItem.value = null;
   setFlash(`Moved to /${newPath}`);
-  await loadDirectory();
+  dirCache.clear();
+  await loadDirectory(currentPath.value, { silent: true });
 }
 
 async function deleteEntry(entry: WorkspaceEntry) {
@@ -365,7 +492,8 @@ async function deleteEntry(entry: WorkspaceEntry) {
     selectedFile.value = null;
   }
   setFlash(`Deleted ${entry.name}`);
-  await loadDirectory();
+  dirCache.clear();
+  await loadDirectory(currentPath.value, { silent: true });
 }
 
 function askOttoAbout(entry: WorkspaceEntry) {
@@ -400,14 +528,18 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null;
 function onSearchInput() {
   clearTimeout(searchTimer ?? undefined);
   searchTimer = setTimeout(() => {
-    loadDirectory();
+    void loadDirectory(currentPath.value, { showSkeleton: true });
   }, 220);
 }
 
 watch(
   () => props.refreshTick,
   () => {
-    loadDirectory();
+    dirCache.clear();
+    void loadDirectory(currentPath.value, {
+      showSkeleton: !hasLoadedDirs.value,
+      silent: hasLoadedDirs.value,
+    });
   },
   { immediate: true }
 );
@@ -415,11 +547,17 @@ watch(
 watch(
   () => props.initialPath,
   (next) => {
-    if (typeof next === "string" && next !== currentPath.value) {
+    if (typeof next === "string" && normalizeDirPath(next) !== currentPath.value) {
       navigateTo(next);
     }
   }
 );
+
+onUnmounted(() => {
+  clearTimeout(searchTimer ?? undefined);
+  activeAbortController?.abort();
+  activeTextAbortController?.abort();
+});
 
 defineExpose({ loadDirectory, navigateTo });
 </script>
@@ -445,18 +583,22 @@ defineExpose({ loadDirectory, navigateTo });
 
       <div class="fm-tree-body">
         <div class="fm-tree-list">
-          <button
-            v-for="d in dirs"
-            :key="d || '__root__'"
-            type="button"
-            class="fm-dir-btn"
-            :class="{ active: currentPath === d && !searchQuery.trim() }"
-            :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
-            @click="navigateTo(d)"
-          >
-            <span>{{ d === "clips" ? "🎬" : d === "thumbnails" ? "🖼" : d === "scripts" ? "📝" : d === "briefs" ? "📋" : "📁" }}</span>
-            <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
-          </button>
+          <WorkspaceFileSkeleton v-if="!hasLoadedDirs && loading" variant="tree" :count="7" />
+          <template v-else>
+            <button
+              v-for="d in dirs"
+              :key="d || '__root__'"
+              type="button"
+              class="fm-dir-btn"
+              :class="{ active: currentPath === d && !searchQuery.trim() }"
+              :aria-current="currentPath === d && !searchQuery.trim() ? 'page' : undefined"
+              :style="{ paddingLeft: d ? `${10 + (d.split('/').length - 1) * 12}px` : '10px' }"
+              @click="navigateTo(d)"
+            >
+              <span>{{ d === "clips" ? "🎬" : d === "thumbnails" ? "🖼" : d === "scripts" ? "📝" : d === "briefs" ? "📋" : "📁" }}</span>
+              <span class="truncate">{{ d ? d.split("/").pop() : "workspace (all)" }}</span>
+            </button>
+          </template>
         </div>
 
         <div class="fm-tree-foot">
@@ -548,8 +690,11 @@ defineExpose({ loadDirectory, navigateTo });
               Drop files to upload into <strong>/{{ currentPath || "uploads" }}</strong>
             </div>
 
-            <div v-if="loading && items.length === 0" class="fm-empty">Loading workspace...</div>
-
+            <WorkspaceFileSkeleton
+              v-if="showListSkeleton"
+              variant="rows"
+              :count="currentPath === '' ? 6 : 4"
+            />
             <div v-else-if="items.length === 0" class="fm-empty">
               <p class="mb-3">
                 {{
@@ -697,7 +842,7 @@ defineExpose({ loadDirectory, navigateTo });
           </div>
 
           <div v-else-if="selectedFile.kind === 'markdown' || selectedFile.kind === 'text'">
-            <div v-if="textLoading" class="text-xs font-mono text-[var(--fg-muted)] py-4">Loading...</div>
+            <WorkspaceFileSkeleton v-if="textLoading" variant="preview" />
             <textarea v-else-if="editMode" v-model="textContent" class="fm-editor" spellcheck="false"></textarea>
             <div v-else-if="selectedFile.kind === 'markdown'" class="md-content fm-md-box" v-html="renderedPreviewHtml"></div>
             <pre v-else class="fm-code-box">{{ textContent }}</pre>
@@ -751,10 +896,17 @@ defineExpose({ loadDirectory, navigateTo });
   font-family: var(--font-mono);
   font-size: 11.5px;
   cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out),
+    transform 100ms var(--ease-out);
 }
 .fm-dir-btn:hover {
   background: var(--surface-alt);
   color: var(--fg);
+}
+.fm-dir-btn:active {
+  transform: scale(0.985);
 }
 .fm-dir-btn.active {
   background: var(--fg);
