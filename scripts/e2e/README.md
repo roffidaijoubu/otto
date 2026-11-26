@@ -10,8 +10,10 @@ Because **Otto** is a conversational AI agent, his responses are non-determinist
    ```bash
    sprite checkpoint create --comment "prod: before e2e run"
    ```
-2. **Find the latest `initialized:` baseline checkpoint & restore it** *(for clean-slate tests like `01-onboarding.md`)*:
+2. **Prepare a clean-slate baseline** *(for blank-memory tests like `01-onboarding.md`, run with `--no-memory`; normal `git commit` checkpoints pre-seed `MEMORY.md` from gitignored `agent/MEMORY.md` for faster daily dev testing)*:
    ```bash
+   bash scripts/sync-initialized-checkpoint.sh --no-memory
+   # or restore an existing blank initialized checkpoint:
    sprite checkpoint list
    sprite restore <initialized-id>
    ```
