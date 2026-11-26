@@ -519,7 +519,10 @@ export class BrowserManager {
   }
   public async captureActiveTab(siteOverride?: string): Promise<SavedSessionMeta> {
     const { activeUrl } = await this.getAllCdpCookies();
-    const effectiveUrl = activeUrl || "https://example.com";
+    if (!activeUrl) {
+      throw new Error("Chrome has no active page — open the site you want to capture in Embedded Chrome first.");
+    }
+    const effectiveUrl = activeUrl;
     let inferredSite = siteOverride?.trim() || "";
     if (!inferredSite) {
       for (const [slug, preset] of Object.entries(PLATFORM_PRESETS)) {
@@ -742,32 +745,64 @@ export class BrowserManager {
     return { origin: "", entries: [] };
   }
 
-  private filterCookiesForSite(cookies: CdpCookie[], site: string, url: string): CdpCookie[] {
-    const preset = PLATFORM_PRESETS[site];
-    const domains = new Set<string>(preset?.domains || []);
-    try {
-      const host = new URL(url).hostname.replace(/^www\./, "");
-      if (host) domains.add(host);
-    } catch {
-      // ignore invalid URL
+  /** Domains a capture may touch: the platform preset's domains plus the requested URL host. */
+  private resolveCaptureDomains(site: string, url: string): string[] {
+    const domains = new Set<string>();
+    for (const d of PLATFORM_PRESETS[site]?.domains || []) {
+      const normalized = d.replace(/^\./, "").toLowerCase();
+      if (normalized) domains.add(normalized);
     }
-    if (domains.size === 0) return cookies;
-    const filtered = cookies.filter((c) => {
-      const cd = (c.domain || "").replace(/^\./, "").toLowerCase();
-      for (const d of domains) {
-        if (cd === d || cd.endsWith(`.${d}`)) return true;
-      }
-      return false;
-    });
-    return filtered.length > 0 ? filtered : cookies;
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+      if (host && host.includes(".")) domains.add(host);
+    } catch {
+      // Unparseable URL: the preset domains (if any) are all we may use.
+    }
+    return [...domains];
+  }
+
+  private matchesDomains(hostOrUrl: string, domains: string[]): boolean {
+    let host = hostOrUrl;
+    try {
+      host = new URL(hostOrUrl).hostname;
+    } catch {
+      // Cookie domains arrive as bare hosts such as ".youtube.com"; use them as-is.
+    }
+    host = host.replace(/^www\./, "").replace(/^\./, "").toLowerCase();
+    if (!host) return false;
+    return domains.some((d) => host === d || host.endsWith(`.${d}`));
+  }
+
+  /** Strictly scoped: never falls back to the whole cookie jar. */
+  private filterCookiesForSite(cookies: CdpCookie[], domains: string[]): CdpCookie[] {
+    if (domains.length === 0) return [];
+    return cookies.filter((c) => this.matchesDomains(c.domain || "", domains));
   }
 
   public async captureAndSaveCookies(siteRaw: string, url: string, label?: string): Promise<SavedSessionMeta> {
     const site = sanitizeSiteSlug(siteRaw);
     const { cookies: allCookies, activeUrl } = await this.getAllCdpCookies();
     const effectiveUrl = activeUrl || url;
-    const siteCookies = this.filterCookiesForSite(allCookies, site, effectiveUrl);
-    const storage = await this.readPageLocalStorage();
+    const domains = this.resolveCaptureDomains(site, effectiveUrl);
+    if (domains.length === 0) {
+      throw new Error(
+        `Refusing to capture cookies for "${site}": no domain is known yet. Open the site in Embedded Chrome, finish logging in, then capture again.`
+      );
+    }
+    const siteCookies = this.filterCookiesForSite(allCookies, domains);
+    if (siteCookies.length === 0) {
+      throw new Error(
+        `Refusing to save a session for "${site}": Chrome holds no cookies for ${domains.join(", ")}. Finish logging in on that tab first — cookies from unrelated sites are never exported.`
+      );
+    }
+    // localStorage belongs to whichever tab is active: keep it only when that
+    // origin is inside the captured domain set, so one site's storage cannot
+    // ride along in another site's session file.
+    const pageStorage = await this.readPageLocalStorage();
+    const storage =
+      pageStorage.origin && this.matchesDomains(pageStorage.origin, domains)
+        ? pageStorage
+        : { origin: "", entries: [] as Array<{ name: string; value: string }> };
 
     fs.mkdirSync(COOKIES_DIR, { recursive: true, mode: 0o700 });
 
@@ -775,7 +810,7 @@ export class BrowserManager {
     const netscapePath = path.join(COOKIES_DIR, `${site}.cookies.txt`);
     const statePath = path.join(COOKIES_DIR, `${site}.state.json`);
 
-    const domains = Array.from(
+    const cookieDomains = Array.from(
       new Set(siteCookies.map((c) => (c.domain || "").replace(/^\./, "")).filter(Boolean))
     );
     const meta: SavedSessionMeta = {
@@ -784,7 +819,7 @@ export class BrowserManager {
       url: effectiveUrl,
       capturedAt: new Date().toISOString(),
       cookieCount: siteCookies.length,
-      domains,
+      domains: cookieDomains,
       files: {
         json: jsonPath,
         netscape: netscapePath,
@@ -906,7 +941,12 @@ export class BrowserManager {
   }): Promise<BrowserLoginRequestState> {
     const site = sanitizeSiteSlug(params.site);
     const preset = PLATFORM_PRESETS[site];
-    const url = params.url?.trim() || preset?.defaultUrl || "https://google.com";
+    const url = params.url?.trim() || preset?.defaultUrl;
+    if (!url) {
+      throw new Error(
+        `browser_login needs an explicit url for custom site "${site}" — no platform preset provides a default login page.`
+      );
+    }
     const expectedCookies =
       params.expectedCookies && params.expectedCookies.length > 0
         ? params.expectedCookies
@@ -973,7 +1013,7 @@ export class BrowserManager {
 
     try {
       const { cookies, activeUrl } = await this.getAllCdpCookies();
-      const siteCookies = this.filterCookiesForSite(cookies, req.site, req.url);
+      const siteCookies = this.filterCookiesForSite(cookies, this.resolveCaptureDomains(req.site, req.url));
       const cookieNames = new Set(siteCookies.filter((c) => Boolean(c.value)).map((c) => c.name));
 
       const hasAllCookies =

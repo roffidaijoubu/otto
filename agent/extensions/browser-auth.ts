@@ -73,6 +73,22 @@ function sanitizeSite(raw: string): string {
   );
 }
 
+// Otto never mutates a creator's accounts through a browser adapter. OpenCLI is
+// read-only here; anything that publishes, edits, or deletes belongs in a
+// human-approved Buffer draft or in the creator's own hands.
+const MUTATING_OPENCLI_COMMAND =
+  /^(post|tweet|publish|upload|delete|remove|edit|update|create|reply|comment|like|unlike|follow|unfollow|subscribe|unsubscribe|send|dm|message|block|mute|report|share|repost|retweet|quote|bookmark|pin|archive|rename|invite|accept|decline|join|leave|purchase|buy|checkout|save|write|add|move|copy|schedule|set)(?:[-_:]|$)/i;
+
+function assertReadOnlyOpenCli(site: string, command: string): void {
+  const match = MUTATING_OPENCLI_COMMAND.exec(command.trim());
+  if (!match) return;
+  throw new Error(
+    `opencli_run is read-only — blocked "${site} ${command}" ("${match[1]}" mutates account state). ` +
+      `Otto never posts, edits, deletes, follows, or DMs on the creator's behalf through a browser adapter. ` +
+      `Queue it as a human-approved draft with buffer_create_post (saveToDraft: true), or let the creator do it by hand in Embedded Chrome.`
+  );
+}
+
 function getInternalBaseUrl(): string {
   const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
   return `http://127.0.0.1:${port}`;
@@ -344,7 +360,7 @@ export default function (pi: ExtensionAPI) {
     name: "opencli_run",
     label: "Run OpenCLI Site Adapter",
     description:
-      "Run an OpenCLI site command (e.g. site='tiktok', command='creator-videos', or site='tiktok', command='search', args=['vtuber']) against the Sprite's logged-in Chrome via CDP. Automatically wakes Chrome CDP if stopped. If exitCode is 77 (AUTH_REQUIRED), call browser_login for that site.",
+      "Run a READ-ONLY OpenCLI site command (e.g. site='tiktok', command='creator-videos', or site='tiktok', command='search', args=['vtuber']) against the Sprite's logged-in Chrome via CDP. Automatically wakes Chrome CDP if stopped. Mutating adapters (post/publish/upload/edit/delete/like/follow/comment/send/DM/…) are refused: draft them with buffer_create_post (saveToDraft: true) instead. If exitCode is 77 (AUTH_REQUIRED), call browser_login for that site.",
     parameters: Type.Object({
       site: Type.String({ description: "Site name, e.g. 'tiktok', 'twitter', 'youtube', 'reddit', 'notebooklm'." }),
       command: Type.String({ description: "Subcommand name, e.g. 'creator-videos', 'search', 'explore', 'timeline'." }),
@@ -363,6 +379,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const site = params.site.trim().toLowerCase();
       const command = params.command.trim();
+      assertReadOnlyOpenCli(site, command);
       const targetDomain =
         params.targetDomain?.trim() ||
         (site === "x" || site === "twitter"

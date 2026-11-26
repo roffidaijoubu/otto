@@ -1640,7 +1640,7 @@ Bun.serve<VncWsData>({
         const session = await browserManager.captureActiveTab(body.site);
         return Response.json({ ok: true, session, sessions: browserManager.listSavedSessions() });
       } catch (err) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
+        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
       }
     }
     if (req.method === "POST" && url.pathname === "/api/browser/navigate") {
@@ -1674,8 +1674,12 @@ Bun.serve<VncWsData>({
     }
     if (req.method === "POST" && url.pathname === "/api/browser/login/complete") {
       const body = (await req.json().catch(() => ({}))) as { requestId?: string };
-      const completed = await browserManager.completeLoginRequest(body.requestId);
-      return Response.json({ ok: Boolean(completed), request: completed });
+      try {
+        const completed = await browserManager.completeLoginRequest(body.requestId);
+        return Response.json({ ok: Boolean(completed), request: completed });
+      } catch (err) {
+        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+      }
     }
     if (req.method === "POST" && url.pathname === "/api/browser/login/cancel") {
       const body = (await req.json().catch(() => ({}))) as { requestId?: string; reason?: string };

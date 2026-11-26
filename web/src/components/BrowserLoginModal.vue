@@ -35,6 +35,7 @@ const emit = defineEmits<{
 const vncRef = ref<InstanceType<typeof NoVncCanvas> | null>(null);
 const busyAction = ref(false);
 const pasteError = ref("");
+const completeError = ref("");
 
 const isOpen = computed(() => Boolean(props.request && props.request.status === "pending"));
 
@@ -72,6 +73,7 @@ async function handlePasteClipboard() {
 async function handleManualComplete() {
   if (!props.request || busyAction.value) return;
   busyAction.value = true;
+  completeError.value = "";
   try {
     const res = await fetch("/api/browser/login/complete", {
       method: "POST",
@@ -80,7 +82,10 @@ async function handleManualComplete() {
     });
     if (res.ok) {
       emit("completed", props.request.requestId);
+      return;
     }
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    completeError.value = data.error || "Could not capture this session.";
   } finally {
     busyAction.value = false;
   }
@@ -167,6 +172,7 @@ async function handleCancel() {
       </div>
 
       <p v-if="pasteError" class="text-xs text-destructive">{{ pasteError }}</p>
+      <p v-if="completeError" class="text-xs text-destructive">{{ completeError }}</p>
 
       <DialogFooter class="flex items-center justify-between sm:justify-between gap-2">
         <span class="text-xs text-muted-foreground">
