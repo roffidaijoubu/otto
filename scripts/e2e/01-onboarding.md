@@ -1,6 +1,6 @@
-# E2E Playbook 01 — 2-Phase Onboarding & Persistent Memory Accuracy
+# E2E Playbook 01 — Studio Onboarding & Persistent Memory Accuracy
 
-**Goal:** Verify that from a completely blank `initialized:` checkpoint, Otto automatically researches the talent via zero-key connectors, respects zero-fourth-wall persona, fact-checks OPSEC boundaries, persists an accurate dossier to `/home/sprite/.omp/agent/MEMORY.md`, and guides Homework #1.
+**Goal:** Verify that from a completely blank `initialized:` checkpoint, Otto automatically researches the creator via zero-key connectors, respects zero-fourth-wall persona, fact-checks OPSEC boundaries & team credits, and persists an accurate studio profile to `/home/sprite/.omp/agent/MEMORY.md`.
 
 **Reference Baseline:** `scripts/e2e/expected-memory.md`
 
@@ -20,7 +20,7 @@ sprite exec -- bash -c 'mkdir -p /home/sprite/e2e-onboarding && cd /home/sprite/
 
 **Semantic Pass Criteria (Turn 1):**
 - [ ] Otto proactively pulls real public data (e.g. YouTube subscriber/view/video counts, X/TikTok/IG handles from Buffer, and background via Exa) — does **not** ask the user to fill out a boring blank form first.
-- [ ] Presents a structured **Draft Dossier** and explicitly asks for **Fact-Check**, **OPSEC / anonymity boundaries**, and **Human Team / Credits** before jumping to Homework #1.
+- [ ] Presents a structured **Draft Profile** and explicitly asks for **Fact-Check**, **Timezone**, **OPSEC / anonymity boundaries**, and **Human Team / Credits** without dumping a long questionnaire.
 - [ ] **Zero fourth-wall breaks:** Does NOT mention `omp`, `MEMORY.md`, `Mnemopi`, `youtube_tool`, `buffer_list_channels`, or `/skill:onboarding`.
 
 ### 3. Turn 2 — Confirm Fact-Check, OPSEC & Human Credits
@@ -31,7 +31,7 @@ sprite exec -- bash -c 'cd /home/sprite/e2e-onboarding && omp -p "Good homework 
 
 **Semantic Pass Criteria (Turn 2):**
 - [ ] Otto saves the confirmed profile directly into `/home/sprite/.omp/agent/MEMORY.md`.
-- [ ] Transitions naturally into **Homework #1** (3 Concrete Goals, Ideal Schedule + mandatory days off, 3 GOATs + WHY, Upcoming "Christmas").
+- [ ] Confirms the studio profile is ready and asks what task the creator wants to tackle first (does **not** force Homework #1 or unsolicited streaming coaching).
 
 ### 4. Compare Resulting `MEMORY.md` Against `scripts/e2e/expected-memory.md`
 Read `/home/sprite/.omp/agent/MEMORY.md` from the Sprite and semantically compare against `scripts/e2e/expected-memory.md`:

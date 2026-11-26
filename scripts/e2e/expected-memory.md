@@ -24,30 +24,12 @@
 - **Emblem:** Lion 🦁 (Imam Ali ibn Abi Talib) + double-bladed sword Zulfiqar ⚔️.
 - **Non-Negotiable:** Never use AI-generated art, thumbnails, or video—always credit and commission human artists, riggers, clippers, and editors.
 
-## Content Pillars & Interests
-- **Core Pillars:** Short *ceramah* (sermons), long-form free-talk (*Zatsudan*) & Q&A discussions, gaming streams, music covers (e.g., *Tasbih Fatimah Az-Zahra* MV), Shia history & fiqh education (Ahlulbait, Ghadir Khumm, Karbala/Imam Husayn, Twelve Imams, Imam Mahdi, misconceptions & Muslim unity).
+## Content Topics & Style
+- **Main Formats / Topics:** Short *ceramah* (sermons), long-form free-talk (*Zatsudan*) & Q&A discussions, gaming streams, music covers (e.g., *Tasbih Fatimah Az-Zahra* MV), Shia history & fiqh education (Ahlulbait, Ghadir Khumm, Karbala/Imam Husayn, Twelve Imams, Imam Mahdi, misconceptions & Muslim unity).
 - **Advocacy & Discourse:** Palestine & anti-Zionism, respectful pushback against sectarian narratives.
 - **Culture & Hobbies:** VTuber/otaku culture (oshi mentions e.g. Kureiji Ollie), memes, comedy, tech & UX design commentary.
 
-## Homework #1: 3 Concrete Goals (End of Year)
-1. (not set)
-2. (not set)
-3. (not set)
-
-## Ideal Schedule & Boundaries
-- **Target Monthly Hours:** 100–150 hrs (4–6 hrs/stream) — *(not set)*
-- **Mandatory Days Off:** (not set)
-- **Daily Ideation Block:** (not set)
-
-## 3 GOATs (and WHY)
-1. (not set)
-2. (not set)
-3. (not set)
-
-## Upcoming "Christmas" (Big Exciting Milestone)
-- (not set)
-
-## 3+1 Stream Tracker (Last 4 Streams)
-| Date | Title / Segments | Type (`tried-and-true` / `experiment`) | Notes |
-| :--- | :--- | :--- | :--- |
-| - | - | - | - |
+## Goals & Schedule Notes
+- **Current Goals:** (not set)
+- **Usual Schedule / Days Off:** (not set)
+- **Notes:** (not set)
