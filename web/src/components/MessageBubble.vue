@@ -15,7 +15,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  openArtifact: [payload: { path: string; title?: string }];
+  openStudioApp: [payload: { slug: string; title?: string }];
+  openObsOverlay: [payload: { slug: string; title?: string }];
 }>();
 
 const visibleText = computed(() =>
@@ -25,15 +26,29 @@ const html = computed(() => renderMarkdown(visibleText.value));
 
 function handleBodyClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
-  const card = target?.closest<HTMLElement>("[data-artifact-path]");
-  if (!card) return;
-  const path = card.getAttribute("data-artifact-path");
-  if (!path) return;
-  event.preventDefault();
-  emit("openArtifact", {
-    path,
-    title: card.getAttribute("data-artifact-title") || undefined,
-  });
+  const appCard = target?.closest<HTMLElement>("[data-studio-app-slug]");
+  if (appCard) {
+    const slug = appCard.getAttribute("data-studio-app-slug");
+    if (slug) {
+      event.preventDefault();
+      emit("openStudioApp", {
+        slug,
+        title: appCard.getAttribute("data-studio-app-title") || undefined,
+      });
+    }
+    return;
+  }
+  const obsCard = target?.closest<HTMLElement>("[data-obs-overlay-slug]");
+  if (obsCard) {
+    const slug = obsCard.getAttribute("data-obs-overlay-slug");
+    if (slug) {
+      event.preventDefault();
+      emit("openObsOverlay", {
+        slug,
+        title: obsCard.getAttribute("data-obs-overlay-title") || undefined,
+      });
+    }
+  }
 }
 </script>
 

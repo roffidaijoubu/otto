@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue";
 import {
+  AppWindow,
   CalendarDays,
   Contact,
   Database,
@@ -9,6 +10,7 @@ import {
   Layers,
   LayoutDashboard,
   MessageSquare,
+  MonitorPlay,
   Settings,
   Sparkles,
 } from "@lucide/vue";
@@ -29,6 +31,8 @@ const ICON_MAP: Record<StudioAppIconName, Component> = {
   layout: LayoutDashboard,
   folder: FolderOpen,
   layers: Layers,
+  tv: MonitorPlay,
+  app: AppWindow,
   globe: Globe,
   database: Database,
   sparkles: Sparkles,

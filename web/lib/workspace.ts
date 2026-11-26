@@ -10,7 +10,6 @@ export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB inline editor/pre
 export const MAX_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB zip safety cap
 
 export const STARTER_DIRS = [
-  "artifacts",
   "clips",
   "thumbnails",
   "scripts",
@@ -18,18 +17,6 @@ export const STARTER_DIRS = [
   "uploads",
   "exports",
 ] as const;
-
-export type ArtifactKind = "html" | "react" | "svg" | "mermaid" | "markdown";
-
-export function detectArtifactKind(name: string): ArtifactKind | null {
-  const ext = path.extname(name).toLowerCase();
-  if (ext === ".html" || ext === ".htm") return "html";
-  if (ext === ".jsx" || ext === ".tsx") return "react";
-  if (ext === ".svg") return "svg";
-  if (ext === ".mmd" || ext === ".mermaid") return "mermaid";
-  if (ext === ".md" || ext === ".markdown") return "markdown";
-  return null;
-}
 
 export type WorkspaceFileKind = "dir" | "image" | "video" | "audio" | "markdown" | "text" | "other";
 

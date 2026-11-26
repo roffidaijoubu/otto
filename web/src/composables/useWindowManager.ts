@@ -10,11 +10,11 @@ import {
   type Ref,
 } from "vue";
 
-export type StudioAppId =
+export type BuiltinAppId =
   | "otto-chat"
   | "mission-control"
   | "files"
-  | "artifacts"
+  | "obs-overlays"
   | "chrome"
   | "studio-db"
   | "playbooks"
@@ -22,11 +22,16 @@ export type StudioAppId =
   | "contacts"
   | "settings";
 
+export type CustomAppId = `custom:${string}`;
+export type StudioAppId = BuiltinAppId | CustomAppId;
+
 export type StudioAppIconName =
   | "message"
   | "layout"
   | "folder"
   | "layers"
+  | "tv"
+  | "app"
   | "globe"
   | "database"
   | "sparkles"
@@ -59,7 +64,7 @@ export interface StudioAppDefinition {
   minHeight: number;
   defaultWidth: number;
   defaultHeight: number;
-  dockSection: "primary" | "utility";
+  dockSection: "primary" | "utility" | "custom";
   shortcutDigit?: string;
 }
 
@@ -129,10 +134,10 @@ export function detectHostPlatform(): ResolvedPlatform {
 }
 
 export interface WindowManagerInstance {
-  apps: readonly StudioAppDefinition[];
-  appMap: Record<StudioAppId, StudioAppDefinition>;
+  apps: StudioAppDefinition[];
+  appMap: Record<string, StudioAppDefinition>;
   viewport: { width: number; height: number };
-  windows: Record<StudioAppId, StudioWindowState>;
+  windows: Record<string, StudioWindowState>;
   isMobile: ComputedRef<boolean>;
   isInteracting: ComputedRef<boolean>;
   interactingWindowId: Ref<StudioAppId | null>;
@@ -146,6 +151,8 @@ export interface WindowManagerInstance {
   effectivePlatform: ComputedRef<ResolvedPlatform>;
   shortcutLabels: ComputedRef<ShortcutLabels>;
   setControlsMode: (mode: WindowControlsMode) => void;
+  registerCustomApp: (def: StudioAppDefinition) => void;
+  unregisterCustomApp: (id: CustomAppId) => void;
   openWindow: (id: StudioAppId, opts?: OpenWindowOptions) => void;
   closeWindow: (id: StudioAppId) => void;
   minimizeWindow: (id: StudioAppId) => void;
@@ -216,14 +223,14 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "3",
   },
   {
-    id: "artifacts",
-    title: "Artifacts",
-    shortLabel: "Artifacts",
-    icon: "layers",
-    minWidth: 440,
-    minHeight: 380,
-    defaultWidth: 760,
-    defaultHeight: 640,
+    id: "obs-overlays",
+    title: "OBS Overlays",
+    shortLabel: "OBS",
+    icon: "tv",
+    minWidth: 520,
+    minHeight: 420,
+    defaultWidth: 900,
+    defaultHeight: 660,
     dockSection: "primary",
   },
   {
@@ -300,12 +307,12 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
   },
 ] as const;
 
-export const STUDIO_APP_MAP: Record<StudioAppId, StudioAppDefinition> = STUDIO_APPS.reduce(
+export const STUDIO_APP_MAP: Record<string, StudioAppDefinition> = STUDIO_APPS.reduce(
   (acc, app) => {
     acc[app.id] = app;
     return acc;
   },
-  {} as Record<StudioAppId, StudioAppDefinition>
+  {} as Record<string, StudioAppDefinition>
 );
 
 interface PersistedWindowSnapshot {
@@ -340,9 +347,10 @@ function clampRectToViewport(
   id: StudioAppId,
   rect: WindowRect,
   vw: number,
-  vh: number
+  vh: number,
+  appLookup: Record<string, StudioAppDefinition> = STUDIO_APP_MAP
 ): WindowRect {
-  const def = STUDIO_APP_MAP[id];
+  const def = appLookup[id] ?? { minWidth: 380, minHeight: 340, defaultWidth: 680, defaultHeight: 580 };
   const area = getWorkArea(vw, vh);
 
   const maxW = Math.max(280, area.viewportWidth - WINDOW_GAP * 2);
@@ -370,15 +378,16 @@ function buildDefaultCenteredRect(
   id: StudioAppId,
   vw: number,
   vh: number,
-  indexOffset = 0
+  indexOffset = 0,
+  appLookup: Record<string, StudioAppDefinition> = STUDIO_APP_MAP
 ): WindowRect {
-  const def = STUDIO_APP_MAP[id];
+  const def = appLookup[id] ?? { minWidth: 380, minHeight: 340, defaultWidth: 680, defaultHeight: 580 };
   const area = getWorkArea(vw, vh);
   const width = Math.min(def.defaultWidth, area.width);
   const height = Math.min(def.defaultHeight, area.height);
   const x = area.left + Math.round((area.width - width) / 2) + indexOffset * 26;
   const y = area.top + Math.round((area.height - height) / 2) + indexOffset * 22;
-  return clampRectToViewport(id, { x, y, width, height }, vw, vh);
+  return clampRectToViewport(id, { x, y, width, height }, vw, vh, appLookup);
 }
 
 function createInitialWindows(vw: number, vh: number): Record<StudioAppId, StudioWindowState> {
@@ -441,7 +450,10 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     height: typeof window !== "undefined" ? window.innerHeight : 900,
   });
 
-  const windows = reactive<Record<StudioAppId, StudioWindowState>>(
+  const apps = reactive<StudioAppDefinition[]>([...STUDIO_APPS]);
+  const appMap = reactive<Record<string, StudioAppDefinition>>({ ...STUDIO_APP_MAP });
+
+  const windows = reactive<Record<string, StudioWindowState>>(
     createInitialWindows(viewport.width, viewport.height)
   );
 
@@ -480,10 +492,59 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     }
   }
 
+  function registerCustomApp(def: StudioAppDefinition) {
+    const normalized: StudioAppDefinition = {
+      ...def,
+      dockSection: "custom",
+    };
+    appMap[normalized.id] = normalized;
+    const idx = apps.findIndex((a) => a.id === normalized.id);
+    if (idx >= 0) {
+      apps[idx] = normalized;
+    } else {
+      apps.push(normalized);
+    }
+    if (!windows[normalized.id]) {
+      const centered = buildDefaultCenteredRect(
+        normalized.id,
+        viewport.width,
+        viewport.height,
+        apps.length % 4,
+        appMap
+      );
+      windows[normalized.id] = {
+        id: normalized.id,
+        isOpen: false,
+        isMinimized: false,
+        isMaximized: false,
+        snapZone: null,
+        restoreRect: null,
+        x: centered.x,
+        y: centered.y,
+        width: centered.width,
+        height: centered.height,
+        zIndex: Z_INDEX_MIN,
+        attention: false,
+        badgeText: "",
+        subtitle: "",
+      };
+    }
+  }
+
+  function unregisterCustomApp(id: CustomAppId) {
+    const idx = apps.findIndex((a) => a.id === id);
+    if (idx >= 0) apps.splice(idx, 1);
+    delete appMap[id];
+    delete windows[id];
+  }
+
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   function normalizeZOrder() {
-    const ordered = STUDIO_APPS.map((a) => windows[a.id]).sort((a, b) => a.zIndex - b.zIndex);
+    const ordered = apps
+      .map((a) => windows[a.id])
+      .filter((w): w is StudioWindowState => Boolean(w))
+      .sort((a, b) => a.zIndex - b.zIndex);
     const span = Math.max(1, Z_INDEX_MAX - Z_INDEX_MIN);
     ordered.forEach((win, i) => {
       // Strictly keep every managed window inside [Z_INDEX_MIN..Z_INDEX_MAX] (< 50)
@@ -568,13 +629,16 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   }
 
   const visibleWindows = computed(() =>
-    STUDIO_APPS.map((a) => windows[a.id])
-      .filter((w) => w.isOpen && !w.isMinimized)
+    apps
+      .map((a) => windows[a.id])
+      .filter((w): w is StudioWindowState => Boolean(w && w.isOpen && !w.isMinimized))
       .sort((a, b) => a.zIndex - b.zIndex)
   );
 
   const openWindows = computed(() =>
-    STUDIO_APPS.map((a) => windows[a.id]).filter((w) => w.isOpen)
+    apps
+      .map((a) => windows[a.id])
+      .filter((w): w is StudioWindowState => Boolean(w && w.isOpen))
   );
 
   const focusedWindowId = computed<StudioAppId | null>(() => {
@@ -585,7 +649,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
 
   const focusedApp = computed<StudioAppDefinition | null>(() => {
     const id = focusedWindowId.value;
-    return id ? STUDIO_APP_MAP[id] : null;
+    return id ? (appMap[id] ?? null) : null;
   });
 
   function getSnapRect(zone: SnapZone): WindowRect {
@@ -630,7 +694,10 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     if (win.isMinimized) win.isMinimized = false;
     win.attention = false;
 
-    const maxZ = Math.max(...STUDIO_APPS.map((a) => windows[a.id].zIndex));
+    const maxZ = Math.max(
+      Z_INDEX_MIN,
+      ...apps.map((a) => windows[a.id]?.zIndex ?? Z_INDEX_MIN)
+    );
     win.zIndex = maxZ + 1;
     normalizeZOrder();
     schedulePersist();
@@ -653,14 +720,15 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         id,
         viewport.width,
         viewport.height,
-        (openCount - 1) % 4
+        (openCount - 1) % 4,
+        appMap
       );
       win.x = fresh.x;
       win.y = fresh.y;
       win.width = fresh.width;
       win.height = fresh.height;
     } else {
-      const clamped = clampRectToViewport(id, win, viewport.width, viewport.height);
+      const clamped = clampRectToViewport(id, win, viewport.width, viewport.height, appMap);
       win.x = clamped.x;
       win.y = clamped.y;
       win.width = clamped.width;
@@ -724,8 +792,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     const win = windows[id];
     if (!win) return;
     const base =
-      win.restoreRect ?? buildDefaultCenteredRect(id, viewport.width, viewport.height, 0);
-    const clamped = clampRectToViewport(id, base, viewport.width, viewport.height);
+      win.restoreRect ?? buildDefaultCenteredRect(id, viewport.width, viewport.height, 0, appMap);
+    const clamped = clampRectToViewport(id, base, viewport.width, viewport.height, appMap);
     win.x = clamped.x;
     win.y = clamped.y;
     win.width = clamped.width;
@@ -779,7 +847,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
       id,
       { x, y, width: win.width, height: win.height },
       viewport.width,
-      viewport.height
+      viewport.height,
+      appMap
     );
     win.x = clamped.x;
     win.y = clamped.y;
@@ -788,11 +857,12 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
 
   function detachFromSnapForDrag(id: StudioAppId, pointerX: number, pointerY: number): WindowRect {
     const win = windows[id];
-    const fallback = buildDefaultCenteredRect(id, viewport.width, viewport.height, 0);
+    const fallback = buildDefaultCenteredRect(id, viewport.width, viewport.height, 0, appMap);
+    const def = appMap[id] ?? { defaultWidth: 680, defaultHeight: 580 };
     const targetW =
-      win.restoreRect?.width ?? Math.min(STUDIO_APP_MAP[id].defaultWidth, fallback.width);
+      win.restoreRect?.width ?? Math.min(def.defaultWidth, fallback.width);
     const targetH =
-      win.restoreRect?.height ?? Math.min(STUDIO_APP_MAP[id].defaultHeight, fallback.height);
+      win.restoreRect?.height ?? Math.min(def.defaultHeight, fallback.height);
 
     const clamped = clampRectToViewport(
       id,
@@ -803,7 +873,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         height: targetH,
       },
       viewport.width,
-      viewport.height
+      viewport.height,
+      appMap
     );
 
     win.x = clamped.x;
@@ -819,7 +890,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   function resizeWindow(id: StudioAppId, rect: WindowRect) {
     const win = windows[id];
     if (!win) return;
-    const clamped = clampRectToViewport(id, rect, viewport.width, viewport.height);
+    const clamped = clampRectToViewport(id, rect, viewport.width, viewport.height, appMap);
     win.x = clamped.x;
     win.y = clamped.y;
     win.width = clamped.width;
@@ -851,13 +922,13 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     if (preset === "show-desktop") {
       const anyVisible = visibleWindows.value.length > 0;
       if (anyVisible) {
-        for (const app of STUDIO_APPS) {
-          if (windows[app.id].isOpen) windows[app.id].isMinimized = true;
+        for (const app of apps) {
+          if (windows[app.id]?.isOpen) windows[app.id].isMinimized = true;
         }
       } else {
         let restored = false;
-        for (const app of STUDIO_APPS) {
-          if (windows[app.id].isOpen) {
+        for (const app of apps) {
+          if (windows[app.id]?.isOpen) {
             windows[app.id].isMinimized = false;
             restored = true;
           }
@@ -869,8 +940,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     }
 
     if (preset === "focus-chat") {
-      for (const app of STUDIO_APPS) {
-        if (app.id !== "otto-chat" && windows[app.id].isOpen) {
+      for (const app of apps) {
+        if (app.id !== "otto-chat" && windows[app.id]?.isOpen) {
           windows[app.id].isMinimized = true;
         }
       }
@@ -896,7 +967,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
           ? openWindows.value
           : [windows["otto-chat"], windows["mission-control"], windows["files"]];
       targets.forEach((win, i) => {
-        const def = STUDIO_APP_MAP[win.id];
+        const def = appMap[win.id] ?? { defaultWidth: 680, defaultHeight: 580 };
         const step = i * 34;
         const clamped = clampRectToViewport(
           win.id,
@@ -907,7 +978,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
             height: Math.min(def.defaultHeight, area.height - 40),
           },
           viewport.width,
-          viewport.height
+          viewport.height,
+          appMap
         );
         win.isOpen = true;
         win.isMinimized = false;
@@ -955,8 +1027,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
       .sort((a, b) => b.zIndex - a.zIndex);
     const secondaryId: StudioAppId = secondaryCandidates[0]?.id ?? "mission-control";
 
-    for (const app of STUDIO_APPS) {
-      if (app.id !== "otto-chat" && app.id !== secondaryId && windows[app.id].isOpen) {
+    for (const app of apps) {
+      if (app.id !== "otto-chat" && app.id !== secondaryId && windows[app.id]?.isOpen) {
         windows[app.id].isMinimized = true;
       }
     }
@@ -966,7 +1038,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
       Math.round((area.width - WINDOW_GAP) * 0.42)
     );
     const rightWidth = Math.max(
-      STUDIO_APP_MAP[secondaryId].minWidth,
+      (appMap[secondaryId]?.minWidth ?? 380),
       area.width - WINDOW_GAP - leftWidth
     );
 
@@ -1000,8 +1072,9 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     if (typeof window === "undefined") return;
     viewport.width = window.innerWidth;
     viewport.height = window.innerHeight;
-    for (const app of STUDIO_APPS) {
+    for (const app of apps) {
       const win = windows[app.id];
+      if (!win) continue;
       if (win.isMaximized) {
         const rect = getSnapRect("maximize");
         win.x = rect.x;
@@ -1015,7 +1088,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         win.width = rect.width;
         win.height = rect.height;
       } else {
-        const clamped = clampRectToViewport(app.id, win, viewport.width, viewport.height);
+        const clamped = clampRectToViewport(app.id, win, viewport.width, viewport.height, appMap);
         win.x = clamped.x;
         win.y = clamped.y;
         win.width = clamped.width;
@@ -1049,8 +1122,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   );
 
   return {
-    apps: STUDIO_APPS,
-    appMap: STUDIO_APP_MAP,
+    apps,
+    appMap,
     viewport,
     windows,
     isMobile,
@@ -1066,6 +1139,8 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     effectivePlatform,
     shortcutLabels,
     setControlsMode,
+    registerCustomApp,
+    unregisterCustomApp,
     openWindow,
     closeWindow,
     minimizeWindow,

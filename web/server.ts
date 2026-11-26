@@ -46,9 +46,21 @@ import {
   syncNightlyReflectionSchedule,
 } from "../agent/lib/qstash-cron.ts";
 import {
+  deleteCustomStudioApp,
+  getCustomStudioApp,
+  getCustomStudioAppState,
+  listCustomStudioApps,
+  saveCustomStudioAppState,
+  updateCustomStudioAppCode,
+} from "../agent/lib/studio-apps.ts";
+import {
+  deleteHostedObsOverlay,
+  listHostedObsOverlays,
+  updateObsOverlayState,
+} from "../agent/lib/obs-overlays.ts";
+import {
   classifyFile,
   createWorkspaceZip,
-  detectArtifactKind,
   ensureWorkspaceScaffold,
   listWorkspaceDirectory,
   MAX_TEXT_PREVIEW_BYTES,
@@ -1521,44 +1533,48 @@ Bun.serve<VncWsData>({
       return Response.json({ error: "Not Found" }, { status: 404 });
     }
 
-    // Internal-only artifact presentation endpoint for omp subprocess
-    if (req.method === "POST" && url.pathname === "/api/internal/artifact/open") {
+    // Internal-only Studio App & OBS Overlay presentation endpoints for omp subprocess
+    if (
+      req.method === "POST" &&
+      (url.pathname === "/api/internal/studio-app/open" ||
+        url.pathname === "/api/internal/studio-app/changed" ||
+        url.pathname === "/api/internal/obs-overlay/open" ||
+        url.pathname === "/api/internal/obs-overlay/changed")
+    ) {
       const auth = req.headers.get("authorization") || "";
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
       if (!token || !timingSafeStrEqual(token, LMA_INTERNAL_SECRET)) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
       }
-      try {
-        const body = (await req.json().catch(() => ({}))) as {
-          path?: string;
-          title?: string;
-          kind?: string;
-          autoFocus?: boolean;
-        };
-        const rawPath = String(body.path || "").trim();
-        if (!rawPath) {
-          return Response.json({ ok: false, error: "Missing path" }, { status: 400 });
-        }
-        const { absPath, relPath } = resolveSafeWorkspacePath(rawPath);
-        const st = fs.statSync(absPath);
-        if (!st.isFile()) {
-          return Response.json({ ok: false, error: "Path is not a file" }, { status: 400 });
-        }
-        const fileName = path.basename(absPath);
-        const kind = body.kind || detectArtifactKind(fileName) || "html";
-        const title = (body.title || "").trim() || fileName;
-        broadcast({ type: "workspace_changed" });
+      const body = (await req.json().catch(() => ({}))) as {
+        slug?: string;
+        title?: string;
+        autoFocus?: boolean;
+        deleted?: boolean;
+      };
+      const slug = String(body.slug || "").trim();
+      if (url.pathname === "/api/internal/studio-app/open") {
+        broadcast({ type: "studio_apps_changed", slug });
         broadcast({
-          type: "artifact_open",
-          path: relPath,
-          title,
-          kind,
+          type: "studio_app_open",
+          slug,
+          title: body.title || slug,
           autoFocus: body.autoFocus !== false,
         });
-        return Response.json({ ok: true, path: relPath, title, kind });
-      } catch (err: unknown) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+      } else if (url.pathname === "/api/internal/studio-app/changed") {
+        broadcast({ type: "studio_apps_changed", slug, deleted: body.deleted === true });
+      } else if (url.pathname === "/api/internal/obs-overlay/open") {
+        broadcast({ type: "obs_overlays_changed", slug });
+        broadcast({
+          type: "obs_overlay_open",
+          slug,
+          title: body.title || slug,
+          autoFocus: body.autoFocus !== false,
+        });
+      } else {
+        broadcast({ type: "obs_overlays_changed", slug, deleted: body.deleted === true });
       }
+      return Response.json({ ok: true, slug });
     }
 
     // Public favicon so both login page and Studio OS render the Otto icon
@@ -2544,6 +2560,84 @@ Bun.serve<VncWsData>({
         });
       } catch (err: unknown) {
         if (zipResult) zipResult.cleanup();
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
+    }
+
+    // ---------- Custom Studio Apps API (Local Otto OS Desktop Apps) ----------
+
+    if (req.method === "GET" && url.pathname === "/api/studio-apps") {
+      return Response.json({ apps: listCustomStudioApps() });
+    }
+
+    const studioAppMatch = url.pathname.match(/^\/api\/studio-apps\/([^/]+)(?:\/(code|state))?$/);
+    if (studioAppMatch) {
+      const slug = decodeURIComponent(studioAppMatch[1]).trim();
+      const sub = studioAppMatch[2] || "";
+      try {
+        if (!sub && req.method === "GET") {
+          const app = getCustomStudioApp(slug);
+          if (!app) return Response.json({ error: "App not found" }, { status: 404 });
+          return Response.json(app);
+        }
+        if (!sub && req.method === "DELETE") {
+          const ok = deleteCustomStudioApp(slug);
+          if (!ok) return Response.json({ error: "App not found" }, { status: 404 });
+          broadcast({ type: "studio_apps_changed", slug, deleted: true });
+          return Response.json({ ok: true, deleted: slug });
+        }
+        if (sub === "code" && req.method === "PUT") {
+          const body = (await req.json().catch(() => ({}))) as { code?: string };
+          if (typeof body.code !== "string") {
+            return Response.json({ error: "Missing code" }, { status: 400 });
+          }
+          const meta = updateCustomStudioAppCode(slug, body.code);
+          broadcast({ type: "studio_apps_changed", slug });
+          return Response.json({ ok: true, meta });
+        }
+        if (sub === "state" && req.method === "GET") {
+          const state = getCustomStudioAppState(slug);
+          return Response.json({ ok: true, state });
+        }
+        if (sub === "state" && req.method === "PUT") {
+          const body = (await req.json().catch(() => ({}))) as { state?: Record<string, unknown> };
+          const saved = saveCustomStudioAppState(slug, (body.state || {}) as Record<string, unknown>);
+          return Response.json({ ok: true, state: saved });
+        }
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        return Response.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 });
+      }
+    }
+
+    // ---------- Fly Machine OBS Overlays API ----------
+
+    if (req.method === "GET" && url.pathname === "/api/obs-overlays") {
+      const result = await listHostedObsOverlays();
+      return Response.json(result);
+    }
+
+    const obsOverlayMatch = url.pathname.match(/^\/api\/obs-overlays\/([^/]+)(?:\/(state))?$/);
+    if (obsOverlayMatch) {
+      const slug = decodeURIComponent(obsOverlayMatch[1]).trim();
+      const sub = obsOverlayMatch[2] || "";
+      try {
+        if (sub === "state" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as {
+            patch?: Record<string, unknown>;
+            replace?: boolean;
+          };
+          const out = await updateObsOverlayState(slug, body.patch || {}, body.replace === true);
+          broadcast({ type: "obs_overlays_changed", slug });
+          return Response.json({ ok: true, state: out.state });
+        }
+        if (!sub && req.method === "DELETE") {
+          const ok = await deleteHostedObsOverlay(slug);
+          if (!ok) return Response.json({ error: "Overlay not found" }, { status: 404 });
+          broadcast({ type: "obs_overlays_changed", slug, deleted: true });
+          return Response.json({ ok: true, deleted: slug });
+        }
+      } catch (err: unknown) {
         return Response.json({ error: errorMessage(err) }, { status: 400 });
       }
     }

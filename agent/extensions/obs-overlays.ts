@@ -1,0 +1,209 @@
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import {
+  deleteHostedObsOverlay,
+  deployObsOverlay,
+  listHostedObsOverlays,
+  updateObsOverlayState,
+  type OverlayControlField,
+} from "../lib/obs-overlays.ts";
+
+function getInternalBaseUrl(): string {
+  const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+  return `http://127.0.0.1:${port}`;
+}
+
+async function notifyStudioObsOverlay(
+  endpoint: "/api/internal/obs-overlay/open" | "/api/internal/obs-overlay/changed",
+  payload: Record<string, unknown>
+): Promise<{ notified: boolean; note?: string }> {
+  const secret = process.env.LMA_INTERNAL_SECRET;
+  if (!secret) {
+    return { notified: false, note: "LMA_INTERNAL_SECRET unavailable (headless CLI mode)." };
+  }
+  try {
+    const res = await fetch(`${getInternalBaseUrl()}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      return { notified: false, note: `Studio UI returned HTTP ${res.status}` };
+    }
+    return { notified: true };
+  } catch (err) {
+    return { notified: false, note: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const ControlFieldSchema = Type.Object({
+  key: Type.String({ description: "State property key (e.g. 'headline', 'showLowerThird', 'theme')." }),
+  label: Type.String({ description: "Short human label shown in the Remote Control deck." }),
+  type: Type.Union([
+    Type.Literal("text"),
+    Type.Literal("textarea"),
+    Type.Literal("number"),
+    Type.Literal("toggle"),
+    Type.Literal("select"),
+    Type.Literal("timer_action"),
+  ]),
+  options: Type.Optional(Type.Array(Type.String(), { description: "Options for 'select' fields." })),
+  placeholder: Type.Optional(Type.String()),
+  min: Type.Optional(Type.Number()),
+  max: Type.Optional(Type.Number()),
+  step: Type.Optional(Type.Number()),
+  action: Type.Optional(
+    Type.Union([
+      Type.Literal("start"),
+      Type.Literal("pause"),
+      Type.Literal("reset"),
+      Type.Literal("add_seconds"),
+    ])
+  ),
+  seconds: Type.Optional(Type.Number({ description: "Delta seconds for 'add_seconds' timer action." })),
+});
+
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "obs_overlay_deploy",
+    label: "Deploy Live OBS Overlay to Fly Machine",
+    description:
+      "Deploy or update a public, transparent 1920x1080 OBS Browser Source overlay hosted on the dedicated auto-stop Fly Machine (256 MB + 1 GB persistent Volume via zero-key Fly Machines connector) with realtime SSE Remote Control sync. Opens the OBS Overlays window inside Otto Studio OS.",
+    parameters: Type.Object({
+      slug: Type.String({
+        description: "URL-safe overlay slug (e.g. 'starting-soon', 'lower-third', 'brb', 'sub-goal').",
+      }),
+      title: Type.String({
+        description: "Short display title (e.g. 'Starting Soon', 'Lower Third').",
+      }),
+      description: Type.Optional(Type.String({ description: "One-line description of what this overlay shows." })),
+      html: Type.String({
+        description:
+          "Complete transparent 1920x1080 OBS Browser Source HTML (NO control buttons inside the overlay!). Subscribe to live state via `window.OBS_OVERLAY.subscribe((state) => { ... })`. Follow the obs-overlay-craft skill.",
+      }),
+      controls: Type.Optional(
+        Type.Array(ControlFieldSchema, {
+          description:
+            "Declarative Remote Control deck fields synced live to the OBS overlay via SSE (text inputs, toggles, selects, timer_action buttons).",
+        })
+      ),
+      initialState: Type.Optional(
+        Type.Record(Type.String(), Type.Any(), {
+          description: "Initial live JSON state (e.g. { headline: 'Starting Soon', durationSec: 300, remainingSec: 300, running: false }).",
+        })
+      ),
+      resetState: Type.Optional(
+        Type.Boolean({ description: "Reset existing live state to initialState on redeploy (default false)." })
+      ),
+      autoOpen: Type.Optional(
+        Type.Boolean({ description: "Open the OBS Overlays OS window automatically (default true)." })
+      ),
+    }),
+    async execute(_id, params) {
+      const { machine, overlay } = await deployObsOverlay({
+        slug: params.slug,
+        title: params.title,
+        description: params.description,
+        html: params.html,
+        controls: (params.controls || []) as OverlayControlField[],
+        initialState: (params.initialState || {}) as Record<string, unknown>,
+        resetState: params.resetState === true,
+      });
+
+      const notify =
+        params.autoOpen === false
+          ? await notifyStudioObsOverlay("/api/internal/obs-overlay/changed", { slug: overlay.slug })
+          : await notifyStudioObsOverlay("/api/internal/obs-overlay/open", {
+              slug: overlay.slug,
+              title: overlay.title,
+              autoFocus: true,
+            });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ok: true,
+                appName: machine.appName,
+                region: machine.region,
+                slug: overlay.slug,
+                title: overlay.title,
+                obsBrowserSourceUrl: overlay.overlayUrl,
+                remoteControlUrl: overlay.controlUrl,
+                openedInStudio: notify.notified,
+                chatCardMarkdown: `[${overlay.title}](obs-overlay:${overlay.slug})`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        details: { slug: overlay.slug, overlayUrl: overlay.overlayUrl },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "obs_overlay_control",
+    label: "Update Live OBS Overlay State",
+    description:
+      "Send a live state update to a deployed OBS overlay on the Fly Machine (pushes immediately via SSE to OBS Browser Source and Remote Control decks).",
+    parameters: Type.Object({
+      slug: Type.String({ description: "Overlay slug to control (e.g. 'starting-soon')." }),
+      patch: Type.Record(Type.String(), Type.Any(), {
+        description: "Partial state fields to merge into the live overlay state (e.g. { headline: 'Boss Fight #12', running: true }).",
+      }),
+      replace: Type.Optional(
+        Type.Boolean({ description: "Replace entire state instead of merging (default false)." })
+      ),
+    }),
+    async execute(_id, params) {
+      const result = await updateObsOverlayState(
+        params.slug,
+        params.patch as Record<string, unknown>,
+        params.replace === true
+      );
+      await notifyStudioObsOverlay("/api/internal/obs-overlay/changed", { slug: params.slug });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, slug: params.slug, state: result.state }, null, 2) }],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "obs_overlay_list",
+    label: "List Hosted OBS Overlays",
+    description: "List all live OBS overlays hosted on the Fly Machine along with their public OBS Browser Source URLs and current states.",
+    parameters: Type.Object({}),
+    async execute() {
+      const { status, overlays } = await listHostedObsOverlays();
+      return {
+        content: [{ type: "text", text: JSON.stringify({ status, count: overlays.length, overlays }, null, 2) }],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "obs_overlay_delete",
+    label: "Delete Hosted OBS Overlay",
+    description: "Delete a hosted OBS overlay from the Fly Machine volume.",
+    parameters: Type.Object({
+      slug: Type.String({ description: "Overlay slug to delete." }),
+    }),
+    async execute(_id, params) {
+      const deleted = await deleteHostedObsOverlay(params.slug);
+      if (!deleted) {
+        throw new Error(`OBS overlay '${params.slug}' was not found or machine is not provisioned.`);
+      }
+      await notifyStudioObsOverlay("/api/internal/obs-overlay/changed", { slug: params.slug, deleted: true });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, deleted: params.slug }, null, 2) }],
+      };
+    },
+  });
+}

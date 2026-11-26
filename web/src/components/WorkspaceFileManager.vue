@@ -22,7 +22,6 @@ import {
   FolderPlusIcon,
   HardDriveIcon,
   ImageIcon,
-  LayersIcon,
   LayoutGridIcon,
   ListIcon,
   MoreHorizontalIcon,
@@ -124,9 +123,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { detectArtifactKind, isVisualArtifactKind } from "@/lib/artifact-sandbox";
 import { renderMarkdown } from "../lib/markdown";
-import ArtifactThumbnail from "./ArtifactThumbnail.vue";
 import WorkspaceFileSkeleton from "./WorkspaceFileSkeleton.vue";
 
 export interface WorkspaceEntry {
@@ -163,7 +160,6 @@ const emit = defineEmits<{
   askPrompt: [prompt: string];
   statsUpdated: [payload: { stats: WorkspaceStats; recentFiles: WorkspaceEntry[] }];
   pathChanged: [relDir: string];
-  openArtifact: [payload: { path: string; title?: string }];
 }>();
 
 function normalizeDirPath(relDir: string): string {
@@ -315,7 +311,6 @@ function formatTime(iso: string): string {
 
 function folderIconComponent(dirPath: string, isActive: boolean): Component {
   const seg = dirPath.split("/")[0];
-  if (seg === "artifacts") return LayersIcon;
   if (seg === "clips") return FilmIcon;
   if (seg === "thumbnails") return ImageIcon;
   if (seg === "scripts") return FileTextIcon;
@@ -1569,12 +1564,6 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                               loading="lazy"
                               class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                             />
-                            <ArtifactThumbnail
-                              v-else-if="!entry.isDir && isVisualArtifactKind(detectArtifactKind(entry.name))"
-                              :rel-path="entry.relPath"
-                              :name="entry.name"
-                              :updated-at="entry.updatedAt"
-                            />
                             <component
                               v-else
                               :is="entryIconComponent(entry)"
@@ -1786,19 +1775,6 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
               <Button type="button" size="xs" @click="askOttoAbout(selectedFile)">
                 <SparklesIcon data-icon="inline-start" />
                 {{ askActionLabel(selectedFile) }}
-              </Button>
-              <Button
-                v-if="detectArtifactKind(selectedFile.name)"
-                type="button"
-                variant="secondary"
-                size="xs"
-                @click="
-                  emit('openArtifact', { path: selectedFile.relPath, title: selectedFile.name });
-                  previewSheetOpen = false;
-                "
-              >
-                <LayersIcon data-icon="inline-start" />
-                Open in Artifacts
               </Button>
               <Button
                 v-if="selectedFile.editable"

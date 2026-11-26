@@ -17,7 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DesktopShell, type DesktopShellExposed } from "@/components/os";
-import ArtifactsWorkspaceApp from "./components/ArtifactsWorkspaceApp.vue";
+import type { CustomAppId, DesktopShortcut } from "@/composables/useWindowManager";
+import CustomStudioAppWindow from "./components/CustomStudioAppWindow.vue";
+import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
 import BrowserLoginModal, { type BrowserLoginRequest } from "./components/BrowserLoginModal.vue";
 import BrowserWorkspaceTab from "./components/BrowserWorkspaceTab.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
@@ -47,9 +49,41 @@ const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
 
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
-const artifactsAppRef = ref<InstanceType<typeof ArtifactsWorkspaceApp> | null>(null);
+const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
 const browserTabRef = ref<InstanceType<typeof BrowserWorkspaceTab> | null>(null);
-const activeArtifactPath = ref("");
+const activeObsOverlaySlug = ref("");
+const studioAppsRefreshTick = ref(0);
+const obsOverlaysRefreshTick = ref(0);
+
+interface InstalledCustomApp {
+  slug: string;
+  title: string;
+  description: string;
+  defaultWidth: number;
+  defaultHeight: number;
+}
+const installedCustomApps = ref<InstalledCustomApp[]>([]);
+
+const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
+  { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
+  { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
+  { id: "chrome", label: "Chrome", sublabel: "noVNC", icon: "globe", appId: "chrome" },
+  { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
+  { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
+  { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
+  { id: "contacts", label: "Contacts", sublabel: "Rolodex", icon: "contacts", appId: "contacts" },
+];
+
+const desktopShortcuts = computed<DesktopShortcut[]>(() => [
+  ...BUILTIN_DESKTOP_SHORTCUTS,
+  ...installedCustomApps.value.map((app) => ({
+    id: `custom-${app.slug}`,
+    label: app.title,
+    sublabel: "Studio App",
+    icon: "app" as const,
+    appId: `custom:${app.slug}` as CustomAppId,
+  })),
+]);
 
 const messages = ref<ChatMessage[]>([]);
 const sessions = ref<SessionSummary[]>([]);
@@ -143,6 +177,83 @@ function resetLiveBuffers() {
   liveText.value = "";
   liveThinking.value = "";
   liveSteps.value = [];
+}
+
+async function loadInstalledCustomApps() {
+  try {
+    const res = await fetch("/api/studio-apps");
+    if (!res.ok) return;
+    const data = (await res.json()) as { apps?: InstalledCustomApp[] };
+    const next = Array.isArray(data.apps) ? data.apps : [];
+    const wm = shellRef.value?.wm;
+    const nextIds = new Set(next.map((a) => `custom:${a.slug}`));
+    if (wm) {
+      for (const existing of [...wm.apps]) {
+        if (existing.id.startsWith("custom:") && !nextIds.has(existing.id)) {
+          wm.unregisterCustomApp(existing.id as CustomAppId);
+        }
+      }
+      for (const app of next) {
+        wm.registerCustomApp({
+          id: `custom:${app.slug}` as CustomAppId,
+          title: app.title,
+          shortLabel: app.title.slice(0, 14),
+          icon: "app",
+          minWidth: 380,
+          minHeight: 340,
+          defaultWidth: app.defaultWidth || 680,
+          defaultHeight: app.defaultHeight || 580,
+          dockSection: "custom",
+        });
+      }
+    }
+    installedCustomApps.value = next;
+  } catch {
+    // ignore transient errors
+  }
+}
+
+async function openCustomStudioApp(slug: string, title?: string, autoFocus = true) {
+  const cleaned = slug.trim();
+  if (!cleaned) return;
+  await loadInstalledCustomApps();
+  const wm = shellRef.value?.wm;
+  const id = `custom:${cleaned}` as CustomAppId;
+  if (wm && !wm.appMap[id]) {
+    wm.registerCustomApp({
+      id,
+      title: title || cleaned,
+      shortLabel: (title || cleaned).slice(0, 14),
+      icon: "app",
+      minWidth: 380,
+      minHeight: 340,
+      defaultWidth: 680,
+      defaultHeight: 580,
+      dockSection: "custom",
+    });
+  }
+  studioAppsRefreshTick.value += 1;
+  wm?.openWindow(id, { focus: autoFocus });
+}
+
+function handleCustomAppUninstalled(slug: string) {
+  const id = `custom:${slug}` as CustomAppId;
+  shellRef.value?.wm.unregisterCustomApp(id);
+  installedCustomApps.value = installedCustomApps.value.filter((a) => a.slug !== slug);
+}
+
+function openObsOverlayWindow(slug?: string, title?: string, autoFocus = true) {
+  if (slug) activeObsOverlaySlug.value = slug;
+  obsOverlaysRefreshTick.value += 1;
+  shellRef.value?.wm.openWindow("obs-overlays", {
+    focus: autoFocus,
+    subtitle: title || slug || undefined,
+  });
+  if (slug) {
+    nextTick(() => {
+      obsOverlaysRef.value?.selectOverlay(slug);
+    });
+  }
 }
 
 async function loadSessions() {
@@ -286,10 +397,20 @@ function connectEvents() {
       if (wm && wm.focusedWindowId.value !== "files") {
         wm.setWindowMeta("files", { badgeText: "Updated" });
       }
-    } else if (type === "artifact_open" && typeof msg.path === "string") {
-      workspaceRefreshTick.value += 1;
-      openArtifactInWindow(
-        msg.path,
+    } else if (type === "studio_apps_changed") {
+      studioAppsRefreshTick.value += 1;
+      void loadInstalledCustomApps();
+    } else if (type === "studio_app_open" && typeof msg.slug === "string") {
+      void openCustomStudioApp(
+        msg.slug,
+        typeof msg.title === "string" ? msg.title : undefined,
+        msg.autoFocus !== false
+      );
+    } else if (type === "obs_overlays_changed") {
+      obsOverlaysRefreshTick.value += 1;
+    } else if (type === "obs_overlay_open") {
+      openObsOverlayWindow(
+        typeof msg.slug === "string" ? msg.slug : undefined,
         typeof msg.title === "string" ? msg.title : undefined,
         msg.autoFocus !== false
       );
@@ -422,19 +543,6 @@ function openFilesAtPath(relPath: string) {
   });
   nextTick(() => {
     fileManagerRef.value?.navigateTo(cleaned);
-  });
-}
-
-function openArtifactInWindow(relPath: string, title?: string, autoFocus = true) {
-  const cleaned = relPath.replace(/^\/+|\/+$/g, "");
-  if (!cleaned) return;
-  activeArtifactPath.value = cleaned;
-  shellRef.value?.wm.openWindow("artifacts", {
-    focus: autoFocus,
-    subtitle: title || cleaned.split("/").pop() || cleaned,
-  });
-  nextTick(() => {
-    artifactsAppRef.value?.openArtifact(cleaned, title);
   });
 }
 
@@ -576,8 +684,20 @@ async function reopenSetup() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSetupStatus(), loadMessages(), loadSessions(), loadInitialBrowserStatus()]);
+  await Promise.all([
+    loadSetupStatus(),
+    loadMessages(),
+    loadSessions(),
+    loadInitialBrowserStatus(),
+  ]);
+  nextTick(() => {
+    void loadInstalledCustomApps();
+  });
   connectEvents();
+});
+
+watch(shellRef, (val) => {
+  if (val) void loadInstalledCustomApps();
 });
 </script>
 
@@ -603,6 +723,7 @@ onMounted(async () => {
       :mascot-state="statusState"
       :mascot-color="mascotColor"
       :status-subtitle="desktopStatusSubtitle"
+      :shortcuts="desktopShortcuts"
       @open-files-path="openFilesAtPath"
       @open-chrome-url="openChromeAtUrl"
       @desktop-action="handleDesktopAction"
@@ -660,7 +781,8 @@ onMounted(async () => {
                 :thinking="m.thinking"
                 :steps="m.steps"
                 :mascot-color="mascotColor"
-                @open-artifact="openArtifactInWindow($event.path, $event.title)"
+                @open-studio-app="openCustomStudioApp($event.slug, $event.title)"
+                @open-obs-overlay="openObsOverlayWindow($event.slug, $event.title)"
               />
 
               <MessageBubble
@@ -671,7 +793,8 @@ onMounted(async () => {
                 :steps="liveSteps"
                 :mascot-color="mascotColor"
                 live
-                @open-artifact="openArtifactInWindow($event.path, $event.title)"
+                @open-studio-app="openCustomStudioApp($event.slug, $event.title)"
+                @open-obs-overlay="openObsOverlayWindow($event.slug, $event.title)"
               />
             </div>
           </main>
@@ -736,25 +859,32 @@ onMounted(async () => {
             :initial-path="filesTargetPath"
             @ask-prompt="handleMissionPrompt"
             @path-changed="handleFilesPathChanged"
-            @open-artifact="openArtifactInWindow($event.path, $event.title)"
           />
         </div>
       </template>
 
-      <!-- WINDOW 3B: ARTIFACTS -->
-      <template #app-artifacts>
+      <!-- WINDOW 3B: OBS OVERLAYS (Fly Machine Hosted) -->
+      <template #app-obs-overlays>
         <div class="flex h-full min-h-0 flex-col bg-white">
-          <ArtifactsWorkspaceApp
-            ref="artifactsAppRef"
-            :refresh-tick="workspaceRefreshTick"
-            :active-path="activeArtifactPath"
+          <ObsOverlaysWorkspaceApp
+            ref="obsOverlaysRef"
+            :refresh-tick="obsOverlaysRefreshTick"
+            :initial-slug="activeObsOverlaySlug"
             @ask-prompt="handleMissionPrompt"
-            @open-in-files="openFilesAtPath"
-            @active-changed="
-              shellRef?.wm.setWindowMeta('artifacts', { subtitle: $event.title })
+            @selected-changed="
+              shellRef?.wm.setWindowMeta('obs-overlays', { subtitle: $event.title })
             "
           />
         </div>
+      </template>
+
+      <!-- DYNAMIC CUSTOM STUDIO APP WINDOWS -->
+      <template #custom-app="{ win }">
+        <CustomStudioAppWindow
+          :slug="win.id.replace(/^custom:/, '')"
+          :refresh-tick="studioAppsRefreshTick"
+          @uninstalled="handleCustomAppUninstalled"
+        />
       </template>
 
       <!-- WINDOW 4: EMBEDDED CHROME (noVNC) -->

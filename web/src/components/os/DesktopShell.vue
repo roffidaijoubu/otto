@@ -201,9 +201,21 @@ defineExpose<DesktopShellExposed>({
           :win="win"
         >
           <template #actions>
-            <slot :name="`window-actions-${win.id}`" />
+            <slot
+              v-if="win.id.startsWith('custom:')"
+              name="custom-app-actions"
+              :app="wm.appMap[win.id]"
+              :win="win"
+            />
+            <slot v-else :name="`window-actions-${win.id}`" />
           </template>
-          <slot :name="`app-${win.id}`">
+          <slot
+            v-if="win.id.startsWith('custom:')"
+            name="custom-app"
+            :app="wm.appMap[win.id]"
+            :win="win"
+          />
+          <slot v-else :name="`app-${win.id}`">
             <div class="flex h-full items-center justify-center p-6 font-mono text-xs text-muted-foreground">
               {{ wm.appMap[win.id].title }} workspace slot
             </div>

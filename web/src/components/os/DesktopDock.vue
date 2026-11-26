@@ -19,6 +19,9 @@ const props = defineProps<{
 }>();
 
 const primaryApps = computed(() => props.wm.apps.filter((a) => a.dockSection === "primary"));
+const runningCustomApps = computed(() =>
+  props.wm.apps.filter((a) => a.dockSection === "custom" && props.wm.windows[a.id]?.isOpen)
+);
 const utilityApps = computed(() => props.wm.apps.filter((a) => a.dockSection === "utility"));
 
 function statusLabel(app: StudioAppDefinition): string {
@@ -143,6 +146,73 @@ function statusLabel(app: StudioAppDefinition): string {
             </template>
           </ContextMenuContent>
         </ContextMenu>
+      </template>
+
+      <template v-if="runningCustomApps.length > 0">
+        <Separator orientation="vertical" class="mx-1 h-7 bg-black/10" />
+        <template v-for="app in runningCustomApps" :key="app.id">
+          <ContextMenu>
+            <Tooltip>
+              <ContextMenuTrigger as-child>
+                <TooltipTrigger as-child>
+                  <button
+                    type="button"
+                    :data-dock-app="app.id"
+                    :aria-label="`${app.title} (${statusLabel(app)})`"
+                    :class="
+                      cn(
+                        'relative flex size-11 shrink-0 items-center justify-center rounded-[14px] border transition-all duration-150 select-none',
+                        wm.focusedWindowId.value === app.id && !wm.windows[app.id].isMinimized
+                          ? 'bg-[#303030] text-white border-[#303030] shadow-sm -translate-y-0.5'
+                          : 'bg-[#f9f5a2]/70 text-[#303030] border-black/10 hover:-translate-y-1 hover:bg-[#f9f5a2]'
+                      )
+                    "
+                    @click="wm.toggleFromDock(app.id)"
+                  >
+                    <StudioAppIcon :icon="app.icon" class="size-[18px]" />
+                    <span
+                      :class="
+                        cn(
+                          'absolute -bottom-1 h-1 rounded-full transition-all',
+                          wm.focusedWindowId.value === app.id && !wm.windows[app.id].isMinimized
+                            ? 'w-3 bg-[#303030]'
+                            : wm.windows[app.id].isMinimized
+                              ? 'w-1.5 bg-[#b0b0b0]'
+                              : 'w-1.5 bg-[#303030]/60'
+                        )
+                      "
+                      aria-hidden="true"
+                    />
+                  </button>
+                </TooltipTrigger>
+              </ContextMenuTrigger>
+              <TooltipContent side="top" :side-offset="10" class="flex items-center gap-2 font-mono text-[11px]">
+                <span class="font-semibold">{{ app.title }}</span>
+                <span class="opacity-70">· {{ statusLabel(app) }}</span>
+              </TooltipContent>
+            </Tooltip>
+            <ContextMenuContent class="w-44">
+              <ContextMenuGroup>
+                <ContextMenuItem @select="wm.openWindow(app.id)">Focus Window</ContextMenuItem>
+                <ContextMenuItem
+                  v-if="!wm.windows[app.id].isMinimized && !wm.isMobile.value"
+                  @select="wm.minimizeWindow(app.id)"
+                >
+                  Minimize
+                </ContextMenuItem>
+                <ContextMenuItem v-if="!wm.isMobile.value" @select="wm.toggleMaximize(app.id)">
+                  {{ wm.windows[app.id].isMaximized ? "Restore Size" : "Maximize" }}
+                </ContextMenuItem>
+              </ContextMenuGroup>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem variant="destructive" @select="wm.closeWindow(app.id)">
+                  Close {{ app.shortLabel }}
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </ContextMenuContent>
+          </ContextMenu>
+        </template>
       </template>
 
       <Separator orientation="vertical" class="mx-1 h-7 bg-black/10" />

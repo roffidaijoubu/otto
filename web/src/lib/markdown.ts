@@ -11,13 +11,19 @@ marked.use({
   renderer: {
     link({ href, title, tokens }) {
       const text = this.parser.parseInline(tokens);
-      if (href && /^artifact:/i.test(href)) {
-        const relPath = href.replace(/^artifact:/i, "").replace(/^\/+/, "");
-        const safePath = relPath.replace(/"/g, "&quot;");
-        const plainTitle = text.replace(/<[^>]+>/g, "").trim() || relPath;
+      if (href && /^studio-app:/i.test(href)) {
+        const slug = href.replace(/^studio-app:/i, "").replace(/^\/+/, "").trim();
+        const safeSlug = slug.replace(/"/g, "&quot;");
+        const plainTitle = text.replace(/<[^>]+>/g, "").trim() || slug;
         const safeTitle = plainTitle.replace(/"/g, "&quot;");
-        const ext = (relPath.split(".").pop() || "artifact").toUpperCase();
-        return `<button type="button" class="otto-artifact-card" data-artifact-path="${safePath}" data-artifact-title="${safeTitle}"><span class="otto-artifact-card-title">${text}</span><span class="otto-artifact-card-meta">${ext} · Open</span></button>`;
+        return `<button type="button" class="otto-artifact-card" data-studio-app-slug="${safeSlug}" data-studio-app-title="${safeTitle}"><span class="otto-artifact-card-title">${text}</span><span class="otto-artifact-card-meta">App · Open</span></button>`;
+      }
+      if (href && /^obs-overlay:/i.test(href)) {
+        const slug = href.replace(/^obs-overlay:/i, "").replace(/^\/+/, "").trim();
+        const safeSlug = slug.replace(/"/g, "&quot;");
+        const plainTitle = text.replace(/<[^>]+>/g, "").trim() || slug;
+        const safeTitle = plainTitle.replace(/"/g, "&quot;");
+        return `<button type="button" class="otto-artifact-card" data-obs-overlay-slug="${safeSlug}" data-obs-overlay-title="${safeTitle}"><span class="otto-artifact-card-title">${text}</span><span class="otto-artifact-card-meta">OBS Overlay · Open</span></button>`;
       }
       const safeHref = href && /^https?:\/\//i.test(href) ? href : "#";
       const titleAttr = title ? ` title="${title.replace(/"/g, "&quot;")}"` : "";
@@ -42,6 +48,14 @@ export function renderMarkdown(md: string): string {
   const rawHtml = marked.parse(String(md || ""), { async: false }) as string;
   return DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: ["button"],
-    ADD_ATTR: ["target", "rel", "type", "data-artifact-path", "data-artifact-title"],
+    ADD_ATTR: [
+      "target",
+      "rel",
+      "type",
+      "data-studio-app-slug",
+      "data-studio-app-title",
+      "data-obs-overlay-slug",
+      "data-obs-overlay-title",
+    ],
   });
 }
