@@ -802,7 +802,7 @@ function askOttoAbout(entry: WorkspaceEntry) {
   if (entry.kind === "image") {
     emit(
       "askPrompt",
-      `Run the Squint Test on my thumbnail draft "${entry.name}" and give concrete revision notes for my human artist.\n${hidden}`
+      `Review my thumbnail draft "${entry.name}" for mobile readability and give concrete revision notes for my human artist.\n${hidden}`
     );
     return;
   }
@@ -815,12 +815,12 @@ function askOttoAbout(entry: WorkspaceEntry) {
   }
   emit(
     "askPrompt",
-    `Read and review my workspace file "${entry.relPath}" and give me sharp Otto feedback.\n${hidden}`
+    `Read and review my workspace file "${entry.relPath}" and share your feedback.\n${hidden}`
   );
 }
 
 function askActionLabel(entry: WorkspaceEntry): string {
-  if (entry.kind === "image") return "Squint Test";
+  if (entry.kind === "image") return "Review Thumbnail";
   if (entry.kind === "video") return "Review Clip";
   return "Ask Otto";
 }

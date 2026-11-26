@@ -1,18 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { PlusIcon } from "@lucide/vue";
-import { Button } from "@/components/ui/button";
+import { DownloadIcon, PlusIcon, XIcon } from "@lucide/vue";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { renderMarkdown } from "../lib/markdown";
 import type { StudioTab } from "./ChatHeader.vue";
-import LearnedPlaybooksCard from "./LearnedPlaybooksCard.vue";
 import OttoMascot from "./OttoMascot.vue";
-import StudioDatabaseView from "./StudioDatabaseView.vue";
-import BrowserWorkspaceTab from "./BrowserWorkspaceTab.vue";
-import WorkspaceFileManager, {
-  type WorkspaceEntry,
-  type WorkspaceStats,
-} from "./WorkspaceFileManager.vue";
-
+import type { WorkspaceEntry, WorkspaceStats } from "./WorkspaceFileManager.vue";
 export interface ConnectorInfo {
   provider: string;
   displayName: string;
@@ -51,27 +44,24 @@ export interface CalendarEventItem {
 }
 
 const props = defineProps<{
-  browserModalActive?: boolean;
-  browserRefreshTick?: number;
   activeTab: StudioTab;
   refreshTick: number;
-  workspaceRefreshTick: number;
-  dbRefreshTick: number;
   mascotColor: string;
   statusState: "ready" | "busy" | "error";
   swatches: string[];
-  hideMobileNav?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:activeTab": [tab: StudioTab];
+  openWorkspacePath: [relPath: string];
   selectMascotColor: [color: string];
   countsUpdated: [counts: { schedule: number; files: number; database: number; playbooks: number; connectors: number }];
   askPrompt: [prompt: string];
   openSetup: [];
 }>();
-const workspaceInitialPath = ref("");
+
 const loading = ref(false);
+const cancellingEventId = ref<string | null>(null);
 
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
@@ -80,8 +70,6 @@ const workspaceStats = ref<WorkspaceStats>({ totalBytes: 0, fileCount: 0, clipCo
 const recentFiles = ref<WorkspaceEntry[]>([]);
 const dbSummary = ref({
   pipelineCount: 0,
-  coreCount: 0,
-  experimentCount: 0,
   contactsCount: 0,
   trackersCount: 0,
 });
@@ -124,9 +112,6 @@ const dossierSnapshot = computed(() => {
   };
   const persona = pick(/-\s*\*\*Name\s*\/\s*Persona:\*\*\s*(.+)/i);
   const timezone = pick(/-\s*\*\*Timezone:\*\*\s*(.+)/i);
-  const niche = pick(/-\s*\*\*Niche\s*&\s*Core\s*Vibe:\*\*\s*(.+)/i);
-  const youtube = pick(/-\s*\*\*YouTube:\*\*\s*(.+)/i);
-  const pendingCount = (md.match(/\(not set|\(pending/gi) || []).length;
   const firstName =
     persona && !/not set/i.test(persona)
       ? persona.split(/[\s—(/-]+/)[0]
@@ -135,7 +120,7 @@ const dossierSnapshot = computed(() => {
     timezone && !/not set/i.test(timezone)
       ? timezone.split("(")[0].trim().slice(0, 22)
       : "Timezone unset";
-  return { persona, timezone, tzShort, firstName, niche, youtube, pendingCount };
+  return { persona, timezone, tzShort, firstName };
 });
 
 function formatBytes(bytes: number): string {
@@ -185,23 +170,6 @@ const nextStreamCountdown = computed(() => {
   const secs = diffSec % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
-});
-
-const armedWakeups = computed(() => {
-  const nowMs = nowTick.value;
-  const list: Array<{ hook: CalendarWakeupHook; eventTitle: string }> = [];
-  for (const evt of activeCalendarEvents.value) {
-    for (const w of evt.wakeups || []) {
-      if (w.status !== "armed") continue;
-      if (w.kind === "one_shot" && w.triggerAt && Date.parse(w.triggerAt) < nowMs - 60_000) continue;
-      list.push({ hook: w, eventTitle: evt.title });
-    }
-  }
-  return list.sort((a, b) => {
-    const ta = a.hook.triggerAt ? Date.parse(a.hook.triggerAt) : Number.MAX_SAFE_INTEGER;
-    const tb = b.hook.triggerAt ? Date.parse(b.hook.triggerAt) : Number.MAX_SAFE_INTEGER;
-    return ta - tb;
-  });
 });
 
 
@@ -261,9 +229,18 @@ async function syncGoogleCalendar() {
   }
 }
 
+async function cancelEvent(id: string) {
+  cancellingEventId.value = id;
+  try {
+    await fetch(`/api/calendar/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await fetchAll();
+  } finally {
+    cancellingEventId.value = null;
+  }
+}
+
 function openFilesAt(dirPath = "") {
-  workspaceInitialPath.value = dirPath;
-  emit("update:activeTab", "files");
+  emit("openWorkspacePath", dirPath);
 }
 
 function askAboutWorkspaceEntry(entry: WorkspaceEntry) {
@@ -271,7 +248,7 @@ function askAboutWorkspaceEntry(entry: WorkspaceEntry) {
   if (entry.kind === "image") {
     emit(
       "askPrompt",
-      `Run the Squint Test on my thumbnail draft "${entry.name}" and give concrete revision notes for my human artist.\n${hidden}`
+      `Review my thumbnail draft "${entry.name}" for mobile readability and give concrete revision notes for my human artist.\n${hidden}`
     );
     return;
   }
@@ -284,10 +261,9 @@ function askAboutWorkspaceEntry(entry: WorkspaceEntry) {
   }
   emit(
     "askPrompt",
-    `Read and review my workspace file "${entry.relPath}" and give me sharp Otto feedback.\n${hidden}`
+    `Read and review my workspace file "${entry.relPath}" and share your feedback.\n${hidden}`
   );
 }
-
 function emitCounts() {
   emit("countsUpdated", {
     schedule: activeCalendarEvents.value.length,
@@ -327,11 +303,8 @@ async function fetchAll() {
     }
     if (dbRes && typeof dbRes === "object") {
       const tables = dbRes.tables || {};
-      const ratio = dbRes.threePlusOne || {};
       dbSummary.value = {
         pipelineCount: Number(tables.content_pipeline || 0),
-        coreCount: Number(ratio.core || 0),
-        experimentCount: Number(ratio.experiment || 0),
         contactsCount: Number(tables.contacts || 0),
         trackersCount: Array.isArray(dbRes.customTrackers) ? dbRes.customTrackers.length : 0,
       };
@@ -367,20 +340,6 @@ defineExpose({ fetchAll });
 
 <template>
   <section class="mc-workspace">
-    <!-- MOBILE SECTION PILLS (visible <= 1024px since header hides desktop nav) -->
-    <div v-if="!props.hideMobileNav" class="mobile-nav-strip">
-      <button
-        v-for="tab in (['overview', 'schedule', 'files', 'database', 'playbooks', 'dossier', 'connectors'] as StudioTab[])"
-        :key="tab"
-        type="button"
-        class="m-nav-pill"
-        :class="{ active: props.activeTab === tab }"
-        @click="emit('update:activeTab', tab)"
-      >
-        {{ tab === 'files' ? 'Files' : tab === 'database' ? 'DB' : tab[0].toUpperCase() + tab.slice(1) }}
-      </button>
-    </div>
-
     <!-- VIEW 1: OTTO STUDIO BENTO OVERVIEW -->
     <div v-if="props.activeTab === 'overview'" class="overview-stack">
       <!-- TOP STUDIO HERO ROW (Greeting on Canvas + Sprite Weather Tile + Live Countdown Clock) -->
@@ -397,6 +356,9 @@ defineExpose({ fetchAll });
           </h1>
           <div class="hero-pills">
             <span class="canvas-pill">{{ dossierSnapshot.tzShort }}</span>
+            <button type="button" class="canvas-pill" @click="emit('update:activeTab', 'dossier')">
+              profile
+            </button>
             <button type="button" class="canvas-pill" @click="fetchAll">
               {{ loading ? "syncing..." : "sync studio" }}
             </button>
@@ -556,72 +518,7 @@ defineExpose({ fetchAll });
           </div>
         </div>
 
-        <!-- BENTO 2: (Y)our dossier. -->
-        <div class="otto-card bento-card">
-          <div class="otto-card-head">
-            <span>(Y)our dossier.</span>
-            <div class="otto-card-head-right">
-              <button type="button" class="head-link" @click="emit('update:activeTab', 'dossier')">
-                open
-              </button>
-            </div>
-          </div>
-
-          <div class="otto-card-body">
-            <div class="snapshot-rows">
-              <div class="snapshot-row">
-                <span class="snapshot-key">persona</span>
-                <span class="snapshot-val">{{ dossierSnapshot.persona || "Not set yet" }}</span>
-              </div>
-              <div class="snapshot-row">
-                <span class="snapshot-key">timezone</span>
-                <span class="snapshot-val">{{ dossierSnapshot.timezone || "Not set yet" }}</span>
-              </div>
-              <div v-if="dossierSnapshot.youtube" class="snapshot-row">
-                <span class="snapshot-key">youtube</span>
-                <span class="snapshot-val">{{ dossierSnapshot.youtube }}</span>
-              </div>
-              <div v-else-if="dossierSnapshot.niche" class="snapshot-row">
-                <span class="snapshot-key">niche</span>
-                <span class="snapshot-val">{{ dossierSnapshot.niche }}</span>
-              </div>
-              <div class="snapshot-row">
-                <span class="snapshot-key">homework #1</span>
-                <span class="snapshot-val">
-                  <span class="otto-chip" :class="dossierSnapshot.pendingCount === 0 ? 'otto-chip-success' : 'otto-chip-yellow'">
-                    {{
-                      dossierSnapshot.pendingCount === 0
-                        ? "complete"
-                        : `${dossierSnapshot.pendingCount} field(s) pending`
-                    }}
-                  </span>
-                </span>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2 mt-auto pt-2">
-              <Button
-                size="xs"
-                class="flex-1"
-                type="button"
-                @click="emit('askPrompt', 'Review my current dossier, goals, and schedule and tell me what needs attention next.')"
-              >
-                Audit Dossier
-              </Button>
-              <Button
-                variant="secondary"
-                size="xs"
-                class="flex-1"
-                type="button"
-                @click="emit('askPrompt', 'Audit my latest YouTube uploads and roast my titles & thumbnails (Squint Test).')"
-              >
-                Audit YouTube
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <!-- BENTO 3: (Y)our workspace. (Unified Files + Clips + 3+1 DB link) -->
+        <!-- BENTO 2: (Y)our workspace. (Unified Files + Clips + Studio DB link) -->
         <div class="otto-card bento-card">
           <div class="otto-card-head">
             <span>(Y)our workspace.</span>
@@ -669,7 +566,7 @@ defineExpose({ fetchAll });
                       size="xs"
                       @click="askAboutWorkspaceEntry(file)"
                     >
-                      {{ file.kind === "image" ? "Squint" : file.kind === "video" ? "Review" : "Ask Otto" }}
+                      {{ file.kind === "image" ? "Review" : file.kind === "video" ? "Review" : "Ask Otto" }}
                     </Button>
                     <a
                       :href="`/api/workspace/file?path=${encodeURIComponent(file.relPath)}&download=1`"
@@ -684,7 +581,7 @@ defineExpose({ fetchAll });
             </div>
 
             <div class="db-mini-strip mt-auto">
-              <span>(Y)our 3+1: <strong>{{ dbSummary.coreCount }}</strong> Core / <strong>{{ dbSummary.experimentCount }}</strong> Exp · {{ dbSummary.contactsCount }} contacts</span>
+              <span>(Y)our db: <strong>{{ dbSummary.pipelineCount }}</strong> idea{{ dbSummary.pipelineCount === 1 ? "" : "s" }} · {{ dbSummary.contactsCount }} contact{{ dbSummary.contactsCount === 1 ? "" : "s" }}</span>
               <button type="button" class="head-link" @click="emit('update:activeTab', 'database')">
                 db
               </button>
@@ -692,7 +589,7 @@ defineExpose({ fetchAll });
           </div>
         </div>
 
-        <!-- BENTO 4: (Y)our connectors. -->
+        <!-- BENTO 3: (Y)our connectors. -->
         <div class="otto-card bento-card">
           <div class="otto-card-head">
             <span>(Y)our connectors.</span>
@@ -716,7 +613,7 @@ defineExpose({ fetchAll });
           </div>
         </div>
 
-        <!-- BENTO 5: (Y)our playbooks. (Hermes Nightly Self-Learning) -->
+        <!-- BENTO 4: (Y)our playbooks. (Hermes Nightly Self-Learning) -->
         <div class="otto-card bento-card">
           <div class="otto-card-head">
             <span>(Y)our playbooks.</span>
@@ -762,46 +659,18 @@ defineExpose({ fetchAll });
       </div>
     </div>
 
-
-    <!-- VIEW 3: UNIFIED WORKSPACE FILE MANAGER & CLIPS -->
-    <div v-else-if="props.activeTab === 'files'" class="detail-stack">
-      <div class="otto-card overflow-hidden h-[580px] flex flex-col">
-        <WorkspaceFileManager
-          :refresh-tick="props.workspaceRefreshTick"
-          :initial-path="workspaceInitialPath"
-          @ask-prompt="emit('askPrompt', $event)"
-          @stats-updated="(p) => { workspaceStats = p.stats; recentFiles = p.recentFiles; emitCounts(); }"
-        />
-      </div>
-    </div>
-
-    <!-- VIEW 4: UNIFIED STUDIO DATABASE (SQLITE WAL) -->
-    <div v-else-if="props.activeTab === 'database'" class="detail-stack">
-      <StudioDatabaseView
-        :refresh-tick="props.dbRefreshTick"
-        @ask-prompt="emit('askPrompt', $event)"
-        @open-workspace-path="openFilesAt"
-        @overview-updated="(p) => { dbSummary = p; emitCounts(); }"
-      />
-    </div>
-
-    <!-- VIEW 5: LEARNED CREATOR PLAYBOOKS -->
-    <div v-else-if="props.activeTab === 'playbooks'" class="detail-stack">
-      <LearnedPlaybooksCard :refresh-tick="props.dbRefreshTick + props.refreshTick" />
-    </div>
-
-    <!-- VIEW 5: FULL TALENT DOSSIER -->
+    <!-- VIEW 2: CREATOR PROFILE / MEMORY -->
     <div v-else-if="props.activeTab === 'dossier'" class="detail-stack">
       <div class="otto-card">
         <div class="otto-card-head">
-          <span>(Y)our dossier.</span>
+          <span>(Y)our profile.</span>
           <div class="otto-card-head-right">
             <Button
               size="xs"
               type="button"
-              @click="emit('askPrompt', 'Review my current goals, schedule, and 3+1 stream tracker and tell me what needs attention next.')"
+              @click="emit('askPrompt', 'Check my connected YouTube and social channels and update my studio profile if anything changed.')"
             >
-              Audit with Otto
+              Refresh from Channels
             </Button>
           </div>
         </div>
@@ -811,22 +680,11 @@ defineExpose({ fetchAll });
           </div>
           <div v-if="dossierHtml" class="md-content text-sm" v-html="dossierHtml"></div>
           <div v-else class="empty-inset">
-            No talent dossier yet. Ask Otto to run onboarding!
+            No channel profile saved yet. Ask Otto to check your connected channels to fill this in.
           </div>
         </div>
       </div>
     </div>
-
-    <!-- VIEW 5B: EMBEDDED BROWSER & SAVED SESSIONS -->
-    <div v-else-if="props.activeTab === 'browser'" class="detail-stack">
-      <div class="otto-card overflow-hidden min-h-[540px] flex flex-col">
-        <BrowserWorkspaceTab
-          :modal-active="props.browserModalActive"
-          :refresh-tick="props.browserRefreshTick"
-        />
-      </div>
-    </div>
-
     <!-- VIEW 6: SPRITES CONNECTORS -->
     <div v-else class="detail-stack">
       <div class="otto-card">

@@ -19,7 +19,6 @@ import {
   type ContactRole,
   type ContactStatus,
   type PipelineFormat,
-  type PipelinePillar,
   type PipelineStatus,
 } from "../lib/studio-db.ts";
 
@@ -28,7 +27,7 @@ export default function (pi: ExtensionAPI) {
     name: "studio_db_overview",
     label: "Studio Database Overview",
     description:
-      "Inspect the unified Studio SQLite database (~/.omp/agent/studio.db) shared with Mission Control Web UI: returns row counts for calendar_events, content_pipeline (including 3+1 core vs experiment ratio), contacts, channel_metrics, and all custom trackers.",
+      "Inspect the unified Studio SQLite database (~/.omp/agent/studio.db) shared with Otto Studio OS: returns row counts for calendar_events, content_pipeline, contacts, channel_metrics, and all custom trackers.",
     parameters: Type.Object({}),
     async execute() {
       const overview = getStudioDbOverview();
@@ -61,16 +60,15 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ---- Content Pipeline (3+1 Tracker) ----
+  // ---- Content Pipeline ----
 
   pi.registerTool({
     name: "studio_pipeline_list",
-    label: "List Content Pipeline (3+1)",
+    label: "List Content Pipeline",
     description:
-      "List ideas, streams, videos, and shorts in the shared 3+1 Content Pipeline table (synced live with Mission Control Studio DB).",
+      "List ideas, streams, videos, and shorts in the shared Content Pipeline table (synced live with Studio DB).",
     parameters: Type.Object({
       status: Type.Optional(Type.String({ description: "Optional status filter: idea|prepping|scheduled|live|editing|published|dropped" })),
-      pillar: Type.Optional(Type.String({ description: "Optional 3+1 pillar filter: core|experiment" })),
       format: Type.Optional(Type.String({ description: "Optional format filter: stream|video|short|collab" })),
     }),
     async execute(_id, params) {
@@ -86,7 +84,7 @@ export default function (pi: ExtensionAPI) {
     name: "studio_pipeline_upsert",
     label: "Save Content Pipeline Item",
     description:
-      "Create or update an item in the shared 3+1 Content Pipeline table (visible live in Mission Control Studio DB). Link workspace files via thumbnailPath (e.g. 'thumbnails/draft.png') or scriptPath (e.g. 'scripts/ep12.md').",
+      "Create or update an item in the shared Content Pipeline table (visible live in Studio DB). Link workspace files via thumbnailPath (e.g. 'thumbnails/draft.png') or scriptPath (e.g. 'scripts/ep12.md').",
     parameters: Type.Object({
       id: Type.Optional(Type.String({ description: "Existing item ID to update; omit to create new." })),
       title: Type.Optional(Type.String({ description: "Working title or concept name." })),
@@ -98,7 +96,6 @@ export default function (pi: ExtensionAPI) {
           Type.Literal("collab"),
         ])
       ),
-      pillar: Type.Optional(Type.Union([Type.Literal("core"), Type.Literal("experiment")])),
       status: Type.Optional(
         Type.Union([
           Type.Literal("idea"),
@@ -110,18 +107,17 @@ export default function (pi: ExtensionAPI) {
           Type.Literal("dropped"),
         ])
       ),
-      hook: Type.Optional(Type.String({ description: "4 Ps Premise/Problem hook or packaging angle." })),
+      hook: Type.Optional(Type.String({ description: "Angle, hook, or short pitch." })),
       thumbnailPath: Type.Optional(Type.String({ description: "Workspace-relative path to human artist thumbnail draft." })),
       scriptPath: Type.Optional(Type.String({ description: "Workspace-relative path to script or run-of-show .md." })),
       scheduledFor: Type.Optional(Type.String({ description: "Optional target date or ISO timestamp." })),
-      notes: Type.Optional(Type.String({ description: "Packaging notes, Squint Test feedback, or segment breakdown." })),
+      notes: Type.Optional(Type.String({ description: "Production notes, packaging feedback, or segment breakdown." })),
     }),
     async execute(_id, params) {
       const item = upsertPipelineItem({
         id: params.id,
         title: params.title,
         format: params.format as PipelineFormat | undefined,
-        pillar: params.pillar as PipelinePillar | undefined,
         status: params.status as PipelineStatus | undefined,
         hook: params.hook,
         thumbnailPath: params.thumbnailPath,

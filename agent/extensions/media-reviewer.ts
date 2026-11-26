@@ -228,7 +228,7 @@ export default function (pi: ExtensionAPI) {
       focus: Type.Optional(
         Type.String({
           description:
-            "Optional review focus (e.g., 'Check 3-second TikTok hook and dead air' or 'Audit 4 Ps intro')",
+            "Optional review focus (e.g., 'Check 3-second TikTok hook and dead air' or 'Check intro pacing')",
         })
       ),
     }),
@@ -263,9 +263,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "critique_thumbnail",
-    label: "Critique Thumbnail (Squint Test)",
+    label: "Critique Thumbnail",
     description:
-      "Visually inspect an existing YouTube thumbnail (local image path OR image URL such as https://i.ytimg.com/vi/<videoId>/maxresdefault.jpg) using the zero-key Google Gemini Sprites Connector. Evaluates Michael Reeves' Squint Test, mobile legibility, focal point, text clutter, and gives actionable revision notes for a human artist (strictly zero AI image generation).",
+      "Visually inspect an existing YouTube thumbnail (local image path OR image URL such as https://i.ytimg.com/vi/<videoId>/maxresdefault.jpg) using the zero-key Google Gemini Sprites Connector. Evaluates mobile legibility, focal point clarity, contrast, text clutter, and gives actionable revision notes for a human artist (strictly zero AI image generation).",
     parameters: Type.Object({
       imagePathOrUrl: Type.String({
         description: "Local image path (.png/.jpg/.webp) OR public https:// thumbnail URL",
@@ -312,8 +312,8 @@ export default function (pi: ExtensionAPI) {
       }
       const titleLine = params.videoTitle ? `Paired video title: "${params.videoTitle}"\n\n` : "";
       const prompt =
-        `${titleLine}Critique this YouTube thumbnail using Otto's blunt packaging playbook and the Michael Reeves Squint Test:\n` +
-        `1. Squint Test Verdict (Pass / Weak / Fail): Does ONE unmistakable focal point read instantly at tiny mobile size?\n` +
+        `${titleLine}Critique this YouTube thumbnail for click-through clarity and mobile legibility:\n` +
+        `1. Mobile Readability Verdict (Pass / Weak / Fail): Does ONE unmistakable focal point read instantly at small phone size?\n` +
         `2. Text Audit: Count the words, check contrast/readability, and flag if it repeats the title.\n` +
         `3. Visual Clutter & Hierarchy: What distracts the eye?\n` +
         `4. Concrete Revision Brief for a Human Artist / Designer (strictly NO AI image generation).`;

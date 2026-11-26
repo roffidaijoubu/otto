@@ -42,7 +42,7 @@ echo "==> Bootstrapping Draft Talent Dossier from connected Sprites Connectors..
 4. If you discovered a creator name or handle, run 1 quick exa_search query for their public bio/niche/branding.
 5. Update ~/.omp/agent/MEMORY.md with a clean **Draft Talent Dossier**:
    - Fill the Profile section (Name/Persona, Niche & Core Vibe, Timezone — infer from synced Google Calendar event offsets if present, otherwise mark '(pending — ask talent)', Platforms + handles/channel ID + live subscriber/video/view baseline, Recent Uploads summary).
-   - Mark Profile status clearly as '(Auto-discovered draft — verify facts, timezone & OPSEC boundaries with talent on first chat)'.
-   - Leave Homework #1 (3 Concrete Goals, Mandatory Days Off, 3 GOATs, Upcoming Christmas) as '(pending — ask talent during first chat)'.
+   - Mark Profile status clearly as '(Auto-discovered draft — verify facts, timezone & OPSEC boundaries with creator when helpful)'.
+   - Leave unknown fields as '(not set)'.
    - If NO social/YouTube connectors returned data, leave MEMORY.md untouched.
 6. Reply with a single line: BOOTSTRAP_OK or BOOTSTRAP_NO_DATA." || echo "WARNING: Dossier bootstrap did not complete; Otto will auto-discover on first chat."

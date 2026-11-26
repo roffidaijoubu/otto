@@ -34,7 +34,6 @@ export interface CalendarEvent {
 }
 
 export type PipelineFormat = "stream" | "video" | "short" | "collab";
-export type PipelinePillar = "core" | "experiment";
 export type PipelineStatus =
   | "idea"
   | "prepping"
@@ -48,7 +47,6 @@ export interface ContentPipelineItem {
   id: string;
   title: string;
   format: PipelineFormat;
-  pillar: PipelinePillar;
   status: PipelineStatus;
   hook: string;
   thumbnailPath: string;
@@ -164,7 +162,6 @@ function initSchema(db: Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       format TEXT NOT NULL DEFAULT 'stream',
-      pillar TEXT NOT NULL DEFAULT 'core',
       status TEXT NOT NULL DEFAULT 'idea',
       hook TEXT NOT NULL DEFAULT '',
       thumbnail_path TEXT NOT NULL DEFAULT '',
@@ -246,6 +243,16 @@ function initSchema(db: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_learned_skills_status ON learned_skills(status);
   `);
+
+  // Drop legacy 3+1 pillar column cleanly on existing databases
+  const pipeCols = db.query("PRAGMA table_info(content_pipeline)").all() as Array<{ name?: string }>;
+  if (pipeCols.some((c) => c.name === "pillar")) {
+    try {
+      db.exec("ALTER TABLE content_pipeline DROP COLUMN pillar;");
+    } catch {
+      // Older SQLite without DROP COLUMN; column remains unused with DEFAULT 'core'
+    }
+  }
 }
 
 function migrateLegacyCalendarJson(db: Database): void {
@@ -441,13 +448,12 @@ export function saveCalendarEventsBatch(events: CalendarEvent[]): void {
   tx(events);
 }
 
-// ---------- Content Pipeline (3+1 Tracker) ----------
+// ---------- Content Pipeline ----------
 
 interface PipelineRow {
   id: string;
   title: string;
   format: PipelineFormat;
-  pillar: PipelinePillar;
   status: PipelineStatus;
   hook: string;
   thumbnail_path: string;
@@ -463,7 +469,6 @@ function mapPipelineRow(r: PipelineRow): ContentPipelineItem {
     id: r.id,
     title: r.title,
     format: r.format,
-    pillar: r.pillar,
     status: r.status,
     hook: r.hook,
     thumbnailPath: r.thumbnail_path,
@@ -477,7 +482,6 @@ function mapPipelineRow(r: PipelineRow): ContentPipelineItem {
 
 export function listPipelineItems(filters?: {
   status?: string;
-  pillar?: string;
   format?: string;
 }): ContentPipelineItem[] {
   const db = getStudioDb();
@@ -486,10 +490,6 @@ export function listPipelineItems(filters?: {
   if (filters?.status) {
     clauses.push("status = ?");
     params.push(filters.status);
-  }
-  if (filters?.pillar) {
-    clauses.push("pillar = ?");
-    params.push(filters.pillar);
   }
   if (filters?.format) {
     clauses.push("format = ?");
@@ -512,7 +512,6 @@ export function upsertPipelineItem(input: {
   id?: string;
   title?: string;
   format?: PipelineFormat;
-  pillar?: PipelinePillar;
   status?: PipelineStatus;
   hook?: string;
   thumbnailPath?: string;
@@ -530,7 +529,6 @@ export function upsertPipelineItem(input: {
     id: existing?.id || input.id || makeId("idea"),
     title,
     format: input.format ?? existing?.format ?? "stream",
-    pillar: input.pillar ?? existing?.pillar ?? "core",
     status: input.status ?? existing?.status ?? "idea",
     hook: input.hook ?? existing?.hook ?? "",
     thumbnailPath: input.thumbnailPath ?? existing?.thumbnailPath ?? "",
@@ -543,13 +541,12 @@ export function upsertPipelineItem(input: {
 
   db.prepare(`
     INSERT INTO content_pipeline (
-      id, title, format, pillar, status, hook, thumbnail_path, script_path,
+      id, title, format, status, hook, thumbnail_path, script_path,
       scheduled_for, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       format = excluded.format,
-      pillar = excluded.pillar,
       status = excluded.status,
       hook = excluded.hook,
       thumbnail_path = excluded.thumbnail_path,
@@ -561,7 +558,6 @@ export function upsertPipelineItem(input: {
     item.id,
     item.title,
     item.format,
-    item.pillar,
     item.status,
     item.hook,
     item.thumbnailPath,
@@ -986,8 +982,6 @@ export function getStudioDbOverview() {
   const calCount = countQuery(db, "SELECT COUNT(*) as c FROM calendar_events WHERE status != 'cancelled'");
   const pipeAll = listPipelineItems();
   const activePipe = pipeAll.filter((p) => p.status !== "dropped");
-  const coreCount = activePipe.filter((p) => p.pillar === "core").length;
-  const experimentCount = activePipe.filter((p) => p.pillar === "experiment").length;
   const contactsCount = countQuery(db, "SELECT COUNT(*) as c FROM contacts");
   const metricsCount = countQuery(db, "SELECT COUNT(*) as c FROM channel_metrics");
   const customTrackers = listCustomTrackers();
@@ -998,11 +992,6 @@ export function getStudioDbOverview() {
       content_pipeline: activePipe.length,
       contacts: contactsCount,
       channel_metrics: metricsCount,
-    },
-    threePlusOne: {
-      core: coreCount,
-      experiment: experimentCount,
-      totalActive: activePipe.length,
     },
     customTrackers,
   };

@@ -27,7 +27,6 @@ import {
   type ContactRole,
   type ContactStatus,
   type PipelineFormat,
-  type PipelinePillar,
   type PipelineStatus,
 } from "../agent/lib/studio-db.ts";
 import {
@@ -598,7 +597,7 @@ function friendlyToolLabel(toolName: string): string {
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
   if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
-  if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail (Squint Test)...";
+  if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail...";
   if (/browser_login/i.test(toolName)) return "Waiting for browser login...";
   if (/browser_/i.test(toolName)) return "Checking saved browser sessions...";
   if (/opencli/i.test(toolName)) return "Running OpenCLI on browser session...";
@@ -2490,9 +2489,8 @@ Bun.serve<VncWsData>({
 
     if (req.method === "GET" && url.pathname === "/api/db/pipeline") {
       const status = url.searchParams.get("status") || undefined;
-      const pillar = url.searchParams.get("pillar") || undefined;
       const format = url.searchParams.get("format") || undefined;
-      return Response.json({ items: listPipelineItems({ status, pillar, format }) });
+      return Response.json({ items: listPipelineItems({ status, format }) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/db/pipeline") {
@@ -2501,7 +2499,6 @@ Bun.serve<VncWsData>({
           id?: string;
           title?: string;
           format?: PipelineFormat;
-          pillar?: PipelinePillar;
           status?: PipelineStatus;
           hook?: string;
           thumbnailPath?: string;

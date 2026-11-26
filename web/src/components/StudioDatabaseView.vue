@@ -16,7 +16,6 @@ export interface ContentPipelineItem {
   id: string;
   title: string;
   format: "stream" | "video" | "short" | "collab";
-  pillar: "core" | "experiment";
   status: "idea" | "prepping" | "scheduled" | "live" | "editing" | "published" | "dropped";
   hook: string;
   thumbnailPath: string;
@@ -68,8 +67,6 @@ const emit = defineEmits<{
   openWorkspacePath: [relPath: string];
   overviewUpdated: [payload: {
     pipelineCount: number;
-    coreCount: number;
-    experimentCount: number;
     contactsCount: number;
     trackersCount: number;
   }];
@@ -87,7 +84,6 @@ const activeTrackerItems = ref<CustomTrackerItem[]>([]);
 
 const newPipeTitle = ref("");
 const newPipeFormat = ref<ContentPipelineItem["format"]>("stream");
-const newPipePillar = ref<ContentPipelineItem["pillar"]>("core");
 const newPipeHook = ref("");
 
 const newMetricDate = ref(new Date().toISOString().slice(0, 10));
@@ -107,14 +103,6 @@ const newCustomStatus = ref("open");
 const newCustomData = ref<Record<string, string>>({});
 
 const activePipeline = computed(() => pipeline.value.filter((p) => p.status !== "dropped"));
-const coreCount = computed(() => activePipeline.value.filter((p) => p.pillar === "core").length);
-const experimentCount = computed(
-  () => activePipeline.value.filter((p) => p.pillar === "experiment").length
-);
-const experimentPct = computed(() => {
-  const total = coreCount.value + experimentCount.value;
-  return total > 0 ? Math.round((experimentCount.value / total) * 100) : 0;
-});
 
 const activeTracker = computed(
   () => trackers.value.find((t) => t.slug === activeTrackerSlug.value) || null
@@ -147,8 +135,6 @@ async function fetchAllDb() {
     }
     emit("overviewUpdated", {
       pipelineCount: activePipeline.value.length,
-      coreCount: coreCount.value,
-      experimentCount: experimentCount.value,
       contactsCount: cRes && Array.isArray(cRes.contacts) ? cRes.contacts.length : 0,
       trackersCount: trackers.value.length,
     });
@@ -173,7 +159,6 @@ async function addPipeline() {
     body: JSON.stringify({
       title: newPipeTitle.value.trim(),
       format: newPipeFormat.value,
-      pillar: newPipePillar.value,
       hook: newPipeHook.value.trim(),
     }),
   });
@@ -316,8 +301,8 @@ defineExpose({ fetchAllDb });
       <div class="otto-card-head">
         <span>(Y)our studio database.</span>
         <div class="otto-card-head-right">
-          <span class="otto-chip otto-chip-yellow" title="Otto's 3+1 Rule: 3 Core formats + 1 Experiment">
-            3+1: {{ coreCount }} Core / {{ experimentCount }} Exp ({{ experimentPct }}%)
+          <span class="otto-chip otto-chip-neutral">
+            {{ activePipeline.length }} in pipeline · {{ trackers.length }} tracker{{ trackers.length === 1 ? "" : "s" }}
           </span>
         </div>
       </div>
@@ -325,7 +310,7 @@ defineExpose({ fetchAllDb });
       <div class="otto-card-body">
         <div class="db-subtabs">
           <button type="button" class="db-tab" :class="{ active: subTab === 'pipeline' }" @click="subTab = 'pipeline'">
-            3+1 Pipeline ({{ activePipeline.length }})
+            Content Pipeline ({{ activePipeline.length }})
           </button>
           <button type="button" class="db-tab" :class="{ active: subTab === 'metrics' }" @click="subTab = 'metrics'">
             Metrics ({{ metrics.length }})
@@ -337,31 +322,27 @@ defineExpose({ fetchAllDb });
 
         <div v-if="errorMsg" class="text-xs text-destructive font-mono">{{ errorMsg }}</div>
 
-        <!-- TAB 1: 3+1 CONTENT PIPELINE -->
+        <!-- TAB 1: CONTENT PIPELINE -->
         <div v-if="subTab === 'pipeline'" class="flex flex-col gap-3">
           <div class="db-panel-head">
-            <div class="db-sub">Shared live with Otto. Track Core vs Experiment streams, videos &amp; packaging.</div>
+            <div class="db-sub">Shared live with Otto. Track stream ideas, videos, shorts, and linked assets.</div>
             <Button
               type="button"
               variant="secondary"
               size="xs"
-              @click="emit('askPrompt', 'Review my 3+1 Content Pipeline in the Studio Database, check my Core vs Experiment ratio, and tell me which idea we should sharpen next.')"
+              @click="emit('askPrompt', 'Review my Content Pipeline in the Studio Database and suggest which idea we should prep next.')"
             >
-              Audit 3+1 with Otto
+              Review with Otto
             </Button>
           </div>
 
           <form class="db-form" @submit.prevent="addPipeline">
-            <input v-model="newPipeTitle" type="text" class="db-input flex-1" placeholder="New stream or video concept..." required />
+            <input v-model="newPipeTitle" type="text" class="db-input flex-1" placeholder="New stream or video idea..." required />
             <select v-model="newPipeFormat" class="db-select">
               <option value="stream">Stream</option>
               <option value="video">YouTube Video</option>
               <option value="short">Short / Clip</option>
               <option value="collab">Collab</option>
-            </select>
-            <select v-model="newPipePillar" class="db-select">
-              <option value="core">3x Core</option>
-              <option value="experiment">+1 Experiment</option>
             </select>
             <input v-model="newPipeHook" type="text" class="db-input" placeholder="Hook / angle (optional)" />
             <Button type="submit" size="sm">
@@ -371,16 +352,13 @@ defineExpose({ fetchAllDb });
           </form>
 
           <div v-if="pipeline.length === 0" class="db-empty">
-            No content ideas logged yet. Add one above or brainstorm a $1 / $1,000 / $100,000 idea with Otto.
+            No content ideas logged yet. Add one above or ask Otto to brainstorm.
           </div>
 
           <div v-else class="db-cards">
             <div v-for="item in pipeline" :key="item.id" class="db-row-card">
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="otto-chip" :class="item.pillar === 'experiment' ? 'otto-chip-cyan' : 'otto-chip-ink'">
-                    {{ item.pillar === "experiment" ? "+1 EXP" : "CORE" }}
-                  </span>
                   <span class="otto-chip otto-chip-neutral">{{ item.format }}</span>
                   <span class="font-medium text-sm">{{ item.title }}</span>
                 </div>
@@ -402,7 +380,7 @@ defineExpose({ fetchAllDb });
                     type="button"
                     variant="secondary"
                     size="xs"
-                    @click="emit('askPrompt', `Let's sharpen the packaging, 4 Ps intro, and thumbnail brief for my ${item.pillar} ${item.format} idea '${item.title}' (DB id: ${item.id}).`)"
+                    @click="emit('askPrompt', `Let's plan and prep my ${item.format} idea '${item.title}' (DB id: ${item.id}) — title options, outline, and any notes for my team.`)"
                   >
                     Prep
                   </Button>

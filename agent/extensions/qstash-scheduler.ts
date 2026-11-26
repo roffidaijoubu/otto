@@ -338,7 +338,7 @@ function buildPresetHookSpec(
         offsetMinutes: -60,
         triggerMs: startMs - 60 * 60 * 1000,
         label: `T-1h Pre-stream: ${title}`,
-        prompt: `1 hour before "${title}" (${startIso}). Run a crisp pre-stream readiness check (OBS/mic, stream title, Squint Test thumbnail, and going-live Buffer drafts).${noteSuffix}`,
+        prompt: `1 hour before "${title}" (${startIso}). Run a crisp pre-stream readiness check (OBS/mic, stream title, thumbnail, and going-live Buffer drafts).${noteSuffix}`,
       };
     case "post_stream_vod_3h": {
       const triggerMs = endMs + 30 * 60 * 1000;
@@ -618,7 +618,7 @@ export default function (pi: ExtensionAPI) {
         },
         notes: {
           type: "string",
-          description: "Optional context: collab partner, game/topic, 3+1 type, or goals.",
+          description: "Optional context: collab partner, game/topic, or prep notes.",
         },
         hooks: {
           type: "array",

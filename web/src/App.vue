@@ -40,7 +40,7 @@ type MissionSubTab = "overview" | "dossier" | "connectors";
 
 const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "dossier", label: "Dossier" },
+  { id: "dossier", label: "Profile" },
   { id: "connectors", label: "Connectors" },
 ];
 
@@ -94,9 +94,9 @@ const liveThinking = ref("");
 const liveSteps = ref<TraceStep[]>([]);
 
 const starters = [
-  "Let's get started. Do your homework on my channel.",
-  "Audit my latest YouTube uploads and roast my titles.",
-  "Help me plan a 4-hour segment-first stream for tonight.",
+  "Check my connected channels and set up my studio profile.",
+  "Audit my latest YouTube uploads and suggest sharper titles.",
+  "Help me plan tonight's stream and draft promo posts.",
 ];
 
 const hasLiveContent = computed(
@@ -680,15 +680,11 @@ onMounted(async () => {
           <MissionControlWorkspace
             :active-tab="missionTab"
             :refresh-tick="missionRefreshTick"
-            :workspace-refresh-tick="workspaceRefreshTick"
-            :db-refresh-tick="dbRefreshTick"
             :mascot-color="mascotColor"
-            :browser-modal-active="Boolean(activeLoginRequest)"
-            :browser-refresh-tick="browserRefreshTick"
             :status-state="statusState"
             :swatches="[...MASCOT_SWATCHES]"
-            :hide-mobile-nav="true"
             @update:active-tab="handleMissionTabRequest"
+            @open-workspace-path="openFilesAtPath"
             @select-mascot-color="setMascotColor"
             @counts-updated="navCounts = $event"
             @ask-prompt="handleMissionPrompt"

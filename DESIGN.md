@@ -10,8 +10,8 @@ Instead of a generic dark-mode SaaS dashboard or a chat-only wrapper, **Otto Stu
 
 - **Atmospheric Canvas + Crisp Floating Widgets:** Generously rounded `#FFFFFF` widget cards (`20px` radius, soft `0 3px 6px rgba(0, 0, 0, 0.14)` + `0 1px 2px rgba(0, 0, 0, 0.06)` lift) float over a serene studio backdrop wash (cool silver-mist melting into soft warm terracotta/peach — or optional flat `#DBDBDB` concrete canvas).
 - **Mono-First Studio Chrome (`IBM Plex Mono`):** Every widget caption, tab, pill button, input, timestamp, KPI numeral, file-tree entry, and database badge speaks in **`IBM Plex Mono`**, giving the studio the crisp honesty of a producer's desk and terminal scratchpad.
-- **Humanist Restraint for Hero & Long Coaching Prose (`Inter` / `Helvetica Neue`):** The top studio greeting (`Hi <Creator>, Otto is (y)our stream manager.`) uses light/regular sans (`300`/`400`), and multi-paragraph coaching replies in Co-Pilot Chat / Dossier Markdown remain effortless to read without wall-of-mono fatigue.
-- **Parenthetical Micro-Headers:** Every widget card opens with a centered `11px` `IBM Plex Mono` header strip separated by a hairline `#EDEDED` rule using the signature **`(Y)our <noun>.`** convention — `(Y)our schedule.`, `(Y)our next stream.`, `(Y)our dossier.`, `(Y)our workspace.`, `(Y)our co-pilot.`, `(Y)our connectors.`, `(Y)our playbooks.` (the 3+1 summary is an inline footer line, not a card header).
+- **Humanist Restraint for Hero & Long Prose (`Inter` / `Helvetica Neue`):** The top studio greeting (`Hi <Creator>, Otto is (y)our stream manager.`) uses light/regular sans (`300`/`400`), and multi-paragraph replies in Otto Chat / Profile Markdown remain effortless to read without wall-of-mono fatigue.
+- **Parenthetical Micro-Headers:** Every widget card opens with a centered `11px` `IBM Plex Mono` header strip separated by a hairline `#EDEDED` rule using the signature **`(Y)our <noun>.`** convention — `(Y)our schedule.`, `(Y)our next stream.`, `(Y)our profile.`, `(Y)our workspace.`, `(Y)our co-pilot.`, `(Y)our connectors.`, `(Y)our playbooks.`.
 - **The Highlighted-Letter Marker:** Flat zero-radius `#F9F5A2` (Highlight Yellow) or `#C7F6FF` (Highlight Cyan) marker blocks sit tightly behind emphasized characters/words like **`(y)our`** — signaling *"this studio belongs to you"* without loud neon gradients.
 - **100% Human-Crafted Code Mascot (Zero AI Art):** Otto's mascot is a **simple geometric circle with simple expressive eyes**, rendered as pure inline SVG (`OttoMascot.vue`) — reinforcing `lma`'s hard **Strictly Zero AI-Generated Art or Video** guardrail.
 
@@ -65,9 +65,9 @@ Otto is represented exclusively by a minimalist geometric `<svg>` component (`we
 | State | Background | Text | Usage |
 | :--- | :--- | :--- | :--- |
 | Success / Online | `#E6F7EE` | `#166534` | `online`, `GCal ↗`, `Complete`, saved-playbook badges |
-| Warning / Pending | `#F9F5A2` | `#854D0E` | `working`, `Homework #1 pending`, `+1 EXP` |
-| Error / Disabled AI / Destructive | `#FDE8E8` | `#991B1B` | `Stop`, `Cancel`, error banners, disabled-AI notices |
-| Neutral / Info | `#F2F2F2` (neutral) / `#C7F6FF` (`--info-bg`) | `#303030` | `CORE`, file sizes, storage counter, `Fly.io Sprite · $0 idle` |
+| Warning / Pending | `#F9F5A2` | `#854D0E` | `working`, `pending review`, armed wake-ups |
+| Error / Disabled AI / Destructive | `#FDE8E8` | `#991B1B` | `Stop`, `Cancel`, error banners, destructive actions |
+| Neutral / Info | `#F2F2F2` (neutral) / `#C7F6FF` (`--info-bg`) | `#303030` | format badges, file sizes, storage counter, `Fly.io Sprite · $0 idle` |
 
 ---
 
@@ -135,12 +135,11 @@ Loaded via Google Fonts in `web/index.html`:
       - Top row right: Two compact floating widgets side-by-side inspired directly by the reference:
         1. **`(Y)our sprite.`** (soft sky/slate atmospheric mini-tile: sun graphic + `<N> live` connector count + `Fly.io Sprite · $0 idle`).
         2. **`(Y)our next stream.`** (oversized `IBM Plex Mono` live countdown `HH:MM:SS` to next scheduled stream + `#F2F2F2` pill button — `Prep with Otto` when a stream is scheduled, otherwise `Schedule Stream`).
-      - Main Bento Grid (`2 columns`):
+      - Main Bento Grid (`2x2 symmetrical`):
         - **`(Y)our schedule.`** — Quick-add pill input (`25px` radius, `#EDEDED` fill) + upcoming events with `GCal ↗`, QStash wake-up pills, `Prep`, `✕`.
-        - **`(Y)our dossier.`** — Persona, Timezone, YouTube baseline, Homework #1 status pill, `Audit Dossier` & `Audit YouTube` pill buttons.
-        - **`(Y)our workspace.`** — Unified 2-way files & clips preview, quick `+ Upload Files` & `Scan VOD` pills (shown only while the workspace is empty), and an inline `(Y)our 3+1: N Core / N Exp · N contacts` footer bar.
+        - **`(Y)our workspace.`** — Unified 2-way files & clips preview, quick `+ Upload Files` & `Scan VOD` pills (shown only while the workspace is empty), and an inline `(Y)our db: N ideas · M contacts` footer link to Studio DB.
         - **`(Y)our connectors.`** — live gateway connector chips only (`No Sprites Connectors detected yet` when empty); honest "zero keys / no AI art" messaging lives in the persona, docs, and login copy rather than a dashboard pill.
-        - **`(Y)our playbooks.`** — `LearnedPlaybooksCard.vue`: pending/active creator-specific SOPs with review actions.
+        - **`(Y)our playbooks.`** — pending/active creator-specific SOPs + nightly reflection status linking directly to the Playbooks window.
     - **Detail Views (`Schedule`, `Files & Clips`, `Studio DB`, `Dossier`, `Connectors`):** Each framed in crisp `#FFFFFF` `20px` widget cards with centered `(Y)our ...` monospace header strips.
   - **Right Docked Co-Pilot Card (`430px` floating `#FFFFFF` card, `20px` radius, `var(--shadow-card)`; narrows to `370px` at `≤1200px`):**
     - Centered `(Y)our co-pilot.` header strip with `Chats (N)` and `+ New` pill buttons; the `SessionSidebar` opens as a drawer for switching sessions.
@@ -249,4 +248,4 @@ Styled on `reka-nova` (Reka UI + Tailwind CSS v4 + `@lucide/vue`) mapped directl
 ### Don't
 - Do not use neumorphic double-shadows (`#D5C9B8`) or coffee-brown (`#8B5E3C`) leftovers from CafeBlend.
 - Do not add dark-mode neon gradients, glowing borders, or cluttered marketing hero banners.
-- Do not leak developer jargon (`omp`, `QStash`, `MEMORY.md`, `SQLite`) in user-facing widget captions — keep every caption cheeky, minimal, and studio-native (`(Y)our schedule.`, `(Y)our dossier.`, `(Y)our workspace.`, `(Y)our 3+1.`).
+- Do not leak developer jargon (`omp`, `QStash`, `MEMORY.md`, `SQLite`) in user-facing widget captions — keep every caption cheeky, minimal, and studio-native (`(Y)our schedule.`, `(Y)our profile.`, `(Y)our workspace.`, `(Y)our db.`).

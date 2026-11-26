@@ -24,20 +24,18 @@
 ---
 
 ```text
-╭─ sprite: lma · google/gemini-4-neon:auto · mnemopi ───────────────────────────╮
+╭─ sprite: lma · google/gemini-4-hydrogen · mnemopi ────────────────────────────╮
 │                                                                               │
-│  you › I want to use AI thumbnails to save money, and my goal this year is    │
-│        just to "be more confident". Thoughts?                                 │
+│  you › Plan tonight's 2-hour gaming stream, lock it on my calendar at 20:00,  │
+│        and draft promo posts. Also can you generate an AI thumbnail?          │
 │                                                                               │
-│  lma › Hard no on AI thumbnails. You'll save $30 and get zero clicks — your   │
-│        audience smells it immediately. Spend that energy briefing a human     │
-│        artist with a thumbnail that passes the Squint Test.                   │
+│  lma › Hard no on AI thumbnails — keep your visuals human-made. Here's a      │
+│        tight brief you can hand straight to your artist instead.              │
 │                                                                               │
-│        Also, "be more confident" isn't a goal. Before we plan a single        │
-│        stream, finish Homework #1 in MEMORY.md:                               │
-│          1. Three concrete, measurable goals for the year                     │
-│          2. Your ideal 4–6 hr schedule (with mandatory days off)              │
-│          3. Three GOATs — and specifically WHY each one works                 │
+│        Everything else is done:                                               │
+│          1. Run-of-show saved to Studio Files (/scripts) & Content Pipeline   │
+│          2. Added to Calendar + synced to Google Calendar (T-1h check-in set) │
+│          3. Tailored X, TikTok & IG announcements queued as Buffer Drafts     │
 │                                                                               │
 ╰───────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -52,7 +50,7 @@ You boot up OBS, stream for seven hours straight because you have the time, and 
 
 Meanwhile, most "AI creator tools" try to replace the exact craft your community actually loves — churning out uncanny AI thumbnails, slop overlays, and synthetic clips that alienate viewers and undercut the human artists, riggers, clippers, and editors who keep streaming alive.
 
-**`lma` puts a tough-love talent manager inside a persistent Fly.io Sprite — automating research, prep, and long-term accountability while keeping 100% of your art and video human-made.**
+**`lma` puts a practical livestreamer manager & ops agent inside a persistent Fly.io Sprite — automating research, prep, clipping, and scheduling while keeping 100% of your art and video human-made.**
 
 ```mermaid
 flowchart LR
@@ -65,10 +63,10 @@ flowchart LR
 - **1. An agent that learns your channel — not the internet's (Hermes Nightly Self-Learning):** A timezone-aware Upstash QStash cron (`CRON_TZ=<IANA> 0 0 * * *`) fires a signed `POST /api/wakeup` that spawns an isolated `omp --no-session` reflection pass (with secrets stripped from env) over recent sessions, `MEMORY.md`, and `studio.db`. Otto drafts channel-specific SOPs as `pending` (with 16 KiB / 30-skill caps and a prompt-injection denylist) for 1-click Approve/Reject in the **Playbooks** tab (`LearnedPlaybooksCard`) before Otto consults them via `learned_skills_*`.
 - **2. Proactive ops on a $0-idle sleeping VM:** `schedule_wakeup` / `list_wakeups` / `cancel_wakeup` publish one-shot or cron jobs to QStash — including lifecycle presets (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`) that automatically re-arm when an event is rescheduled. Signed inbound webhooks wake the sleeping Sprite in `<1s` and hold the `/.sprite/api.sock` Tasks API alive (capped at 30 min) so long turns never get cut off.
 - **3. VOD → human-editor-ready clips, with zero LLM guessing:** `vod_scan_hype` fetches YouTube InnerTube live-chat replay + `yt-dlp` transcripts in parallel, then runs a **zero-LLM** Python detector (`detect_hype_candidates.py`) that buckets chat into 10-second windows and scores 4 rolling Z-score signals (velocity `0.40`, unique-author burst `0.30`, reaction ratio `0.15`, emote burst `0.15`) to surface real hype peaks. `vod_cut_clip` + `vod_prep_clip` output exact `.mp4` + time-shifted `.srt` normalized to CFR 30fps H.264 `+faststart` at broadcast **-14 LUFS**.
-- **4. One shared brain for human and agent:** Both Mission Control and Otto read/write the exact same SQLite WAL database (`~/.omp/agent/studio.db` — 8 tables, 14 agent tools, live SSE auto-refresh for Schedule, 3+1 Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics, Custom Trackers &amp; Learned Playbooks), the same two-way `/home/sprite/workspace/` file manager (drag-drop &amp; chat `📎` uploads, Range/206 media streaming, atomic Markdown editing, 500 MB ZIP export), and two-way Google Calendar + `.ics` sync.
+- **4. One shared brain for human and agent:** Both Otto Studio OS and Otto read/write the exact same SQLite WAL database (`~/.omp/agent/studio.db` — 8 tables, 14 agent tools, live SSE auto-refresh for Schedule, Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics, Custom Trackers &amp; Learned Playbooks), the same two-way `/home/sprite/workspace/` file manager (drag-drop &amp; chat `📎` uploads, Range/206 media streaming, atomic Markdown editing, 500 MB ZIP export), and two-way Google Calendar + `.ics` sync.
 - **5. Watch it think, watch it plan, zero cold start:** Token-level SSE streaming renders live `<ThoughtTrace>` reasoning with human-readable tool labels plus Otto's own live `TodoChecklistCard`, while `<hidden>` directives keep internal paths out of chat. On first launch, a 3-step **Setup Wizard** (400+ IANA timezone catalog, atomic `0600` passcode rotation, live connector checklist) and one-time **OAuth Dossier Auto-Bootstrap** pre-fill your channel profile before your first message — fronted by a 3D cursor-tracking pure-SVG **Otto mascot**.
-- **6. A hard ethical stance, enforced in code and visible in the UI:** Strictly no AI-generated images or video at both the persona layer (`agent/APPEND_SYSTEM.md`) and tool-permission layer (`generate_image: deny`), backed by live computed guardrail telemetry (`zeroLocalKeys`, `aiMediaDisabled`) in Mission Control. Every key-bearing external call routes through zero-key [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md), and 1-click **Squint Test / Review Clip** sends your real thumbnail or clip (with SSRF/size caps and 480p proxy transcoding) to Gemini multimodal review to write sharper briefs for human artists and editors.
-- **7. Reproducible agentic engineering:** Every `git commit` snapshots live prod state and stamps a spotless `initialized: <sha>` Fly.io Sprite checkpoint; `scripts/verify-all.sh` runs **26 deterministic checks** (auth gates, path-traversal rejections, `CRON_TZ`, learned-skill injection rejection, DB/workspace CRUD) in ~10s alongside 5 multi-turn E2E playbooks (`scripts/e2e/`).
+- **6. A hard ethical stance, enforced in code:** Strictly no AI-generated images or video at both the persona layer (`agent/APPEND_SYSTEM.md`) and tool-permission layer (`generate_image: deny`), backed by live computed guardrail telemetry (`zeroLocalKeys`, `aiMediaDisabled`). Every key-bearing external call routes through zero-key [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md), and 1-click **Review Thumbnail / Review Clip** sends your real thumbnail or clip (with SSRF/size caps and 480p proxy transcoding) to Gemini multimodal review to write sharper briefs for human artists and editors.
+- **7. Reproducible agentic engineering:** Every `git commit` snapshots live prod state and stamps a spotless `initialized: <sha>` Fly.io Sprite checkpoint; `scripts/verify-all.sh` runs **27 deterministic checks** (auth gates, path-traversal rejections, `CRON_TZ`, learned-skill injection rejection, DB/workspace CRUD) in ~10s alongside 5 multi-turn E2E playbooks (`scripts/e2e/`).
 <br>
 
 ---
@@ -142,10 +140,10 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 
 | Path | Purpose |
 | :--- | :--- |
-| `agent/APPEND_SYSTEM.md` | Otto persona, six non-negotiable core coaching rules, voice/character guardrails, and memory protocol |
+| `agent/APPEND_SYSTEM.md` | Otto persona, pragmatic ops rules, strict no-AI-media guardrail, voice/character rules, and memory protocol |
 | `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
-| `agent/MEMORY.md.example` | Starter dossier template: profile/timezone, platform baseline, content pillars, human credits, OPSEC boundaries, 3 Goals, Ideal Schedule, 3 GOATs, and an optional last-4 recap |
-| `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, 3+1 Pipeline, Contacts, Metrics &amp; Custom Trackers |
+| `agent/MEMORY.md.example` | Starter studio profile template: persona/timezone, platform baseline, topics/style, human team credits, OPSEC boundaries, and schedule notes |
+| `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, Content Pipeline, Contacts, Metrics &amp; Custom Trackers |
 | `agent/extensions/*.ts` | 10 extensions exposing 38 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, learned playbooks, plus a `--new` CLI flag (`new-session.ts`) |
 | `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control (`WorkspaceFileManager`, `StudioDatabaseView`, `TodoChecklistCard`, `ThoughtTrace`, chat `📎` uploads, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
 | `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 26-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
@@ -166,9 +164,9 @@ Built actively during **Fly.io Hacksgiving 2026**:
 
 - ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + OAuth auto-bootstrap) &amp; **Otto Studio Bento OS** Web UI (3-step Setup Wizard w/ 400+ IANA timezones, 3D cursor-tracking SVG Otto mascot, live stream countdown, live `<ThoughtTrace>` + `TodoChecklistCard` &amp; docked Co-Pilot Chat)
 - ✅ **Hermes Nightly Self-Learning &amp; Learned Creator Playbooks** (`CRON_TZ` midnight QStash cron → isolated `omp --no-session` reflection → staged `pending` SOPs with anti-injection guardrails → dedicated **Playbooks** tab &amp; Overview bento card)
-- ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, Range/206 media preview, Markdown editor, folder ZIP export, and 1-click *Squint Test* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db`, 8 tables, 14 agent tools, live SSE refresh)
+- ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, Range/206 media preview, Markdown editor, folder ZIP export, and 1-click *Review Thumbnail* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db`, 8 tables, 14 agent tools, live SSE refresh)
 - ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export) with live computed guardrail telemetry
-- ✅ Otto persona, strict no-AI-art/video guardrails, 5 streamer ops skills, zero-LLM 4-signal `vod-clipper` hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
+- ✅ Otto persona, strict no-AI-art/video guardrails, 6 streamer skills (5 ops skills + opt-in `streaming-coaching` advice skill), zero-LLM 4-signal `vod-clipper` hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
 - ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
 <br>
 
@@ -177,7 +175,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ## Built By &amp; Acknowledgements
 
 - **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
-- **Coaching Framework Acknowledgement:** **Otto**'s coaching playbook in `lma` (Homework #1, segment-first recording sessions, 60% YouTube packaging &amp; Michael Reeves' Squint Test, the 4 Ps intro, 3+1 experiment rule, zero-friction collabs, and anti-burnout guardrails) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
+- **Optional Coaching Skill Acknowledgement:** The opt-in `streaming-coaching` skill (activated only if a creator explicitly asks for streaming strategy or growth advice) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
 

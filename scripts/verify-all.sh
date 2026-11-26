@@ -98,10 +98,10 @@ WS_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/w
 echo "CHECK_WS_ROUNDTRIP:${WS_PUT}:${WS_GET}:${WS_ZIP_MAGIC}:${WS_DEL}"
 
 # Unified Studio DB (SQLite WAL) checks (overview, pipeline CRUD, custom tracker CRUD)
-DB_OV=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/db/overview | jq -r "[.tables.calendar_events, .tables.content_pipeline, .threePlusOne.core] | map(type) | join(\":\")")
+DB_OV=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/db/overview | jq -r "[.tables.calendar_events, .tables.content_pipeline, .tables.contacts] | map(type) | join(\":\")")
 echo "CHECK_DB_OVERVIEW:${DB_OV}"
 
-PIPE_ID=$(curl -s -b /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/db/pipeline -H "Content-Type: application/json" -d "{\"title\":\"_verify_idea\",\"format\":\"stream\",\"pillar\":\"experiment\"}" | jq -r ".item.id")
+PIPE_ID=$(curl -s -b /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/db/pipeline -H "Content-Type: application/json" -d "{\"title\":\"_verify_idea\",\"format\":\"stream\"}" | jq -r ".item.id")
 PIPE_DEL=$(curl -s -b /tmp/lma_v_cookie.txt -X DELETE "http://127.0.0.1:8080/api/db/pipeline/${PIPE_ID}" | jq -r ".ok")
 echo "CHECK_DB_PIPELINE:${PIPE_ID}:${PIPE_DEL}"
 
@@ -153,7 +153,7 @@ check_grep() {
   fi
 }
 
-check_grep "All 5 skills symlinked" "CHECK_SKILLS:.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*youtube-audit"
+check_grep "All 6 skills symlinked" "CHECK_SKILLS:.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*streaming-coaching.*youtube-audit"
 check_grep "All 10 extensions symlinked" "CHECK_EXTS:.*buffer-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*media-reviewer\.ts.*new-session\.ts.*qstash-scheduler\.ts.*skill-learner\.ts.*studio-db\.ts.*vod-clipper\.ts"
 check_grep "Python clipper scripts compile cleanly" "CHECK_PY:OK"
 check_grep "Tasks API keep-alive hold (PUT 200 / DELETE 204)" "CHECK_TASKS:200:204"
@@ -172,7 +172,7 @@ check_grep "Unified Workspace list returns starter folders" "CHECK_WS_LIST:.*cli
 check_grep "Workspace path traversal blocked (400)" "CHECK_TRAV_WS:400"
 check_grep "Workspace PUT/GET text + ZIP export + DELETE roundtrip" "CHECK_WS_ROUNDTRIP:true:# Verify OK:PK:true"
 check_grep "Unified Studio DB overview returns SQLite counts" "CHECK_DB_OVERVIEW:number:number:number"
-check_grep "Unified Studio DB 3+1 pipeline CRUD roundtrip" "CHECK_DB_PIPELINE:idea_[a-f0-9]+:true"
+check_grep "Unified Studio DB content pipeline CRUD roundtrip" "CHECK_DB_PIPELINE:idea_[a-f0-9]+:true"
 check_grep "Unified Studio DB custom tracker CRUD roundtrip" "CHECK_DB_TRACKER:verify-tracker:true:true"
 check_grep "Setup wizard status protected (401 unauth / boolean auth)" "CHECK_SETUP_GATE:401:boolean"
 check_grep "QStash CRON_TZ validator accepts IANA & blocks invalid zones" "CHECK_CRON_TZ:true:true:true"
