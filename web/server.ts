@@ -343,6 +343,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Otto — Sign In</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
@@ -1517,6 +1518,23 @@ Bun.serve<VncWsData>({
 
 
       return Response.json({ error: "Not Found" }, { status: 404 });
+    }
+
+    // Public favicon so both login page and Studio OS render the Otto icon
+    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico")) {
+      const distIcon = path.join(DIST_DIR, "favicon.svg");
+      const pubIcon = path.join(import.meta.dir, "public", "favicon.svg");
+      const iconPath = fs.existsSync(distIcon) ? distIcon : fs.existsSync(pubIcon) ? pubIcon : null;
+      if (iconPath) {
+        const headers = {
+          "Content-Type": "image/svg+xml",
+          "Cache-Control": "public, max-age=86400",
+          "X-Content-Type-Options": "nosniff",
+        };
+        return req.method === "HEAD"
+          ? new Response(null, { status: 200, headers })
+          : new Response(Bun.file(iconPath), { status: 200, headers });
+      }
     }
 
     // Everything below requires valid passcode session when LMA_WEB_PASSWORD is set

@@ -11,3 +11,6 @@ web/dist/
 .kanban/
 .agents/
 skills-lock.json
+
+# Local scratch / logo generation workspace
+.tmp/

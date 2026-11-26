@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/otto-logo.png" alt="OTTO OS — Livestreamer Manager Agent" width="320">
+</p>
+
 <h1 align="center">LMA — Livestreamer Manager Agent</h1>
 
 <p align="center">
