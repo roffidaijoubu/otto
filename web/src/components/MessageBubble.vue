@@ -14,10 +14,27 @@ const props = defineProps<{
   mascotColor?: string;
 }>();
 
+const emit = defineEmits<{
+  openArtifact: [payload: { path: string; title?: string }];
+}>();
+
 const visibleText = computed(() =>
   props.text.replace(/<hidden>[\s\S]*?<\/hidden>/gi, "").trim()
 );
 const html = computed(() => renderMarkdown(visibleText.value));
+
+function handleBodyClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  const card = target?.closest<HTMLElement>("[data-artifact-path]");
+  if (!card) return;
+  const path = card.getAttribute("data-artifact-path");
+  if (!path) return;
+  event.preventDefault();
+  emit("openArtifact", {
+    path,
+    title: card.getAttribute("data-artifact-title") || undefined,
+  });
+}
 </script>
 
 <template>
@@ -37,7 +54,12 @@ const html = computed(() => renderMarkdown(visibleText.value));
       :steps="steps"
       :live="live"
     />
-    <div v-if="visibleText" class="msg-body md-content" v-html="html"></div>
+    <div
+      v-if="visibleText"
+      class="msg-body md-content"
+      v-html="html"
+      @click="handleBodyClick"
+    ></div>
   </div>
 </template>
 
@@ -81,5 +103,31 @@ const html = computed(() => renderMarkdown(visibleText.value));
   border: 1px solid var(--border);
   width: 100%;
   max-width: 100%;
+}
+.msg-body :deep(.otto-artifact-card) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.msg-body :deep(.otto-artifact-card:hover) {
+  background: var(--highlight-yellow);
+  transform: translateY(-1px);
+}
+.msg-body :deep(.otto-artifact-card-meta) {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  white-space: nowrap;
 }
 </style>

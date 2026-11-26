@@ -14,6 +14,7 @@ export type StudioAppId =
   | "otto-chat"
   | "mission-control"
   | "files"
+  | "artifacts"
   | "chrome"
   | "studio-db"
   | "playbooks"
@@ -25,6 +26,7 @@ export type StudioAppIconName =
   | "message"
   | "layout"
   | "folder"
+  | "layers"
   | "globe"
   | "database"
   | "sparkles"
@@ -212,6 +214,17 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultHeight: 600,
     dockSection: "primary",
     shortcutDigit: "3",
+  },
+  {
+    id: "artifacts",
+    title: "Artifacts",
+    shortLabel: "Artifacts",
+    icon: "layers",
+    minWidth: 440,
+    minHeight: 380,
+    defaultWidth: 760,
+    defaultHeight: 640,
+    dockSection: "primary",
   },
   {
     id: "mission-control",

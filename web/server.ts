@@ -48,6 +48,7 @@ import {
 import {
   classifyFile,
   createWorkspaceZip,
+  detectArtifactKind,
   ensureWorkspaceScaffold,
   listWorkspaceDirectory,
   MAX_TEXT_PREVIEW_BYTES,
@@ -1518,6 +1519,46 @@ Bun.serve<VncWsData>({
 
 
       return Response.json({ error: "Not Found" }, { status: 404 });
+    }
+
+    // Internal-only artifact presentation endpoint for omp subprocess
+    if (req.method === "POST" && url.pathname === "/api/internal/artifact/open") {
+      const auth = req.headers.get("authorization") || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (!token || !timingSafeStrEqual(token, LMA_INTERNAL_SECRET)) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
+      try {
+        const body = (await req.json().catch(() => ({}))) as {
+          path?: string;
+          title?: string;
+          kind?: string;
+          autoFocus?: boolean;
+        };
+        const rawPath = String(body.path || "").trim();
+        if (!rawPath) {
+          return Response.json({ ok: false, error: "Missing path" }, { status: 400 });
+        }
+        const { absPath, relPath } = resolveSafeWorkspacePath(rawPath);
+        const st = fs.statSync(absPath);
+        if (!st.isFile()) {
+          return Response.json({ ok: false, error: "Path is not a file" }, { status: 400 });
+        }
+        const fileName = path.basename(absPath);
+        const kind = body.kind || detectArtifactKind(fileName) || "html";
+        const title = (body.title || "").trim() || fileName;
+        broadcast({ type: "workspace_changed" });
+        broadcast({
+          type: "artifact_open",
+          path: relPath,
+          title,
+          kind,
+          autoFocus: body.autoFocus !== false,
+        });
+        return Response.json({ ok: true, path: relPath, title, kind });
+      } catch (err: unknown) {
+        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+      }
     }
 
     // Public favicon so both login page and Studio OS render the Otto icon

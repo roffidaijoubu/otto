@@ -91,7 +91,7 @@ fi
 mkdir -p "${OMP_AGENT_DIR}/learned-skills"
 
 # 2b. Ensure Unified Studio Workspace folders exist (and migrate legacy ~/clips once)
-mkdir -p "${HOME}/workspace/clips" "${HOME}/workspace/thumbnails" "${HOME}/workspace/scripts" \
+mkdir -p "${HOME}/workspace/artifacts" "${HOME}/workspace/clips" "${HOME}/workspace/thumbnails" "${HOME}/workspace/scripts" \
   "${HOME}/workspace/briefs" "${HOME}/workspace/uploads" "${HOME}/workspace/exports"
 if [ -d "${HOME}/clips" ] && [ ! -L "${HOME}/clips" ]; then
   cp -rn "${HOME}/clips/." "${HOME}/workspace/clips/" 2>/dev/null || true

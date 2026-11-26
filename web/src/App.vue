@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DesktopShell, type DesktopShellExposed } from "@/components/os";
+import ArtifactsWorkspaceApp from "./components/ArtifactsWorkspaceApp.vue";
 import BrowserLoginModal, { type BrowserLoginRequest } from "./components/BrowserLoginModal.vue";
 import BrowserWorkspaceTab from "./components/BrowserWorkspaceTab.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
@@ -46,7 +47,9 @@ const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
 
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
+const artifactsAppRef = ref<InstanceType<typeof ArtifactsWorkspaceApp> | null>(null);
 const browserTabRef = ref<InstanceType<typeof BrowserWorkspaceTab> | null>(null);
+const activeArtifactPath = ref("");
 
 const messages = ref<ChatMessage[]>([]);
 const sessions = ref<SessionSummary[]>([]);
@@ -283,6 +286,13 @@ function connectEvents() {
       if (wm && wm.focusedWindowId.value !== "files") {
         wm.setWindowMeta("files", { badgeText: "Updated" });
       }
+    } else if (type === "artifact_open" && typeof msg.path === "string") {
+      workspaceRefreshTick.value += 1;
+      openArtifactInWindow(
+        msg.path,
+        typeof msg.title === "string" ? msg.title : undefined,
+        msg.autoFocus !== false
+      );
     } else if (type === "db_changed") {
       dbRefreshTick.value += 1;
       missionRefreshTick.value += 1;
@@ -412,6 +422,19 @@ function openFilesAtPath(relPath: string) {
   });
   nextTick(() => {
     fileManagerRef.value?.navigateTo(cleaned);
+  });
+}
+
+function openArtifactInWindow(relPath: string, title?: string, autoFocus = true) {
+  const cleaned = relPath.replace(/^\/+|\/+$/g, "");
+  if (!cleaned) return;
+  activeArtifactPath.value = cleaned;
+  shellRef.value?.wm.openWindow("artifacts", {
+    focus: autoFocus,
+    subtitle: title || cleaned.split("/").pop() || cleaned,
+  });
+  nextTick(() => {
+    artifactsAppRef.value?.openArtifact(cleaned, title);
   });
 }
 
@@ -637,6 +660,7 @@ onMounted(async () => {
                 :thinking="m.thinking"
                 :steps="m.steps"
                 :mascot-color="mascotColor"
+                @open-artifact="openArtifactInWindow($event.path, $event.title)"
               />
 
               <MessageBubble
@@ -647,6 +671,7 @@ onMounted(async () => {
                 :steps="liveSteps"
                 :mascot-color="mascotColor"
                 live
+                @open-artifact="openArtifactInWindow($event.path, $event.title)"
               />
             </div>
           </main>
@@ -711,6 +736,23 @@ onMounted(async () => {
             :initial-path="filesTargetPath"
             @ask-prompt="handleMissionPrompt"
             @path-changed="handleFilesPathChanged"
+            @open-artifact="openArtifactInWindow($event.path, $event.title)"
+          />
+        </div>
+      </template>
+
+      <!-- WINDOW 3B: ARTIFACTS -->
+      <template #app-artifacts>
+        <div class="flex h-full min-h-0 flex-col bg-white">
+          <ArtifactsWorkspaceApp
+            ref="artifactsAppRef"
+            :refresh-tick="workspaceRefreshTick"
+            :active-path="activeArtifactPath"
+            @ask-prompt="handleMissionPrompt"
+            @open-in-files="openFilesAtPath"
+            @active-changed="
+              shellRef?.wm.setWindowMeta('artifacts', { subtitle: $event.title })
+            "
           />
         </div>
       </template>
