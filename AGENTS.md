@@ -36,10 +36,10 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # 11 extensions: connectors + browser-auth + vod-clipper + media-reviewer + studio-db + skill-learner + new-session (43 tools)
+│   ├── extensions/             # 13 extensions: connectors + browser-auth + vod-clipper + media-reviewer + studio-db + skill-learner + new-session + studio-apps + obs-overlays (51 tools)
 │   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), learned skills (learned-skills.ts)
-│   └── skills/                 # 6 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder + opt-in streaming-coaching)
-├── web/                        # Bun RPC supervisor & noVNC RFB proxy (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (9 apps + Spotlight)
+│   └── skills/                 # 8 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft + opt-in streaming-coaching)
+├── web/                        # Bun RPC supervisor & noVNC RFB proxy (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (10 apps + Spotlight)
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
     ├── verify-all.sh                   # Deterministic 27-check verification suite (28 with --live)
@@ -62,7 +62,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~10 seconds — 27 deterministic checks (28 with `--live`) verifying `web/` TypeScript + Vite build, all 6 skill & 11 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
+Runs in ~10 seconds — 27 deterministic checks (28 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 13 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip

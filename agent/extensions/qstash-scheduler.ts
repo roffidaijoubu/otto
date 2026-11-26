@@ -10,7 +10,7 @@ import {
 import { normalizeQStashCron } from "../lib/qstash-cron.ts";
 
 export type { CalendarEvent, CalendarEventType, CalendarWakeupHook };
-export type LifecycleHookPreset = "promo_24h" | "pre_stream_1h" | "post_stream_vod_3h" | "at_start";
+export type LifecycleHookPreset = "promo_24h" | "pre_stream_1h" | "post_stream_vod_30m" | "at_start";
 
 interface CalendarStore {
   version: 1;
@@ -340,7 +340,7 @@ function buildPresetHookSpec(
         label: `T-1h Pre-stream: ${title}`,
         prompt: `1 hour before "${title}" (${startIso}). Run a crisp pre-stream readiness check (OBS/mic, stream title, thumbnail, and going-live Buffer drafts).${noteSuffix}`,
       };
-    case "post_stream_vod_3h": {
+    case "post_stream_vod_30m": {
       const triggerMs = endMs + 30 * 60 * 1000;
       const offsetMinutes = Math.round((triggerMs - startMs) / 60000);
       return {
@@ -595,7 +595,7 @@ export default function (pi: ExtensionAPI) {
     name: "calendar_add_event",
     label: "Add Calendar Event",
     description:
-      "Add a stream, collab, upload, reminder, or deadline to the persistent Schedule calendar and automatically arm proactive QStash wake-up hooks (e.g. promo_24h, pre_stream_1h, post_stream_vod_3h, at_start) so the sleeping Sprite wakes up at the right moments.",
+      "Add a stream, collab, upload, reminder, or deadline to the persistent Schedule calendar and automatically arm proactive QStash wake-up hooks (e.g. promo_24h, pre_stream_1h, post_stream_vod_30m, at_start) so the sleeping Sprite wakes up at the right moments.",
     parameters: {
       type: "object",
       properties: {
@@ -624,7 +624,7 @@ export default function (pi: ExtensionAPI) {
           type: "array",
           items: {
             type: "string",
-            enum: ["promo_24h", "pre_stream_1h", "post_stream_vod_3h", "at_start"],
+            enum: ["promo_24h", "pre_stream_1h", "post_stream_vod_30m", "at_start"],
           },
           description:
             "Proactive QStash wake-up presets to arm automatically. Past trigger times are skipped safely.",

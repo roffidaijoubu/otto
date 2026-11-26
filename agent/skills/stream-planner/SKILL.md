@@ -28,6 +28,6 @@ Match the creator's requested length and vibe (don't force a rigid hour count or
 
 ## 3. Save & Automate Ops (On Confirmation)
 1. When the creator approves or asks to log the idea, save it to the **Content Pipeline** via `studio_pipeline_upsert` (format, status, hook, linked workspace script/thumbnail paths) and save longer run-of-show docs to `/home/sprite/workspace/scripts/` so they appear live in **Studio Files** and **Studio DB**.
-2. If they confirm a date & time, add it to the **Schedule Calendar** via `calendar_add_event` (auto-syncs to Google Calendar when connected) with any requested reminder hooks (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`, `at_start`).
+2. If they confirm a date & time, add it to the **Schedule Calendar** via `calendar_add_event` (auto-syncs to Google Calendar when connected) with any requested reminder hooks (`promo_24h`, `pre_stream_1h`, `post_stream_vod_30m`, `at_start`).
 3. When scheduling a `stream` or `collab`, include a ready-to-paste **YouTube Studio Waiting Room Pack** (Title, Description with links/timestamps, Tags, and optional human-artist thumbnail brief).
 4. Offer to draft tailored X, TikTok, and Instagram announcements in Buffer (`saveToDraft: true`).
