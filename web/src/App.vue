@@ -156,9 +156,18 @@ async function loadInitialBrowserStatus() {
   try {
     const res = await fetch("/api/browser/status");
     if (!res.ok) return;
-    const data = (await res.json()) as { running?: boolean; sessions?: unknown[] };
+    const data = (await res.json()) as {
+      running?: boolean;
+      sessions?: unknown[];
+      activeLogin?: BrowserLoginRequest | null;
+    };
     chromeRunning.value = Boolean(data.running);
     chromeSessionCount.value = Array.isArray(data.sessions) ? data.sessions.length : 0;
+    if (data.activeLogin && data.activeLogin.status === "pending") {
+      activeLoginRequest.value = data.activeLogin;
+    } else if (activeLoginRequest.value && !data.activeLogin) {
+      activeLoginRequest.value = null;
+    }
   } catch {
     // ignore
   }

@@ -36,18 +36,19 @@ interface BrowserStatus {
   pageTitle?: string;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  loading?: boolean;
+  lastError?: string | null;
   sessions: SavedSession[];
 }
 
 const QUICK_SITES = [
-  { label: "Tokopedia", url: "https://www.tokopedia.com" },
+  { label: "Google", url: "https://www.google.com/" },
   { label: "X (Twitter)", url: "https://x.com/i/flow/login" },
+  { label: "YouTube Studio", url: "https://studio.youtube.com/" },
   { label: "TikTok", url: "https://www.tiktok.com/login" },
-  { label: "YouTube", url: "https://studio.youtube.com/" },
   { label: "Instagram", url: "https://www.instagram.com/accounts/login/" },
   { label: "NotebookLM", url: "https://notebooklm.google.com/" },
 ];
-
 const props = defineProps<{
   modalActive?: boolean;
   refreshTick?: number;
@@ -66,13 +67,15 @@ const busy = ref(false);
 const capturing = ref(false);
 const justCaptured = ref(false);
 const sessionsOpen = ref(false);
-const navUrl = ref("tokopedia.com");
+const navUrl = ref("https://www.google.com/");
 const isEditingUrl = ref(false);
 const errorMsg = ref("");
+const slowLoadHint = ref(false);
 const vncRef = ref<InstanceType<typeof NoVncCanvas> | null>(null);
 
 let captureResetTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let loadingStartedAt: number | null = null;
 
 function normalizeUrlInput(raw: string): string {
   const trimmed = raw.trim();
@@ -100,8 +103,19 @@ function applyStatus(next: BrowserStatus) {
   ) {
     navUrl.value = next.currentUrl;
   }
+  if (next.running && next.loading) {
+    if (loadingStartedAt === null) loadingStartedAt = Date.now();
+    slowLoadHint.value = Date.now() - loadingStartedAt >= 10_000;
+  } else {
+    loadingStartedAt = null;
+    slowLoadHint.value = false;
+  }
+  if (next.lastError && !errorMsg.value) {
+    errorMsg.value = next.lastError;
+  } else if (!next.lastError && errorMsg.value.startsWith("Navigation failed")) {
+    errorMsg.value = "";
+  }
 }
-
 async function loadStatus() {
   try {
     const res = await fetch("/api/browser/status");
@@ -116,7 +130,9 @@ async function loadStatus() {
 async function startBrowser(url?: string) {
   busy.value = true;
   errorMsg.value = "";
-  const target = normalizeUrlInput(url ?? navUrl.value) || "about:blank";
+  slowLoadHint.value = false;
+  loadingStartedAt = Date.now();
+  const target = normalizeUrlInput(url ?? navUrl.value) || "https://www.google.com/";
   if (target !== "about:blank") {
     navUrl.value = target;
   }
@@ -162,6 +178,8 @@ async function navigateBrowser() {
   }
   busy.value = true;
   errorMsg.value = "";
+  slowLoadHint.value = false;
+  loadingStartedAt = Date.now();
   try {
     const res = await fetch("/api/browser/navigate", {
       method: "POST",
@@ -359,7 +377,7 @@ defineExpose({ openUrl, loadStatus });
           :disabled="!status.running"
           @click="runBrowserAction('reload')"
         >
-          <RotateCwIcon class="size-3.5" />
+          <RotateCwIcon :class="['size-3.5', (busy || status.loading) ? 'animate-spin' : '']" />
         </Button>
       </div>
 
@@ -379,7 +397,7 @@ defineExpose({ openUrl, loadStatus });
             inputmode="url"
             autocomplete="off"
             spellcheck="false"
-            placeholder="Enter domain or URL (e.g. tokopedia.com)"
+            placeholder="Enter domain or URL (e.g. x.com or studio.youtube.com)"
             class="w-full min-w-0 bg-transparent text-xs text-[#303030] placeholder:text-muted-foreground outline-none"
             @focus="handleUrlFocus"
             @blur="isEditingUrl = false"
@@ -543,6 +561,10 @@ defineExpose({ openUrl, loadStatus });
       </div>
     </div>
 
+    <div v-if="status.running && (busy || status.loading)" class="h-0.5 w-full overflow-hidden bg-[#ededed] shrink-0">
+      <div class="h-full w-1/3 bg-[#303030] animate-pulse" />
+    </div>
+
     <div
       v-if="errorMsg"
       class="border-b border-destructive/20 bg-destructive/10 px-3.5 py-1.5 text-xs text-destructive shrink-0"
@@ -550,7 +572,15 @@ defineExpose({ openUrl, loadStatus });
       {{ errorMsg }}
     </div>
 
-    <!-- Full-Bleed Browser Viewport -->
+    <div
+      v-else-if="status.running && slowLoadHint"
+      class="flex items-center justify-between gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-900 shrink-0"
+    >
+      <span>This site is taking unusually long to respond — some sites block cloud/datacenter IPs. Try another site or reload.</span>
+      <Button size="xs" variant="outline" type="button" class="h-6 rounded-full bg-white shrink-0" @click="runBrowserAction('reload')">
+        Reload
+      </Button>
+    </div>
     <div
       v-if="status.running && !modalActive"
       class="relative flex-1 min-h-[380px] w-full bg-[#f4f4f5] overflow-hidden"
@@ -583,7 +613,7 @@ defineExpose({ openUrl, loadStatus });
           Sign in to save session cookies
         </h3>
         <p class="text-xs text-muted-foreground leading-relaxed">
-          Browser sleeps at $0 when stopped. Enter any site above (like <code>tokopedia.com</code>) or launch a quick site below, log in, then click <strong>Capture Cookies</strong>.
+          Browser sleeps at $0 when stopped. Enter any site above (like <code>x.com</code> or <code>studio.youtube.com</code>) or launch a quick site below, log in, then click <strong>Capture Cookies</strong>.
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ClipboardPasteIcon, CheckIcon, XIcon, GlobeIcon } from "@lucide/vue";
+import { ArrowLeftIcon, ClipboardPasteIcon, CheckIcon, RotateCwIcon, XIcon, GlobeIcon } from "@lucide/vue";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,18 @@ const watchingLabel = computed(() => {
   return "Click Done after logging in";
 });
 
+async function handleBrowserAction(action: "back" | "reload") {
+  try {
+    await fetch("/api/browser/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+  } catch {
+    // ignore
+  }
+}
+
 async function handlePasteClipboard() {
   pasteError.value = "";
   try {
@@ -57,7 +69,6 @@ async function handlePasteClipboard() {
     pasteError.value = "Clipboard access denied by browser; type directly into the window.";
   }
 }
-
 async function handleManualComplete() {
   if (!props.request || busyAction.value) return;
   busyAction.value = true;
@@ -93,39 +104,65 @@ async function handleCancel() {
 
 <template>
   <Dialog :open="isOpen" @update:open="(val) => { if (!val) handleCancel(); }">
-    <DialogContent class="w-[95vw] max-w-[95vw] sm:max-w-[95vw] p-4 gap-3">
-      <DialogHeader>
-        <div class="flex items-center justify-between gap-2 pr-6">
-          <div class="flex items-center gap-2">
-            <GlobeIcon class="w-4 h-4 text-muted-foreground" />
-            <DialogTitle class="text-base">
+    <DialogContent
+      class="w-[95vw] max-w-[95vw] sm:max-w-[95vw] p-4 gap-3 overflow-hidden"
+      @escape-key-down.prevent
+      @pointer-down-outside.prevent
+      @interact-outside.prevent
+    >
+      <DialogHeader class="min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 pr-8 min-w-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <GlobeIcon class="w-4 h-4 shrink-0 text-muted-foreground" />
+            <DialogTitle class="text-base truncate">
               Sign in to {{ request?.label || request?.site }}
             </DialogTitle>
-            <Badge variant="secondary" class="text-xs">
+            <Badge variant="secondary" class="text-xs shrink-0">
               {{ watchingLabel }}
             </Badge>
           </div>
-          <Button
-            variant="outline"
-            size="xs"
-            type="button"
-            @click="handlePasteClipboard"
-          >
-            <ClipboardPasteIcon class="w-3.5 h-3.5 mr-1" />
-            Paste Clipboard
-          </Button>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="outline"
+              size="xs"
+              type="button"
+              title="Back"
+              @click="handleBrowserAction('back')"
+            >
+              <ArrowLeftIcon class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              type="button"
+              title="Reload"
+              @click="handleBrowserAction('reload')"
+            >
+              <RotateCwIcon class="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              type="button"
+              @click="handlePasteClipboard"
+            >
+              <ClipboardPasteIcon class="w-3.5 h-3.5 mr-1" />
+              Paste Clipboard
+            </Button>
+          </div>
         </div>
-        <DialogDescription class="text-xs truncate">
+        <DialogDescription class="text-xs truncate min-w-0">
           {{ request?.reason || `Otto needs your ${request?.label || request?.site} session cookies. Complete login below; this modal closes automatically.` }}
           <span class="ml-1 opacity-70">({{ request?.url }})</span>
         </DialogDescription>
       </DialogHeader>
 
-      <div class="w-full h-[64vh] min-h-[420px] rounded-lg overflow-hidden border border-border bg-[#f4f4f5]">
+      <div class="relative w-full h-[64vh] min-h-[420px] rounded-lg overflow-hidden border border-border bg-[#f4f4f5]">
         <NoVncCanvas
           v-if="isOpen"
           ref="vncRef"
           :active="isOpen"
+          background="#f4f4f5"
         />
       </div>
 

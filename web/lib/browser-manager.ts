@@ -117,6 +117,8 @@ export interface BrowserStatusSnapshot {
   pageTitle?: string;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  loading?: boolean;
+  lastError?: string | null;
   sessions: SavedSessionMeta[];
 }
 
@@ -252,10 +254,10 @@ export class BrowserManager {
   private activeVncClients = 0;
 
   private activeLogin: BrowserLoginRequestState | null = null;
+  private lastNavigationError: string | null = null;
   private loginWaiters = new Map<string, Array<() => void>>();
   private loginHistory = new Map<string, BrowserLoginRequestState>();
   private callbacks: BrowserManagerCallbacks;
-
   constructor(callbacks: BrowserManagerCallbacks = {}) {
     this.callbacks = callbacks;
   }
@@ -280,6 +282,7 @@ export class BrowserManager {
       cdpPort: CDP_PORT,
       activeVncClients: this.activeVncClients,
       activeLogin: this.activeLogin ? { ...this.activeLogin } : null,
+      lastError: this.lastNavigationError,
       chromeBinary: findExecutable([
         "google-chrome-stable",
         "google-chrome",
@@ -351,6 +354,7 @@ export class BrowserManager {
       // ignore
     }
 
+    this.lastNavigationError = null;
     this.startingPromise = this.startInternal(normalizedUrl || undefined);
     try {
       await this.startingPromise;
@@ -467,7 +471,7 @@ export class BrowserManager {
   public async stop(): Promise<void> {
     this.clearIdleTimer();
     this.stopWatcher();
-
+    this.lastNavigationError = null;
     const procs = [this.chromeProc, this.vncProc, this.wmProc, this.xvfbProc];
     this.chromeProc = null;
     this.vncProc = null;
@@ -537,49 +541,49 @@ export class BrowserManager {
     return meta;
   }
 
-  private async sendCdpCommand<T = unknown>(
+  private sendCdpCommand<T = unknown>(
     wsUrl: string,
     method: string,
-    params: Record<string, unknown> = {}
+    params: Record<string, unknown> = {},
+    timeoutMs = 5000
   ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const ws = new WebSocket(wsUrl);
-      const id = 1;
-      const timer = setTimeout(() => {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-        reject(new Error(`CDP ${method} timed out`));
-      }, 5000);
+    const { promise, resolve, reject } = Promise.withResolvers<T>();
+    const ws = new WebSocket(wsUrl);
+    const id = 1;
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      reject(new Error(`CDP ${method} timed out`));
+    }, timeoutMs);
 
-
-      ws.addEventListener("open", () => {
-        ws.send(JSON.stringify({ id, method, params }));
-      });
-      ws.addEventListener("message", (event) => {
-        try {
-          const msg = JSON.parse(String(event.data)) as {
-            id?: number;
-            result?: T;
-            error?: { message?: string };
-          };
-          if (msg.id === id) {
-            clearTimeout(timer);
-            ws.close();
-            if (msg.error) reject(new Error(msg.error.message || `CDP ${method} failed`));
-            else resolve(msg.result as T);
-          }
-        } catch {
-          // ignore parse errors
-        }
-      });
-      ws.addEventListener("error", () => {
-        clearTimeout(timer);
-        reject(new Error(`CDP WebSocket error during ${method}`));
-      });
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify({ id, method, params }));
     });
+    ws.addEventListener("message", (event) => {
+      try {
+        const msg = JSON.parse(String(event.data)) as {
+          id?: number;
+          result?: T;
+          error?: { message?: string };
+        };
+        if (msg.id === id) {
+          clearTimeout(timer);
+          ws.close();
+          if (msg.error) reject(new Error(msg.error.message || `CDP ${method} failed`));
+          else resolve(msg.result as T);
+        }
+      } catch {
+        // ignore parse errors
+      }
+    });
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error(`CDP WebSocket error during ${method}`));
+    });
+    return promise;
   }
 
   private async getActivePageTarget() {
@@ -602,16 +606,43 @@ export class BrowserManager {
       if (!page?.webSocketDebuggerUrl) return base;
       base.currentUrl = page.url || undefined;
       base.pageTitle = page.title || undefined;
-      const history = await this.sendCdpCommand<{
-        currentIndex?: number;
-        entries?: Array<{ id: number; url: string; title: string }>;
-      }>(page.webSocketDebuggerUrl, "Page.getNavigationHistory").catch(() => null);
+      const [history, docState] = await Promise.all([
+        this.sendCdpCommand<{
+          currentIndex?: number;
+          entries?: Array<{ id: number; url: string; title: string }>;
+        }>(page.webSocketDebuggerUrl, "Page.getNavigationHistory", {}, 2000).catch(() => null),
+        this.sendCdpCommand<{ result?: { value?: string } }>(
+          page.webSocketDebuggerUrl,
+          "Runtime.evaluate",
+          {
+            expression: "JSON.stringify({ href: location.href, readyState: document.readyState })",
+            returnByValue: true,
+          },
+          1500
+        ).catch(() => null),
+      ]);
       if (history && typeof history.currentIndex === "number" && Array.isArray(history.entries)) {
         base.canGoBack = history.currentIndex > 0;
         base.canGoForward = history.currentIndex < history.entries.length - 1;
         const currentEntry = history.entries[history.currentIndex];
         if (currentEntry?.url) base.currentUrl = currentEntry.url;
         if (currentEntry?.title) base.pageTitle = currentEntry.title;
+      }
+      if (typeof docState?.result?.value === "string") {
+        try {
+          const parsed = JSON.parse(docState.result.value) as { href?: string; readyState?: string };
+          const targetIsHttp = Boolean(base.currentUrl && /^https?:\/\//i.test(base.currentUrl));
+          const stuckOnBlank = targetIsHttp && (!parsed.href || parsed.href === "about:blank");
+          base.loading = parsed.readyState !== "complete" || stuckOnBlank;
+          if (!base.loading && parsed.href && /^https?:\/\//i.test(parsed.href)) {
+            this.lastNavigationError = null;
+            base.lastError = null;
+          }
+        } catch {
+          // ignore parse error
+        }
+      } else {
+        base.loading = true;
       }
     } catch {
       // ignore transient CDP errors during startup/shutdown
@@ -622,9 +653,18 @@ export class BrowserManager {
   public async navigateToUrl(targetUrl: string): Promise<void> {
     const normalized = normalizeBrowserUrl(targetUrl);
     if (!normalized) return;
+    this.lastNavigationError = null;
     const page = await this.getActivePageTarget();
     if (page?.webSocketDebuggerUrl) {
-      await this.sendCdpCommand(page.webSocketDebuggerUrl, "Page.navigate", { url: normalized });
+      const navRes = await this.sendCdpCommand<{ errorText?: string }>(
+        page.webSocketDebuggerUrl,
+        "Page.navigate",
+        { url: normalized },
+        12000
+      );
+      if (navRes?.errorText && navRes.errorText !== "net::ERR_ABORTED") {
+        this.lastNavigationError = `Navigation failed (${navRes.errorText})`;
+      }
       return;
     }
     await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(normalized)}`, {
@@ -632,7 +672,6 @@ export class BrowserManager {
       signal: AbortSignal.timeout(3000),
     }).catch(() => {});
   }
-
   public async performAction(action: "back" | "forward" | "reload"): Promise<boolean> {
     const page = await this.getActivePageTarget();
     if (!page?.webSocketDebuggerUrl) return false;

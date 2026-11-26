@@ -1638,6 +1638,14 @@ Bun.serve<VncWsData>({
               `data: ${JSON.stringify({ type: "status", busy: rpc.busy, activity: rpc.activity, todos: rpc.todos })}\n\n`
             )
           );
+          const pendingLogin = browserManager.getStatus().activeLogin;
+          if (pendingLogin && pendingLogin.status === "pending") {
+            ctrl.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "browser_login_required", request: pendingLogin })}\n\n`
+              )
+            );
+          }
           // Keep SSE alive during long (>4m) VOD hype-scan / ffmpeg turns
           pingTimer = setInterval(() => {
             try {
