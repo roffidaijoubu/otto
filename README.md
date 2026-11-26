@@ -2,7 +2,7 @@
   <img src="docs/assets/otto-logo.png" alt="OTTO OS — Livestreamer Manager Agent" width="320">
 </p>
 
-<h1 align="center">LMA — Livestreamer Manager Agent</h1>
+<h1 align="center">Otto OS — Livestreamer Manager Agent</h1>
 
 <p align="center">
   <b>Otto is a self-hosted talent manager inside a Fly.io Sprite that schedules its own wake-ups, learns your channel overnight with your approval, turns VODs into human-editor-ready clips with deterministic math, and never generates a single pixel of AI art.</b>
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/mission-control-dashboard.png" alt="LMA Otto Studio Bento OS — Web UI" width="100%">
+  <img src="docs/assets/mission-control-dashboard.png" alt="Otto Studio OS — Web UI" width="100%">
   <br>
   <sub><b>Otto Studio Bento OS</b>: personal creative-studio desktop with 3D cursor-tracking pure-SVG Otto mascot, 3-step first-run Setup Wizard (400+ IANA timezones), live next-stream countdown, 2-way Google Calendar + QStash wake-ups, Learned Creator Playbooks approval queue, Unified 2-way Workspace &amp; Clips, Unified SQLite Studio DB, Zero-Key Connectors, and docked Otto Co-Pilot Chat. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
 </p>
@@ -28,12 +28,12 @@
 ---
 
 ```text
-╭─ sprite: lma · google/gemini-4-hydrogen · mnemopi ────────────────────────────╮
+╭─ sprite: otto · google/gemini-4-hydrogen · mnemopi ───────────────────────────╮
 │                                                                               │
 │  you › Plan tonight's 2-hour gaming stream, lock it on my calendar at 20:00,  │
 │        and draft promo posts. Also can you generate an AI thumbnail?          │
 │                                                                               │
-│  lma › Hard no on AI thumbnails — keep your visuals human-made. Here's a      │
+│ otto › Hard no on AI thumbnails — keep your visuals human-made. Here's a      │
 │        tight brief you can hand straight to your artist instead.              │
 │                                                                               │
 │        Everything else is done:                                               │
@@ -54,7 +54,7 @@ You boot up OBS, stream for seven hours straight because you have the time, and 
 
 Meanwhile, most "AI creator tools" try to replace the exact craft your community actually loves — churning out uncanny AI thumbnails, slop overlays, and synthetic clips that alienate viewers and undercut the human artists, riggers, clippers, and editors who keep streaming alive.
 
-**`lma` puts a practical livestreamer manager & ops agent inside a persistent Fly.io Sprite — automating research, prep, clipping, and scheduling while keeping 100% of your art and video human-made.**
+**Otto puts a practical livestreamer manager & ops agent inside a persistent Fly.io Sprite — automating research, prep, clipping, and scheduling while keeping 100% of your art and video human-made.**
 
 ```mermaid
 flowchart LR
@@ -77,13 +77,13 @@ flowchart LR
 
 ## Replicate This Setup With Your Coding Agent
 
-Already using Claude Code, `omp`, Pi, or Codex? Hand it this prompt to spin up your own `lma` Sprite in under a minute — no manual config editing required:
+Already using Claude Code, `omp`, Pi, or Codex? Hand it this prompt to spin up your own **Otto** Sprite in under a minute — no manual config editing required:
 
 ```text
-Set me up with my own "lma" personal Livestreamer Manager agent on Fly.io Sprites:
+Set me up with my own "Otto" personal Livestreamer Manager agent on Fly.io Sprites:
 1. Follow https://fly.io/sprites/agent-ready.md to verify the Sprite CLI and Fly.io auth.
-2. Create a Sprite named "lma" and set it active (`sprite create --skip-console lma && sprite use lma`).
-3. Inside the Sprite, clone this repo into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
+2. Create a Sprite named "otto" and set it active (`sprite create --skip-console otto && sprite use otto`).
+3. Inside the Sprite, clone https://github.com/roffidaijoubu/otto.git into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
 4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors (then re-run `bash ~/lma/setup.sh` so `~/.omp/agent/models.yml` is written):
    - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl.
    - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
@@ -102,13 +102,13 @@ Prefer to run it directly from your terminal?
 
 ```bash
 # 1. Create and select your persistent Sprite
-sprite create --skip-console lma && sprite use lma
+sprite create --skip-console otto && sprite use otto
 
 # 2. Add the required Google Gemini connector in https://sprites.dev -> Connectors
-#    (and grant access to your `lma` Sprite)
+#    (and grant access to your `otto` Sprite)
 
 # 3. Clone the repo inside the Sprite and run the idempotent installer
-sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma && bash ~/lma/setup.sh"
+sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/otto.git ~/lma && bash ~/lma/setup.sh"
 #    (setup.sh prints your auto-generated Web Chat UI passcode stored in ~/.config/lma/web.env)
 
 # 4. Open Otto Studio Web UI at https://<your-sprite>.sprites.app
@@ -119,11 +119,11 @@ sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma
 
 ---
 
-## How Sprites Connectors Power `lma`
+## How Sprites Connectors Power Otto
 
-`lma` never stores `GEMINI_API_KEY`, `EXA_API_KEY`, or `FIRECRAWL_API_KEY` inside the Sprite. Each capability connects through the organization-level Sprites Gateway:
+**Otto** never stores `GEMINI_API_KEY`, `EXA_API_KEY`, or `FIRECRAWL_API_KEY` inside the Sprite. Each capability connects through the organization-level Sprites Gateway:
 
-| Connector | Role in `lma` | Discovery Mechanism |
+| Connector | Role in Otto | Discovery Mechanism |
 | :--- | :--- | :--- |
 | **Google Gemini** | LLM brain (`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-3.5-flash-lite`) | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
 | **Exa** | First-class `exa_search` & `exa_get_contents` research tools | Auto-discovered at runtime via `agent/extensions/exa-gateway.ts` |
@@ -140,7 +140,7 @@ sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/lma.git ~/lma
 
 ## Architecture & Key Files
 
-Rather than turning `~/.omp/` into a messy git repo full of session logs and SQLite caches, `lma` keeps a clean source repository and symlinks only the agent definition into `~/.omp/agent/`:
+Rather than turning `~/.omp/` into a messy git repo full of session logs and SQLite caches, **Otto** keeps a clean source repository and symlinks only the agent definition into `~/.omp/agent/`:
 
 | Path | Purpose |
 | :--- | :--- |
@@ -149,10 +149,10 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | `agent/MEMORY.md.example` | Starter studio profile template: persona/timezone, platform baseline, topics/style, human team credits, OPSEC boundaries, and schedule notes |
 | `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, Content Pipeline, Contacts, Metrics &amp; Custom Trackers |
 | `agent/extensions/*.ts` | 10 extensions exposing 38 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, learned playbooks, plus a `--new` CLI flag (`new-session.ts`) |
-| `web/` | Vue 3 + Vite + DaisyUI v5 Studio Mission Control (`WorkspaceFileManager`, `StudioDatabaseView`, `TodoChecklistCard`, `ThoughtTrace`, chat `📎` uploads, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
-| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 26-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
-| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Talent Dossier |
-### Why Fly.io Sprites Made Building `lma` 10× Faster
+| `web/` | Vue 3 + Vite + `shadcn-vue` **Otto Studio OS** window manager (`DesktopShell`, `WorkspaceFileManager`, `StudioDatabaseView`, `CalendarWorkspaceApp`, `ContactsWorkspaceApp`, embedded Chrome noVNC, `TodoChecklistCard`, `ThoughtTrace`, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
+| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 27-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
+| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, Chrome/noVNC, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Studio Profile |
+### Why Fly.io Sprites Made Building Otto 10× Faster
 Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
 - Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, cleared Mnemopi/`studio.db`/`learned-skills`/`workspace/`, rebuilt `web/`).
 - Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Otto's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
@@ -178,7 +178,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 
 ## Built By &amp; Acknowledgements
 
-- **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built `lma` to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
+- **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built **Otto** to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
 - **Optional Coaching Skill Acknowledgement:** The opt-in `streaming-coaching` skill (activated only if a creator explicitly asks for streaming strategy or growth advice) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
