@@ -1,6 +1,6 @@
-# Architecture Deep Dive — Why LMA (`lma`, Livestreamer Manager Agent) Uses `omp` RPC + Native Fly.io Sprites Primitives
+# Architecture Deep Dive — How Otto OS (`lma`) Combines `omp` RPC, Embedded Chrome, Multi-Window Studio OS &amp; Native Fly.io Sprites Primitives
 
-This document explains the key engineering decisions behind **LMA (`lma` — Livestreamer Manager Agent)** — specifically why we chose **`omp` (`@oh-my-pi/pi-coding-agent`)** as the persistent agent engine, how we solved **proactive self-scheduling on a $0-idle sleeping Sprite**, and how we use **Sprites Connectors, Tasks API, and Checkpoints** together with zero outbound API keys inside the VM.
+This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how we stream **real Google Chrome over a native Bun WS→TCP RFB proxy with Exit-77 HITL cookie handoff**, how **Otto Studio OS** coordinates 9 live-synced desktop apps over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys inside the VM**.
 
 ---
 
@@ -8,32 +8,109 @@ This document explains the key engineering decisions behind **LMA (`lma` — Liv
 
 Most hackathon agents reinvent a brittle `while (toolCalls)` loop in Python or TypeScript, then spend 80% of their time fighting context compaction, tool-call retries, session persistence, and streaming bugs.
 
-`lma` takes the opposite approach: treat **`omp`** as the real, battle-tested agent runtime inside the Sprite, and wrap it with a thin Bun supervisor (`web/server.ts`) speaking **`omp --mode rpc --no-ui`** over newline-delimited JSON (JSONL) stdin/stdout.
+Otto OS takes the opposite approach: treat **`omp`** as the battle-tested agent runtime inside the Sprite, and wrap it with a Bun supervisor (`web/server.ts`) speaking **`omp --mode rpc --no-ui`** over newline-delimited JSON (JSONL) stdin/stdout.
 
 ```mermaid
 flowchart LR
-    B["Vue 3 + Vite Web Chat UI<br/>(ThoughtTrace · Session Switcher)"] <-->|"HTTP + SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
-    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(Gemini 4 Neon · Mnemopi SQLite · Skills)"]
-    O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(6 Connectors)"]
+    B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>9 Wired Apps · Spotlight · ThoughtTrace · noVNC"] <-->|"HTTPS · SSE · Native WS->TCP RFB"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold · Chrome Manager"]
+    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 11 Extensions · 6 Skills)"]
+    O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(6 Auto-Discovering Connectors)"]
 ```
 
-### What `omp` RPC gives us out of the box
-| Capability | How `lma` Uses It |
+### What `omp` RPC Gives Us Out of the Box
+
+| Capability | How Otto OS Uses It |
 | :--- | :--- |
 | **Zero per-message cold start** | One persistent `omp` RPC worker stays warm inside `lma-web` (auto-restarts on exit) instead of spawning a new CLI process per turn. |
-| **First-class streaming events** | `thinking_delta`, `text_delta`, `tool_execution_start`, and `tool_execution_end` stream straight to the Vue 3 `<ThoughtTrace>` component over SSE. |
+| **Model role routing** | `agent/config.yml` defaults primary reasoning, vision, audio, and video roles to `google/gemini-4-hydrogen:auto` (with `high` for planning/vision) and lightweight roles (`smol`, `memory`, `autorename`) to `google/gemini-3.5-flash-lite`. |
+| **First-class streaming events** | `thinking_delta`, `text_delta`, `tool_execution_start`, and `tool_execution_end` stream straight to the Vue 3 `<ThoughtTrace>` and `TodoChecklistCard` components over SSE. |
 | **Native session management** | `get_messages`, `new_session`, `switch_session`, and `abort` power multi-chat history and instant stop controls without a custom chat database. |
-| **Dual-layer persistent memory** | Structured `MEMORY.md` studio profile (handles, timezone, team credits, OPSEC rules, schedule notes) paired with built-in **Mnemopi** SQLite memory (`noEmbeddings: true` for fast CPU-only FTS recall). |
-| **Clean `ExtensionAPI` + Skills** | Connectors live as small, auto-discovering TypeScript extensions (`agent/extensions/*.ts`); ops workflows &amp; opt-in coaching live as Markdown skills (`agent/skills/`). |
-| **Tool-level guardrails** | `generate_image: deny` and `generate_image.enabled: false` enforce the **strictly no AI-generated art/video** rule at the runtime layer, not just in prose. |
+| **Dual-layer persistent memory** | Structured `MEMORY.md` talent dossier (handles, timezone, team credits, OPSEC rules, schedule notes) paired with built-in **Mnemopi** SQLite memory (`noEmbeddings: true` for fast CPU-only FTS recall). |
+| **Modular extensions &amp; skills** | **11 extensions** registering **43 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **6 Markdown skills** (5 ops workflows + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
+| **Runtime-enforced guardrails** | `generate_image: deny` and `generate_image.enabled: false` enforce the **strictly no AI-generated art/video** rule at the tool-permission layer, not just in prose. |
 
 ---
 
-## 2. Proactive Self-Scheduling on a Sleeping Sprite (Upstash QStash + Tasks API)
+## 2. Embedded Real Chrome (noVNC), Native Bun WS→TCP RFB Proxy &amp; Exit-77 HITL Cookie Auth + OpenCLI
+
+Creator workflows constantly hit sites that lack affordable APIs or require interactive 2FA/CAPTCHA (X, TikTok, YouTube Studio, Instagram, Reddit, Google NotebookLM). Rather than storing brittle plaintext passwords or bundling heavy Playwright/websockify containers, Otto OS runs **real Google Chrome** on demand inside the Sprite (`web/lib/browser-manager.ts`, `web/server.ts`, `agent/extensions/browser-auth.ts`):
+
+```mermaid
+sequenceDiagram
+    participant O as Otto (omp RPC)
+    participant C as @jackwener/opencli (CDP :9222)
+    participant W as web/server.ts (Bun + RFB Proxy)
+    participant B as Xvfb :99 + Real Chrome + x11vnc :5900
+    participant U as Otto Studio OS (BrowserLoginModal / noVNC)
+
+    O->>C: opencli_run(site, command) [wakes Chrome CDP if stopped]
+    C-->>O: exitCode 77 (AUTH_REQUIRED)
+    O->>W: POST /api/internal/browser-login/request (Bearer LMA_INTERNAL_SECRET)
+    alt No dashboard SSE client connected (e.g. headless QStash run)
+        W-->>O: 409 no_dashboard_connected (fail fast, never hang)
+    else Creator dashboard active
+        W->>B: Ensure Xvfb + Real Chrome + x11vnc running
+        W-->>U: SSE browser_login_required (site, url, reason)
+        U<<->>W: WebSocket /api/browser/ws
+        W<<->>B: Native Bun.connect TCP -> 127.0.0.1:5900 (RFB bytes)
+        Note over U,B: User completes login / 2FA / CAPTCHA directly in live Chrome
+        loop Every 1200ms while pending
+            W->>B: CDP Network.getAllCookies + active tab URL check
+        end
+        B-->>W: Expected auth cookies present and off login URL
+        W->>W: Export 3 formats (.json, .cookies.txt, .state.json)
+        W-->>U: SSE browser_login_done (auto-close modal)
+        W-->>O: 20s chunked long-poll returns completed session metadata
+        O->>C: Retry opencli_run / yt-dlp --cookies with fresh session
+    end
+```
+
+### Key Engineering Details
+
+- **Zero-dependency native Bun WS→TCP RFB proxy (`web/server.ts`):** `GET /api/browser/ws` upgrades authenticated sessions to a Bun WebSocket and pipes raw RFB frames directly to `127.0.0.1:5900` (`x11vnc`) via `Bun.connect` — eliminating Python `websockify` entirely and buffering pre-connect frames cleanly until TCP handshake completes.
+- **Real Google Chrome, anti-bot clean &amp; RAM-frugal (`web/lib/browser-manager.ts`):** Launches real Chrome without `--enable-automation`, persists cookies/profile in `~/.config/lma/chrome-profile` with stale lock cleanup on start, exposes CDP on `127.0.0.1:9222`, and runs a **2-minute idle auto-shutdown timer** (`LMA_BROWSER_IDLE_MS`, default `120000` ms) once all VNC clients disconnect and no login is pending so Sprite memory returns to baseline.
+- **Ephemeral 24-byte `LMA_INTERNAL_SECRET`:** Generated in memory on each `web/server.ts` startup (`crypto.randomBytes(24).toString("hex")`) and passed solely to the `omp` RPC child process environment. Loopback `/api/internal/browser*` endpoints verify this bearer token before allowing the agent to wake Chrome or trigger a HITL login modal.
+- **3-format automatic cookie export (`~/.config/lma/cookies/`):** Once CDP `Network.getAllCookies` confirms platform-specific session cookies (e.g., `auth_token`+`ct0` for X, `sessionid`+`sid_tt` for TikTok, `SID`/`HSID`/`SAPISID` for YouTube/NotebookLM) or the user clicks manual **Capture Cookies**, Otto writes:
+  1. `<site>.json` — raw cookie list + session metadata (`SavedSessionMeta`).
+  2. `<site>.cookies.txt` — Netscape cookie jar ready for `yt-dlp --cookies` / `gallery-dl`.
+  3. `<site>.state.json` — Playwright `storageState` including active origin `localStorage`.
+- **5 registered agent tools (`agent/extensions/browser-auth.ts`):** `browser_login`, `browser_sessions_list`, `browser_cookie_export`, `opencli_list`, and `opencli_run` (supporting 100+ site adapters via `@jackwener/opencli`, with `OPENCLI_CDP_ENDPOINT` and `OPENCLI_CDP_TARGET` auto-wired).
+
+---
+
+## 3. Otto Studio OS Multi-Window Workstation
+
+Instead of a single-column chat box with a cramped slide-over drawer, `web/` renders **Otto Studio OS** — a full multi-window cloud desktop built on **Vue 3 + Vite + `shadcn-vue` + Reka UI + Tailwind CSS v4**:
+
+```mermaid
+flowchart TB
+    Shell["DesktopShell.vue + useWindowManager.ts<br/>Pointer-Capture Drag/Resize · Edge-Snap Ghosts · localStorage Geometry"]
+    Top["TopMenuBar.vue + SpotlightCommand.vue (Cmd+K)<br/>App Launcher · URL-to-Chrome Auto-Routing · Layout Presets"]
+    Dock["DesktopDock.vue (Alt+1..9) + DesktopSurface.vue<br/>Pure-SVG 3D Cursor-Tracking OttoMascot.vue"]
+    SSE["Single Authenticated /api/events SSE Stream<br/>ThoughtTrace · TodoChecklistCard · workspace_changed · db_changed · browser_login_*"]
+
+    Top --> Shell
+    Dock --> Shell
+    SSE --> Shell
+
+    Shell --> A1["Otto Chat &amp; Mission Control"]
+    Shell --> A2["Studio Files &amp; Embedded Chrome (noVNC)"]
+    Shell --> A3["Studio DB &amp; Playbooks"]
+    Shell --> A4["Calendar (3-View), Contacts CRM &amp; System Settings"]
+```
+
+- **9 genuinely wired apps (`useWindowManager.ts` `StudioAppId`):** `otto-chat` (Otto Chat), `mission-control` (Overview, live stream countdown, connectors &amp; guardrails), `files` (2-way Studio Workspace + `/clips` HTTP 206 media player), `chrome` (Embedded Chrome kiosk omnibox + noVNC canvas + saved sessions popover), `studio-db` (`StudioDatabaseView.vue` with 3 tabs: Content Pipeline, Channel Metrics &amp; Custom Trackers; read-only SQL queries run via the agent's `studio_db_query` tool), `playbooks` (`LearnedPlaybooksCard` approval queue + nightly reflection toggle), `calendar` (Month/Week/Agenda views with live QStash wake-up badges `T-2h`/`T-15m` + `.ics` export), `contacts` (3-pane Creator Rolodex CRM for human artists, riggers, clippers, editors &amp; sponsors with 1-click "Draft outreach with Otto"), and `settings` (Otto mascot swatches, studio profile &amp; Setup Wizard re-launch, window-controls mode `auto`/`mac`/`windows`, layout presets &amp; keyboard shortcut cheat sheet).
+- **Desktop ergonomics:** Pointer-capture drag and 8-edge resize, dashed yellow edge-snap ghosts (`left`, `right`, `maximize`), one-key layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`, `reset`), macOS/Windows auto-adaptive traffic-light or caption controls, persistent `localStorage` window rects, and an automatic `<1024px` responsive single-app mode.
+- **Spotlight URL routing (`SpotlightCommand.vue`):** `Cmd+K` / `Ctrl+K` searches apps, actions, and Studio Files; pasting or typing any URL or bare domain routes straight into the Embedded Chrome window via `normalizeBrowserUrl()`.
+- **Zero-cold-start onboarding &amp; zero-AI-art craft:** First run opens the 3-step `StudioSetupWizard.vue` (400+ IANA timezones, atomic `0600` passcode rotation, live connector readiness) paired with headless `scripts/bootstrap-dossier.sh` (`omp --no-session` scanning YouTube, Buffer, 30-day Google Calendar, and Exa to pre-fill `MEMORY.md` before turn #1). `OttoMascot.vue` is a 100% pure-SVG 3D sphere using `requestAnimationFrame` damped yaw/pitch projection and dynamic specular keylight — zero AI-generated assets.
+
+---
+
+## 4. Proactive Self-Scheduling on a Sleeping Sprite (Upstash QStash + Tasks API)
 
 Fly.io Sprites pause automatically after **~30 seconds of idle time** (warm suspend → cold stop), which keeps idle compute at **$0** — but also pauses any local Linux `cron` daemon inside the VM.
 
-To let Otto be genuinely **proactive** (e.g., *"Remind me 1 hour before my collab stream on Dec 17 at 15:30 WIB, then pull the VOD afterward to cut raw clips"*), `lma` combines **Upstash QStash** with Fly.io's **`/.sprite/api.sock` Tasks API**:
+To let Otto be genuinely **proactive**, Otto OS combines **Upstash QStash** with Fly.io's **`/.sprite/api.sock` Tasks API**:
 
 ```mermaid
 sequenceDiagram
@@ -60,32 +137,74 @@ sequenceDiagram
     Note over L,W: 30s later -> Sprite sleeps at $0 again
 ```
 
-### Why the `/.sprite/api.sock` Tasks API Hold Matters
-Because `POST /api/wakeup` returns `200 OK` to QStash immediately and runs `omp` asynchronously, there is **no open browser SSE connection** during a headless wake-up. Without a keep-alive hold, a multi-tool agent turn taking >30 seconds could be paused mid-flight by the Sprite's idle detector.
+### Tasks API Keep-Alive Hold, Reschedule Delta Auto-Re-Arming &amp; RFC 5545 `.ics`
 
-Holding `PUT /v1/tasks/lma-agent-turn` (`expire: "10m"`) on `agent_start` (with a 5-minute refresh heartbeat while `rpc.busy` is active, capped at a hard 30-minute ceiling) and releasing `DELETE /v1/tasks/lma-agent-turn` on `agent_end`/`abort` keeps long multi-tool VOD clipping turns alive without letting a crash or hung turn leak billing indefinitely.
+- **Keep-alive hold without leaked billing:** Because `POST /api/wakeup` ACKs QStash immediately and executes `omp` asynchronously without an open browser SSE stream, `web/server.ts` holds `PUT /v1/tasks/lma-agent-turn` (`expire: "10m"`) on `agent_start` (refreshed every 5 minutes while `rpc.busy` is active, capped at a hard 30-minute ceiling) and releases `DELETE /v1/tasks/lma-agent-turn` on `agent_end`/`abort`.
+- **Reschedule delta auto-re-arming (`agent/extensions/qstash-scheduler.ts`):** When a stream moves via `calendar_update_event`, Otto computes the exact time delta between the old and new start timestamps, revokes existing QStash message IDs attached to that event, re-arms shifted lifecycle triggers (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`), persists updated hook IDs in `studio.db`, and syncs the change 2-way with Google Calendar.
+- **RFC 5545 `.ics` export with `VALARM` (`GET /api/calendar/export.ics`):** Generates standards-compliant iCalendar feeds from `calendar_events`, attaching `BEGIN:VALARM` / `TRIGGER:-PT15M` reminders so creators can subscribe from Apple Calendar, Google Calendar, or mobile devices.
 
 ---
 
-## 3. Zero Outbound API Keys (6 Auto-Discovering Sprites Connectors)
+## 5. Deterministic VOD Hype Pipeline &amp; Multimodal Media Reviewer
 
-Every external API call routes through `https://api.sprites.dev/v1/gateway/...`:
+Rather than feeding 4-hour VOD transcripts into an expensive LLM and hoping it guesses where chat popped off, Otto OS splits clip discovery into **deterministic signal processing** followed by **bounded multimodal review**:
 
-- **Built-in BYOK Connectors:** Google Gemini, Exa, Firecrawl.
+- **12-thread InnerTube parallel chat pull (`agent/skills/raw-clip-finder/scripts/fetch_chat_fast.py`):** Extracts YouTube's internal `playerSeekContinuationData` random-access token and fans out **12 concurrent threads** across 10-minute timeline chunks — pulling a **4-hour VOD's live chat replay in ~30 seconds** (versus 30–60 minutes of linear pagination) with zero API keys, alongside `yt-dlp` captions.
+- **Chat-lag compensation &amp; 4-signal Z-score hype math (`detect_hype_candidates.py`):** Buckets chat into 10-second windows and scores 4 rolling Z-score signals (velocity `0.40`, unique-author burst `0.30`, reaction ratio `0.15`, emote burst `0.15`) with indie-channel adaptive `min_authors` thresholding and bilingual EN/ID hype + emote regexes. Because real stream ingest + CDN latency delays viewer chat reactions by 10–25 seconds, every candidate window applies a **35-second pre-roll** (+15s post-roll) so the setup and punchline are captured intact.
+- **Broadcast-ready raw cut &amp; prep (`cut_raw_clip.py` + `vod_prep_clip`):** `cut_raw_clip.py` (`vod_cut_clip`) slices the exact raw `.mp4` + time-shifted `.srt`, and `vod_prep_clip` (`agent/extensions/vod-clipper.ts`) normalizes it via `ffmpeg` to CFR 30fps H.264 `yuv420p` `+faststart` at **-14 LUFS**, saved directly into `/home/sprite/workspace/clips/` for inline HTTP 206 playback and human editor handoff.
+- **Dynamic 480p/2fps FFmpeg proxy + hardened SSRF guard (`agent/extensions/media-reviewer.ts`):**
+  - `watch_clip` inspects file size; clips exceeding **14 MB** are automatically transcoded on the fly via `ffmpeg` (`scale=-2:480 -r 2`) into a lightweight proxy for inline Gemini multimodal critique with **zero external object storage**.
+  - `critique_thumbnail` enforces HTTPS-only SSRF protection — rejecting `localhost`, `::1`, `.local`, `.internal`, `169.254.*`, `10.*`, `192.168.*`, and `172.16-31.*`, performing manual redirect validation (max 4 hops), and capping response streams at 14 MB.
+
+---
+
+## 6. Zero Outbound API Keys (6 Auto-Discovering Sprites Connectors)
+
+Every key-bearing external API routes through `https://api.sprites.dev/v1/gateway/...`:
+
+- **Built-in BYOK Connectors:** Google Gemini (`models.yml`), Exa (`exa-gateway.ts`), Firecrawl (`firecrawl-gateway.ts`).
 - **Custom API Connectors (provisioned via `sprite api /oauth/connections/custom_api`):**
-  - **Composio v3 (`https://backend.composio.dev`, `x-api-key`)** — cleanly works around Sprites' built-in Composio v3.1 catalog validator mismatch while keeping 100% zero-key gateway security for YouTube channel stats, video metadata, captions, and human-approved packaging updates.
-  - **Buffer (`https://api.buffer.com`, `Bearer`)** — single GraphQL API covering **X (Twitter), TikTok, and Instagram** (avoiding X's paid Pay-Per-Use API), defaulting to `saveToDraft: true` so nothing publishes publicly without human sign-off.
-  - **Upstash QStash (`Bearer`)** — free 1,000 messages/day for agent self-scheduled wake-ups and recurring crons.
+  - **Composio v3 (`https://backend.composio.dev`, `x-api-key`)** — handles YouTube channel stats, video metadata, captions, human-approved packaging updates, and 2-way Google Calendar sync (`composio-youtube.ts`).
+  - **Buffer (`https://api.buffer.com`, `Bearer`)** — single GraphQL API covering **X (Twitter), TikTok, and Instagram**, defaulting to `saveToDraft: true` so nothing publishes publicly without human sign-off (`buffer-gateway.ts`).
+  - **Upstash QStash (`Bearer`)** — agent self-scheduled one-shot, lifecycle, and `CRON_TZ` recurring wake-ups (`qstash-scheduler.ts`).
 
-Every **connector** extension (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`) queries `GET https://api.sprites.dev/v1/gateway/list` at runtime and caches its `gateway_base_url` — meaning **zero hardcoded connector IDs** exist anywhere in this repository. Local-only extensions (`studio-db`, `vod-clipper`, `skill-learner`, `new-session`) never touch the gateway.
+Across the **11 extensions** (**43 registered tools** + `--new`), all **6 connector extensions** (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **5 local-only extensions** (`browser-auth`, `studio-db`, `vod-clipper`, `skill-learner`, `new-session`) never require gateway secrets.
 
 ---
 
-## 4. Checkpoint Time-Travel &amp; Agentic E2E Testing
+## 7. Unified 2-Way Studio Workspace, 8-Table SQLite WAL DB &amp; Learned Playbooks
 
-Stateful personal agents are notoriously painful to test end-to-end: persistent memory (`MEMORY.md`, Mnemopi SQLite) and conversation history bleed across runs, and LLM replies are non-deterministic so brittle exact-string unit tests break constantly.
+Because Otto OS runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and an **8-table native SQLite WAL database** with zero external database servers:
 
-**Fly.io Sprites' immutable copy-on-write checkpoints turned that bottleneck into our biggest development speed multiplier:**
+```mermaid
+flowchart LR
+    UI["Otto Studio OS<br/>(Studio Files · Studio DB · Calendar · Contacts · Playbooks · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
+    S <-->|"web/lib/workspace.ts<br/>(realpathSync jail)"| WS["/home/sprite/workspace/<br/>clips · thumbnails · scripts · briefs · uploads · exports"]
+    S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL · 8 tables)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · channel_metrics<br/>custom_trackers · custom_items · studio_meta · learned_skills"]
+    OMP["omp Agent (Otto)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
+    OMP <-->|"studio-db.ts · qstash-scheduler.ts · skill-learner.ts"| DB
+```
+
+| Layer | Backing Store | Shared By | Live Sync Mechanism |
+| :--- | :--- | :--- | :--- |
+| **Unified Workspace** | `/home/sprite/workspace/` | Studio Files app + Chat `📎` uploads + `omp` (`read`/`write`/`vod-clipper`/`media-reviewer`) | `tool_execution_end` + debounced `fs.watch` → SSE `workspace_changed` |
+| **Unified Studio DB** | `~/.omp/agent/studio.db` (`bun:sqlite`, `WAL`, `busy_timeout=5000`, 8 tables) | Web `/api/db/*`, `/api/calendar/*`, `/api/learning/*` + `omp` (14 DB tools + QStash + Playbooks) | `tool_execution_end` + API mutations → SSE `db_changed` |
+| **Talent Dossier** | `~/.omp/agent/MEMORY.md` | Mission Control Dossier view + `omp` system prompt memory | Reloaded on turn completion |
+| **Chat Memory** | `~/.omp/agent/mnemopi.db` | Managed internally by `omp` | Automatic across sessions (cleared by clean-checkpoint reset) |
+
+### Learned Creator Playbooks (`agent/extensions/skill-learner.ts` + `agent/lib/learned-skills.ts`)
+
+Recurring creator-specific SOPs live outside the repo so `git pull`/checkpoint syncs never clobber them:
+
+- `learned_skills_list` / `learned_skill_read` / `learned_skill_save` / `learned_skill_delete` back a `learned-skills/<slug>/SKILL.md` store plus metadata in the `learned_skills` SQLite table.
+- Hard bounds enforce a **16 KiB** per-skill cap, a **30-skill** total cap, and a prompt-injection denylist; new playbooks always stage as `pending` and only become `active` after explicit 1-click human approval in the **Playbooks** app (`/api/learning*`).
+- When enabled via `/api/learning/config`, a **silent midnight reflection wake-up** (QStash cron via `agent/lib/qstash-cron.ts`, timezone-aware `CRON_TZ`) spawns an isolated `omp --no-session` pass (secrets stripped) over recent sessions, `MEMORY.md`, and `studio.db` to propose SOP candidates. Untrusted external text (web pages, YouTube metadata, live chat) is explicitly prohibited from being promoted into instructions.
+
+---
+
+## 8. Checkpoint Time-Travel &amp; Reproducible Verification
+
+Stateful personal agents are notoriously painful to test end-to-end: persistent memory (`MEMORY.md`, Mnemopi SQLite) and conversation history bleed across runs, and LLM replies are non-deterministic. **Fly.io Sprites' immutable copy-on-write checkpoints** turn that bottleneck into a 1-second reset loop:
 
 ```mermaid
 flowchart LR
@@ -96,47 +215,17 @@ flowchart LR
     G -->|"sprite restore &lt;prod-id&gt;"| P["Live Prod State<br/>(Zero Data Loss)"]
 ```
 
-1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** Installed via `bash scripts/install-hooks.sh` into `.git/hooks/post-commit`, every code commit automatically snapshots live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`mnemopi.db`/`studio.db`/`learned-skills`/`workspace/`, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only previous `initialized:` checkpoints.
-2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs 26 deterministic checks in ~10 seconds — TypeScript/Vite build, all 5 skill &amp; 10 extension symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
-3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Instead of flaky regex assertions, behavioral tests live as Markdown playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with a programmatic communication guide (`scripts/e2e/INDEX.md`) and a golden reference dossier (`scripts/e2e/expected-memory.md`). A completely blank-slate coding agent can restore `initialized:`, execute multi-turn conversations against Otto, inspect raw JSONL tool calls, semantically grade the resulting `MEMORY.md` against `expected-memory.md`, and jump straight back to live state in seconds — making iteration dramatically faster and consistently reproducible.
+1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** On every code commit, `.git/hooks/post-commit` backs up live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`mnemopi.db`/`studio.db`/`learned-skills`/`workspace/`, resets `MEMORY.md` to `MEMORY.md.example`, rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only older `initialized:` checkpoints.
+2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs **27 deterministic fast checks** in ~10 seconds (**28** with `--live` adding a zero-key Gemini + Buffer round-trip) — TypeScript/Vite build, all **6 skill** &amp; **11 extension** symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD &amp; injection rejection, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
+3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Behavioral tests live as **5 Markdown playbooks** (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with [`scripts/e2e/INDEX.md`](../scripts/e2e/INDEX.md) and a golden reference dossier ([`scripts/e2e/expected-memory.md`](../scripts/e2e/expected-memory.md)).
 
 ---
 
-## 5. Unified 2-Way Studio Workspace &amp; Unified Studio Database (SQLite WAL)
+## 9. Defense-in-Depth Security
 
-Because `lma` runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and a native SQLite WAL database with zero external database servers:
-
-```mermaid
-flowchart LR
-    UI["Mission Control UI<br/>(Files &amp; Clips · Studio DB · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
-    S <-->|"web/lib/workspace.ts<br/>(realpath jail)"| WS["/home/sprite/workspace/<br/>clips · thumbnails · scripts · briefs · uploads · exports"]
-    S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · channel_metrics · custom_trackers · custom_items · studio_meta"]
-    OMP["omp Agent (Otto)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
-    OMP <-->|"studio-db.ts &amp; qstash-scheduler.ts"| DB
-```
-
-| Layer | Backing Store | Shared By | Live Sync Mechanism |
-| :--- | :--- | :--- | :--- |
-| **Unified Workspace** | `/home/sprite/workspace/` | Web File Manager + Chat `📎` uploads + `omp` (`read`/`write`/`vod-clipper`/`media-reviewer`) | `tool_execution_end` + debounced `fs.watch` -> SSE `workspace_changed` |
-| **Unified Studio DB** | `~/.omp/agent/studio.db` (`bun:sqlite`, `WAL`, `busy_timeout=5000`) | Web `/api/db/*` &amp; `/api/calendar/*` + `omp` (`studio-db.ts` &amp; `qstash-scheduler.ts`) | `tool_execution_end` + API mutations -> SSE `db_changed` |
-| **Talent Dossier** | `~/.omp/agent/MEMORY.md` | Mission Control Dossier view + `omp` system prompt memory | Reloaded on turn completion |
-| **Chat Memory** | `~/.omp/agent/mnemopi.db` | Managed internally by `omp` | Automatic across sessions (cleared by the clean-checkpoint reset) |
-
-### Learned Creator Playbooks (`agent/extensions/skill-learner.ts` + `agent/lib/learned-skills.ts`)
-
-Recurring creator-specific SOPs live outside the repo so `git pull`/checkpoint syncs never clobber them:
-
-- `learned_skills_list` / `learned_skill_read` / `learned_skill_save` / `learned_skill_delete` back a `learned-skills/<slug>/SKILL.md` store plus metadata in `studio.db`.
-- New playbooks are staged `pending` and only become `active` after human review in Mission Control's `LearnedPlaybooksCard.vue` (`/api/learning*`).
-- When enabled via `/api/learning/config` (or Mission Control), a **silent nightly-reflection wake-up** (QStash cron managed by `agent/lib/qstash-cron.ts`, timezone-aware via `CRON_TZ`) proposes candidates; untrusted external text (web pages, YouTube metadata, live chat) must never be promoted into instructions.
-
----
-
-## 6. Defense-in-Depth Security
-
-- **Zero outbound API keys in VM or repo:** All 6 external API credentials stay inside Fly.io's encrypted org gateway. Inbound verification secrets (`LMA_WEB_PASSWORD` and Upstash QStash signing keys) live in `chmod 600 ~/.config/lma/web.env` outside git, and `web/server.ts` strips them from the `omp` subprocess environment (`qstash-scheduler.ts` reads only non-secret routing env vars — `LMA_PUBLIC_URL` and the `SPRITES_*_GATEWAY_URL` overrides — and never opens `web.env`).
-- **Fail-closed Web Chat UI gate:** `setup.sh` auto-generates `LMA_WEB_PASSWORD` in `~/.config/lma/web.env`; if unset, `web/server.ts` fails closed (`401` on `/` and every other `/api/*` route, `503` on `/api/auth/login`), rate-limits brute-force attempts (`429` keyed on `fly-client-ip` / rightmost proxy hop / socket IP), and sets `HttpOnly; SameSite=Lax` cookies (with `Secure` over HTTPS / `x-forwarded-proto: https`) verified with `crypto.timingSafeEqual`. Three routes sit deliberately before the gate: `GET /api/health` (public liveness probe) and `POST /api/auth/login` (the gate itself), plus `POST /api/wakeup`, which is not passcode-gated but requires a valid Upstash QStash signature.
-- **Headless RPC execution model &amp; containment:** Because `omp` runs headlessly (`--mode rpc --no-ui`) inside a dedicated single-tenant Sprite VM, `agent/config.yml` uses `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `realpathSync` containment under `/home/sprite/workspace/` on `vod-clipper.ts` &amp; `media-reviewer.ts`, SSRF/size-capped thumbnail fetching, read-only SQL validation (`SELECT`/`WITH`/`PRAGMA table_info` only) on `studio_db_query`, and prompt-injection rules for untrusted web/chat data.
-- **Workspace Root Jail &amp; Anti-Stored-XSS:** `web/lib/workspace.ts` enforces strict `path.resolve` + `fs.realpathSync` confinement inside `/home/sprite/workspace/`, blocks symlinks, dotfiles, and parent traversal (`..`), caps uploads at 100 MB and ZIP exports at 500 MB (skipping symlinks), and serves downloads/HTML/SVG/binaries with `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` so uploaded files can never execute scripts under the app origin.
-- **Database Separation &amp; Parameterized Queries:** `~/.omp/agent/studio.db` lives outside `/home/sprite/workspace/` so file-manager operations cannot delete or corrupt the database, and every Web API / tool mutation uses parameterized SQLite statements.
-- **Path-traversal protection:** `POST /api/sessions/switch`, `/api/workspace/*`, `/api/clips/file/...` (with HTTP `Range` 206 support), and static file serving strictly verify resolved paths remain within their authorized roots.
+- **Zero outbound API keys + live runtime audit:** All 6 external API credentials stay inside Fly.io's encrypted org gateway. `GET /api/connectors` dynamically inspects `process.env` (`zeroLocalKeys: true`) and `agent/config.yml` (`aiMediaDisabled: true`) on every load. Inbound verification secrets (`LMA_WEB_PASSWORD` and Upstash QStash signing keys) live in `chmod 600 ~/.config/lma/web.env` outside git and are stripped from the `omp` subprocess environment (`qstash-scheduler.ts` reads only non-secret routing vars and never opens `web.env`).
+- **Ephemeral internal IPC auth:** Loopback `/api/internal/browser*` endpoints require the per-boot 24-byte `LMA_INTERNAL_SECRET` bearer token; external callers cannot invoke Chrome wake-ups or HITL modals.
+- **Fail-closed Web UI gate &amp; QStash signature verification:** `setup.sh` auto-generates `LMA_WEB_PASSWORD`; if unset, `web/server.ts` fails closed (`401` on `/` and `/api/*`, `503` on `/api/auth/login`), rate-limits brute-force attempts (5/min `429` keyed on `fly-client-ip` / rightmost proxy hop / socket IP), and issues `HttpOnly; SameSite=Lax` cookies (`Secure` over HTTPS) verified via `crypto.timingSafeEqual`. `POST /api/wakeup` validates dual rotating QStash HS256 JWT keys plus a constant-time SHA-256 raw-body digest.
+- **Headless RPC containment &amp; tool guardrails:** Because `omp` runs headlessly inside a single-tenant Sprite VM, `agent/config.yml` pairs `approvalMode: yolo` with hard tool-layer bans (`generate_image: deny`), strict `realpathSync` confinement under `/home/sprite/workspace/` on `vod-clipper.ts` &amp; `media-reviewer.ts`, HTTPS-only SSRF guards on `critique_thumbnail`, AST-checked read-only SQL (`SELECT`/`WITH`/`PRAGMA table_info` only, no semicolons, 100-row cap) on `studio_db_query`, and prompt-injection rules for untrusted web/chat data.
+- **Workspace root jail &amp; anti-stored-XSS (`web/lib/workspace.ts`):** Enforces `path.resolve` + `fs.realpathSync` confinement inside `/home/sprite/workspace/`, rejects symlinks, dotfiles, and `..` traversal, caps uploads at 100 MB and pre-flight ZIP exports at 500 MB (`followlinks=False`), and serves downloads/HTML/SVG/binaries with `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`.
+- **Database separation &amp; parameterized queries:** `~/.omp/agent/studio.db` lives outside `/home/sprite/workspace/` so file-manager operations cannot delete or corrupt it, and every API and tool mutation uses parameterized SQLite queries.

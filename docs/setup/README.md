@@ -57,8 +57,8 @@ bash /home/sprite/lma/setup.sh
 ---
 
 ## 5. Verify Everything End-to-End
-Run the deterministic 26-check suite from your local workstation:
+Run the deterministic 27-check suite (28 with `--live`) from your local workstation — covering the web build, all 6 skills and 11 extensions symlinked by `setup.sh`, Python clipper syntax, Tasks API hold, security gates, workspace/DB/playbook APIs, and calendar export:
 ```bash
-bash scripts/verify-all.sh          # Fast deterministic suite (~10s)
-bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip
+bash scripts/verify-all.sh          # Fast deterministic suite (~10s, 27 checks)
+bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip (28 checks)
 ```

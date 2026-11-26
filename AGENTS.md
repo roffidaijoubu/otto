@@ -7,7 +7,7 @@
 
 - **Agent Runtime:** `omp` (`@oh-my-pi/pi-coding-agent`) running as a persistent `--mode rpc --no-ui` subprocess supervised by Bun (`web/server.ts`), paired with Mnemopi SQLite memory + structured `~/.omp/agent/MEMORY.md` talent dossier.
 - **Architecture Deep Dive:** Read [`docs/architecture.md`](docs/architecture.md) for why we chose `omp` RPC, how **Upstash QStash + `/.sprite/api.sock` Tasks API** powers proactive wake-ups on a $0-idle sleeping Sprite, and how zero-key Sprites Connectors auto-discover at runtime.
-- **Visual Design System:** Read [`DESIGN.md`](DESIGN.md) (*Otto Studio Bento OS*, implemented via Tailwind CSS v4 + DaisyUI v5 in `web/src/styles/daisy.css`).
+- **Visual Design System:** Read [`DESIGN.md`](DESIGN.md) (*Otto Studio Bento OS*, implemented via `shadcn-vue` + Reka UI + Tailwind CSS v4 in `web/src/styles/globals.css` & `web/src/styles/tokens.css`).
 
 ---
 
@@ -36,13 +36,13 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # 10 extensions: connectors + vod-clipper + media-reviewer + studio-db + skill-learner + new-session (38 tools)
+│   ├── extensions/             # 11 extensions: connectors + browser-auth + vod-clipper + media-reviewer + studio-db + skill-learner + new-session (43 tools)
 │   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), learned skills (learned-skills.ts)
 │   └── skills/                 # 6 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder + opt-in streaming-coaching)
-├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / DaisyUI v5 Chat UI & Mission Control Drawer
+├── web/                        # Bun RPC supervisor & noVNC RFB proxy (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (9 apps + Spotlight)
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
-    ├── verify-all.sh                   # Deterministic 26-check verification suite (+ --live mode)
+    ├── verify-all.sh                   # Deterministic 27-check verification suite (28 with --live)
     └── e2e/                            # Agentic multi-turn E2E test playbooks (INDEX.md, README.md, 01..05-*.md, expected-memory.md)
 ```
 
@@ -62,7 +62,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~10 seconds — verifies `web/` TypeScript + Vite build, all 5 skill & 10 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
+Runs in ~10 seconds — 27 deterministic checks (28 with `--live`) verifying `web/` TypeScript + Vite build, all 6 skill & 11 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip

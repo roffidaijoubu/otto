@@ -57,7 +57,7 @@ Otto is represented exclusively by a minimalist geometric `<svg>` component (`we
 | Highlight Yellow | `#F9F5A2` | `--highlight-yellow` | Signature flat highlighter behind `(y)our` and active micro-emphasis |
 | Highlight Cyan | `#C7F6FF` | `--highlight-cyan` | Secondary flat highlighter for swapped/editable tags & `+1 Experiment` |
 | Sand Wash | `#E2CEB8` | `--surface-sand` | Optional warm atmospheric card wash (defined; not currently consumed by components) |
-| Slate Veil | `#6A728E` | `--surface-slate` | Cool atmospheric accent (defined; currently used for the DaisyUI `--color-info`) |
+| Slate Veil | `#6A728E` | `--surface-slate` | Cool atmospheric accent (defined in `tokens.css`; `#6A728E` is also mapped to `--chart-2` in `globals.css`) |
 | Sky Soft | `#B8DCFA` | `--surface-sky` | Soft sky tint (defined; the sprite tile currently hardcodes its own sky gradient) |
 
 ### Restrained Semantic Status Pills
@@ -123,30 +123,25 @@ Loaded via Google Fonts in `web/index.html`:
 
 ## 6. Layout Architecture & Component Mapping (`web/`)
 
-### Desktop Layout (`>= 1024px`)
-- **Floating Top Bar (`ChatHeader.vue`):**
-  - Transparent over the studio backdrop (`padding: 10px 18px 4px`), with floating `#FFFFFF` pill clusters (`box-shadow: var(--shadow-pill)`):
-  - **Left cluster:** `[Otto Eyes SVG Pill]` + segmented view switcher pill (`Overview` | `Schedule` | `Files & Clips` | `Studio DB` | `Dossier` | `Connectors`).
-  - **Right cluster:** A single derived status pill (`connecting` | `online` | `working` | `reconnecting`, driven by `App.vue` state) + mini circular **Otto Avatar** (`OttoMascot.vue`).
-- **Two-Column Studio Desktop (`App.vue`):**
-  - **Left Primary Desktop (`flex: 1`, scrollable):**
-    - **Overview View (Studio Bento Mosaic):**
-      - Top row left: **Studio Greeting Block** directly on the ambient canvas — `Hi <Creator>, [Otto SVG]` / `Otto is [y]our stream manager.` (`(y)our` highlighted in `#F9F5A2`) + short-timezone pill (`Asia/Jakarta` → `JKT`) and a `sync studio` refresh pill.
-      - Top row right: Two compact floating widgets side-by-side inspired directly by the reference:
-        1. **`(Y)our sprite.`** (soft sky/slate atmospheric mini-tile: sun graphic + `<N> live` connector count + `Fly.io Sprite · $0 idle`).
-        2. **`(Y)our next stream.`** (oversized `IBM Plex Mono` live countdown `HH:MM:SS` to next scheduled stream + `#F2F2F2` pill button — `Prep with Otto` when a stream is scheduled, otherwise `Schedule Stream`).
-      - Main Bento Grid (`2x2 symmetrical`):
-        - **`(Y)our schedule.`** — Quick-add pill input (`25px` radius, `#EDEDED` fill) + upcoming events with `GCal ↗`, QStash wake-up pills, `Prep`, `✕`.
-        - **`(Y)our workspace.`** — Unified 2-way files & clips preview, quick `+ Upload Files` & `Scan VOD` pills (shown only while the workspace is empty), and an inline `(Y)our db: N ideas · M contacts` footer link to Studio DB.
-        - **`(Y)our connectors.`** — live gateway connector chips only (`No Sprites Connectors detected yet` when empty); honest "zero keys / no AI art" messaging lives in the persona, docs, and login copy rather than a dashboard pill.
-        - **`(Y)our playbooks.`** — pending/active creator-specific SOPs + nightly reflection status linking directly to the Playbooks window.
-    - **Detail Views (`Schedule`, `Files & Clips`, `Studio DB`, `Dossier`, `Connectors`):** Each framed in crisp `#FFFFFF` `20px` widget cards with centered `(Y)our ...` monospace header strips.
-  - **Right Docked Co-Pilot Card (`430px` floating `#FFFFFF` card, `20px` radius, `var(--shadow-card)`; narrows to `370px` at `≤1200px`):**
-    - Centered `(Y)our co-pilot.` header strip with `Chats (N)` and `+ New` pill buttons; the `SessionSidebar` opens as a drawer for switching sessions.
-    - Clean chat stream (`MessageBubble.vue`): Otto messages with mini `OttoMascot` SVG avatar + readable sans prose; user messages in soft `#F2F2F2` rounded bubbles (`16px` radius). Assistant turns can expand a `ThoughtTrace` panel.
-    - Pinned `TodoChecklistCard.vue` above `ChatComposer.vue` (`#EDEDED` `25px` pill textarea + `📎` workspace upload pill + `#303030` Charcoal primary `Send` pill).
-- **First-Run Setup:** `StudioSetupWizard.vue` renders a 3-step modal (`(Y)our studio setup · step N/3`) covering Identity, Passcode, and Connectors before Mission Control is reachable.
-- **Mobile (`< 1024px`):** Clean segmented toggle pill in the top bar (`Studio | Otto Chat`) switching cleanly between the desktop bento and Co-Pilot Chat.
+### Otto Studio OS Multi-Window Desktop Shell (`>= 1024px`)
+Implemented by `DesktopShell.vue` and `useWindowManager.ts` on top of the ambient studio backdrop (`--bg-canvas`):
+- **Top Menu Bar (`TopMenuBar.vue`, `36px` height):** Translucent white bar (`bg-white/84`, `backdrop-blur-md`) with the `Otto OS` menu (Spotlight, System Settings, Window/Layout actions), active app title, embedded Chrome status, and studio timezone clock.
+- **Interactive Desktop Surface (`DesktopSurface.vue`):** Houses desktop shortcuts, live studio status subtitle, and the pure-SVG cursor-tracking `OttoMascot.vue`.
+- **Managed Window Stage (`DesktopWindow.vue`):** Pointer-capture draggable & resizable `#FFFFFF` `20px`-radius windows with auto-adaptive macOS/Windows controls (`auto` | `mac` | `windows`), dashed `#F9F5A2` edge-snap preview zones (`left`, `right`, `maximize`), layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`, `reset`), and `localStorage` geometry persistence. Initial layout opens **Otto Chat** (left) + **Mission Control** (right).
+- **9 Wired Studio Apps (`STUDIO_APPS` in `useWindowManager.ts`):**
+  1. **Otto Chat (`otto-chat`):** Co-Pilot chat stream (`MessageBubble.vue`), expandable `ThoughtTrace`, `SessionSidebar` drawer, pinned `TodoChecklistCard.vue`, and `ChatComposer.vue` (`#EDEDED` `25px` pill input + workspace upload + `#303030` primary `Send` pill).
+  2. **Chrome (`chrome`):** Embedded real Chrome via noVNC (`BrowserWorkspaceTab.vue`, `NoVncCanvas.vue`, and HITL `BrowserLoginModal.vue`).
+  3. **Studio Files (`files`):** Unified 2-way workspace file manager & clip previewer (`WorkspaceFileManager.vue`).
+  4. **Mission Control (`mission-control`):** Bento workspace (`MissionControlWorkspace.vue` with `Overview` | `Profile` | `Connectors` sub-tabs) featuring `(Y)our sprite.`, `(Y)our next stream.`, `(Y)our schedule.`, `(Y)our workspace.`, `(Y)our connectors.`, and `(Y)our playbooks.` cards.
+  5. **Studio DB (`studio-db`):** SQLite studio database explorer (`StudioDatabaseView.vue`).
+  6. **Playbooks (`playbooks`):** Human-gated learned SOPs & nightly reflection status (`LearnedPlaybooksCard.vue`).
+  7. **Calendar (`calendar`):** Month/Week/Agenda stream calendar with QStash wake-up badges (`CalendarWorkspaceApp.vue`).
+  8. **Contacts (`contacts`):** 3-pane creator rolodex CRM for artists, riggers, clippers, editors, and sponsors (`ContactsWorkspaceApp.vue`).
+  9. **System Settings (`settings`):** Studio preferences, `OttoMascot` color swatches, and window-control platform mode.
+- **Floating Pill Dock (`DesktopDock.vue`):** Centered translucent bottom dock separating the 8 primary apps from utility `System Settings` (`Alt+1..9` / `⌥1..9`), with running/minimized indicators, context menus, and `#F9F5A2` attention dots.
+- **Spotlight Command Palette (`SpotlightCommand.vue`, `Cmd+K` / `Ctrl+K`):** Reka UI dialog searching apps, quick workspace folders, and layout presets — and auto-detecting pasted URLs or bare domains to launch directly inside embedded Chrome.
+- **First-Run Setup (`StudioSetupWizard.vue`):** 3-step modal (`(Y)our studio setup · step N/3`) covering Identity, Passcode, and Connectors before the desktop shell is unlocked.
+- **Responsive Single-App Mode (`< 1024px`):** `useWindowManager` enters `isMobile`, rendering only the focused window full-bleed between the `36px` top menu bar and `78px` dock safe area so switching apps from the dock stays clean on narrow screens.
 
 ### Passcode Gate (`web/server.ts` `LOGIN_HTML`)
 - Centered `#FFFFFF` `20px`-radius widget card floating on the exact **Otto Studio backdrop gradient**, opening with the `(Y)our studio.` `11px` monospace header strip, centered `OttoMascot` SVG circle-with-eyes, `"Otto is (y)our stream manager."` (`(y)our` in `#F9F5A2`), `#EDEDED` `25px` passcode input, and `#303030` Charcoal pill button `Unlock Studio`.
@@ -189,10 +184,10 @@ Styled on `reka-nova` (Reka UI + Tailwind CSS v4 + `@lucide/vue`) mapped directl
     radial-gradient(circle at 8% 92%, #E59D81 0%, rgba(229, 157, 129, 0) 52%),
     linear-gradient(135deg, #D7D5D6 0%, #DCD4D2 48%, #E6B29A 100%);
 
-  /* Accents & Highlights */
-  --accent: #303030;
-  --accent-hover: #141414;
-  --accent-fg: #FFFFFF;
+  /* Interactive & Highlighter Accents */
+  --otto-primary: #303030;
+  --otto-primary-hover: #141414;
+  --otto-primary-fg: #FFFFFF;
   --highlight-yellow: #F9F5A2;
   --highlight-cyan: #C7F6FF;
 
@@ -216,8 +211,6 @@ Styled on `reka-nova` (Reka UI + Tailwind CSS v4 + `@lucide/vue`) mapped directl
   --sidebar-width: 280px;
 
   /* Radii & Elevation */
-  --radius-sm: 8px;
-  --radius: 16px;
   --radius-card: 20px;
   --radius-media: 10px;
   --radius-input: 25px;

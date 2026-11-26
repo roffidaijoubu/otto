@@ -73,7 +73,7 @@ send_and_wait() {
 }
 
 echo "=== TURN 1 ==="
-send_and_wait "Hello Prof! Reply in 1 sentence."
+send_and_wait "Hello Otto! Reply in 1 sentence."
 echo "=== TURN 2 ==="
 send_and_wait "Now summarize what I just asked."
 

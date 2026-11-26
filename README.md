@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/assets/otto-logo.png" alt="OTTO OS — Livestreamer Manager Agent" width="320">
+  <img src="docs/assets/otto-logo.png" alt="OTTO OS — Cloud Studio OS & Livestreamer Manager Agent" width="320">
 </p>
 
-<h1 align="center">Otto OS — Livestreamer Manager Agent</h1>
+<h1 align="center">Otto OS — Cloud Studio OS &amp; Livestreamer Manager Agent</h1>
 
 <p align="center">
-  <b>Otto is a self-hosted talent manager inside a Fly.io Sprite that schedules its own wake-ups, learns your channel overnight with your approval, turns VODs into human-editor-ready clips with deterministic math, and never generates a single pixel of AI art.</b>
+  <b>Otto OS turns one $0-idle Fly.io Sprite into a persistent Cloud Studio OS and AI Talent Manager — a 9-app multi-window desktop, embedded real Chrome (noVNC) with HITL 2FA cookie auth + OpenCLI, 6 zero-key Sprites Connectors, proactive QStash wake-ups, nightly self-learning playbooks, deterministic VOD hype clipping, and strictly zero AI-generated art or video.</b>
   <br>
   Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a> on <a href="https://sprites.dev">Sprites</a>, <a href="https://github.com/can1357/oh-my-pi">omp</a>, and Sprites Connectors.
 </p>
@@ -14,13 +14,14 @@
   <img src="https://img.shields.io/badge/runtime-Fly.io_Sprites-7B3FE4?style=flat-square" alt="Fly.io Sprites">
   <img src="https://img.shields.io/badge/connectors-6_(Zero_Keys)-0F766E?style=flat-square" alt="6 Sprites Connectors">
   <img src="https://img.shields.io/badge/local_api_keys-0-16A34A?style=flat-square" alt="Zero Local API Keys">
+  <img src="https://img.shields.io/badge/checks-27%2F27_passing-2563EB?style=flat-square" alt="27 of 27 Deterministic Checks Passing">
   <img src="https://img.shields.io/badge/AI_art_%26_video-disabled-DC2626?style=flat-square" alt="AI Art and Video Disabled">
 </p>
 
 <p align="center">
-  <img src="docs/assets/mission-control-dashboard.png" alt="Otto Studio OS — Web UI" width="100%">
+  <img src="docs/assets/mission-control-dashboard.png" alt="Otto Studio OS — Multi-Window Cloud Desktop" width="100%">
   <br>
-  <sub><b>Otto Studio Bento OS</b>: personal creative-studio desktop with 3D cursor-tracking pure-SVG Otto mascot, 3-step first-run Setup Wizard (400+ IANA timezones), live next-stream countdown, 2-way Google Calendar + QStash wake-ups, Learned Creator Playbooks approval queue, Unified 2-way Workspace &amp; Clips, Unified SQLite Studio DB, Zero-Key Connectors, and docked Otto Co-Pilot Chat. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
+  <sub><b>Otto Studio OS</b>: a multi-window cloud desktop inside one Fly.io Sprite — 9 wired draggable apps (Otto Chat, Mission Control, Studio Files, Embedded Chrome, Studio DB, Playbooks, Calendar, Contacts, System Settings), <code>Cmd+K</code> Spotlight URL-to-Chrome routing, pure-SVG 3D cursor-tracking Otto mascot, 3-step Setup Wizard (400+ IANA timezones), 2-way Google Calendar + QStash wake-ups, and Zero-Key Connectors. <i>Live instance is passcode-protected to protect private OAuth/API quotas — demo credentials are provided privately in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
 </p>
 
 <br>
@@ -54,49 +55,60 @@ You boot up OBS, stream for seven hours straight because you have the time, and 
 
 Meanwhile, most "AI creator tools" try to replace the exact craft your community actually loves — churning out uncanny AI thumbnails, slop overlays, and synthetic clips that alienate viewers and undercut the human artists, riggers, clippers, and editors who keep streaming alive.
 
-**Otto puts a practical livestreamer manager & ops agent inside a persistent Fly.io Sprite — automating research, prep, clipping, and scheduling while keeping 100% of your art and video human-made.**
+**Otto OS turns one $0-idle Fly.io Sprite into a persistent Cloud Studio OS and practical talent manager — automating research, browser ops, prep, clipping, and scheduling while keeping 100% of your art and video human-made.**
 
 ```mermaid
 flowchart LR
-    U["Streamer (Mission Control + Co-Pilot Chat)"] --> S["Fly.io Sprite: lma<br/>Bun + omp RPC · workspace/ · studio.db · MEMORY.md"]
+    U["Otto Studio OS (Browser)<br/>9-App Window Manager · Spotlight · noVNC"] <-->|"HTTPS · SSE · Native WS->TCP RFB"| S["Fly.io Sprite: otto ($0 idle)<br/>Bun + omp RPC · Real Chrome/Xvfb · SQLite WAL · workspace/"]
     S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
-    G --> M["Google Gemini<br/>(Brain + Multimodal Review)"]
+    G --> M["Google Gemini 4 Hydrogen<br/>(Brain + Multimodal Review)"]
     G --> E["Exa, Firecrawl, YouTube, GCal, Buffer &amp; QStash<br/>(Research, Social, Calendar &amp; Wake-Ups)"]
 ```
 
-- **1. An agent that learns your channel — not the internet's (Hermes Nightly Self-Learning):** A timezone-aware Upstash QStash cron (`CRON_TZ=<IANA> 0 0 * * *`) fires a signed `POST /api/wakeup` that spawns an isolated `omp --no-session` reflection pass (with secrets stripped from env) over recent sessions, `MEMORY.md`, and `studio.db`. Otto drafts channel-specific SOPs as `pending` (with 16 KiB / 30-skill caps and a prompt-injection denylist) for 1-click Approve/Reject in the **Playbooks** tab (`LearnedPlaybooksCard`) before Otto consults them via `learned_skills_*`.
-- **2. Proactive ops on a $0-idle sleeping VM:** `schedule_wakeup` / `list_wakeups` / `cancel_wakeup` publish one-shot or cron jobs to QStash — including lifecycle presets (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`) that automatically re-arm when an event is rescheduled. Signed inbound webhooks wake the sleeping Sprite in `<1s` and hold the `/.sprite/api.sock` Tasks API alive (capped at 30 min) so long turns never get cut off.
-- **3. VOD → human-editor-ready clips, with zero LLM guessing:** `vod_scan_hype` fetches YouTube InnerTube live-chat replay + `yt-dlp` transcripts in parallel, then runs a **zero-LLM** Python detector (`detect_hype_candidates.py`) that buckets chat into 10-second windows and scores 4 rolling Z-score signals (velocity `0.40`, unique-author burst `0.30`, reaction ratio `0.15`, emote burst `0.15`) to surface real hype peaks. `vod_cut_clip` + `vod_prep_clip` output exact `.mp4` + time-shifted `.srt` normalized to CFR 30fps H.264 `+faststart` at broadcast **-14 LUFS**.
-- **4. One shared brain for human and agent:** Both Otto Studio OS and Otto read/write the exact same SQLite WAL database (`~/.omp/agent/studio.db` — 8 tables, 14 agent tools, live SSE auto-refresh for Schedule, Content Pipeline, Human Team &amp; Collab Contacts, Channel Metrics, Custom Trackers &amp; Learned Playbooks), the same two-way `/home/sprite/workspace/` file manager (drag-drop &amp; chat `📎` uploads, Range/206 media streaming, atomic Markdown editing, 500 MB ZIP export), and two-way Google Calendar + `.ics` sync.
-- **5. Watch it think, watch it plan, zero cold start:** Token-level SSE streaming renders live `<ThoughtTrace>` reasoning with human-readable tool labels plus Otto's own live `TodoChecklistCard`, while `<hidden>` directives keep internal paths out of chat. On first launch, a 3-step **Setup Wizard** (400+ IANA timezone catalog, atomic `0600` passcode rotation, live connector checklist) and one-time **OAuth Dossier Auto-Bootstrap** pre-fill your channel profile before your first message — fronted by a 3D cursor-tracking pure-SVG **Otto mascot**.
-- **6. A hard ethical stance, enforced in code:** Strictly no AI-generated images or video at both the persona layer (`agent/APPEND_SYSTEM.md`) and tool-permission layer (`generate_image: deny`), backed by live computed guardrail telemetry (`zeroLocalKeys`, `aiMediaDisabled`). Every key-bearing external call routes through zero-key [Fly.io Sprites Connectors](https://docs.fly.io/sprites/concepts/connectors.md), and 1-click **Review Thumbnail / Review Clip** sends your real thumbnail or clip (with SSRF/size caps and 480p proxy transcoding) to Gemini multimodal review to write sharper briefs for human artists and editors.
-- **7. Reproducible agentic engineering:** Every `git commit` snapshots live prod state and stamps a spotless `initialized: <sha>` Fly.io Sprite checkpoint; `scripts/verify-all.sh` runs **27 deterministic checks** (auth gates, path-traversal rejections, `CRON_TZ`, learned-skill injection rejection, DB/workspace CRUD) in ~10s alongside 5 multi-turn E2E playbooks (`scripts/e2e/`).
+- **Embedded Real Chrome (noVNC) + Exit-77 HITL Cookie Auth + OpenCLI (100+ Sites):** A zero-dependency native Bun WebSocket-to-TCP RFB proxy (`/api/browser/ws` → `127.0.0.1:5900` `x11vnc`) streams real Google Chrome (no `--enable-automation` flag, persistent `~/.config/lma/chrome-profile`, 2-minute idle auto-shutdown) directly inside Otto Studio OS. Otto runs `@jackwener/opencli` (`opencli_list`, `opencli_run`) over CDP `:9222`; when a site hits login, 2FA, or CAPTCHA (exit code `77`), `browser_login` wakes live Chrome in your browser via an ephemeral 24-byte `LMA_INTERNAL_SECRET`, polls `Network.getAllCookies` every 1200ms until login succeeds, and auto-exports 3 formats (`.json`, Netscape `.cookies.txt` for `yt-dlp`, Playwright `.state.json`).
+- **Full Multi-Window Cloud Desktop OS (`Otto Studio OS`):** Built on Vue 3 + Vite + `shadcn-vue` + Reka UI + Tailwind CSS v4, featuring **9 wired draggable apps** (`Otto Chat`, `Mission Control`, `Studio Files`, `Embedded Chrome`, `Studio DB`, `Playbooks`, `Calendar`, `Contacts`, `System Settings`), edge-snap ghosts (`left`/`right`/`maximize`), layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`), floating dock (`Alt+1..9`), `Cmd+K` Spotlight that routes URLs straight into Embedded Chrome, a pure-SVG 3D cursor-tracking Otto mascot, and responsive `<1024px` single-app mode.
+- **Proactive Ops on a $0-Idle Sleeping VM + Hermes Nightly Self-Learning:** Upstash QStash lifecycle hooks (`promo_24h`, `pre_stream_1h`, `post_stream_vod_3h`) wake the sleeping Sprite in `<1s` and hold Fly.io's `/.sprite/api.sock` Tasks API alive (5-minute heartbeat, 30-minute cap). Rescheduling an event computes the time delta, revokes and re-arms shifted QStash hooks, updates Google Calendar 2-way, and exports RFC 5545 `.ics` feeds with `TRIGGER:-PT15M` `VALARM`s. A timezone-aware `CRON_TZ` midnight reflection pass (`omp --no-session`, secrets stripped) drafts channel-specific SOPs as `pending` (16 KiB / 30-skill cap + prompt-injection denylist) for 1-click Approve/Reject in **Playbooks**.
+- **Zero-LLM VOD Hype Clipper + Multimodal Media Reviewer:** Extracts YouTube InnerTube's `playerSeekContinuationData` random-access token and fans out **12 parallel threads** across 10-minute chunks — pulling a 4-hour VOD's live chat in ~30 seconds with zero API keys. Scores 4 rolling Z-score signals (velocity `0.40`, unique-author burst `0.30`, reaction ratio `0.15`, emote burst `0.15`) with a **35-second chat-lag pre-roll** (+15s post-roll) to cut exact `.mp4` + `.srt` normalized to CFR 30fps H.264 `+faststart` at broadcast **-14 LUFS**. Clips >14 MB auto-transcode via an in-memory **480p/2fps FFmpeg proxy** for inline Gemini multimodal review, while `critique_thumbnail` enforces strict HTTPS-only SSRF guards (blocking private/loopback CIDRs and manual 4-hop redirects).
+- **One Shared Brain, Creator Rolodex CRM & Hard No-AI-Art Guardrails:** Human and agent share an **8-table SQLite WAL database** (`~/.omp/agent/studio.db`, 14 agent tools, live SSE refresh), a `realpathSync`-jailed 2-way `/home/sprite/workspace/` (HTTP 206 streaming, 500 MB ZIP export, anti-stored-XSS headers), and a 3-pane **Contacts** CRM for human artists, riggers, clippers, editors, and sponsors. Strictly zero AI art or video is enforced at both persona and tool layers (`generate_image: deny`), backed by live computed guardrail telemetry (`zeroLocalKeys: true`, `aiMediaDisabled: true`).
+
+<br>
+
+---
+
+## Verifiable Engineering Scorecard
+
+Every capability below is verified directly against source files in this repository:
+
+| Rubric Axis | Exact Code-Backed Proof | Source |
+| :--- | :--- | :--- |
+| **Fly.io Primitive Depth (4/4)** | 6 zero-key Sprites Connectors (`/v1/gateway/list` runtime discovery) + `/.sprite/api.sock` Tasks API hold (5m heartbeat, 30m cap) + `<1s` QStash wake-up from `$0` sleep + CoW Checkpoint time-travel on `post-commit` | [`agent/extensions/`](agent/extensions), [`web/server.ts`](web/server.ts), [`scripts/sync-initialized-checkpoint.sh`](scripts/sync-initialized-checkpoint.sh) |
+| **Concrete System Scope** | **11 extensions**, **43 registered tools** (+ `--new`), **6 skills** (5 ops + 1 opt-in `streaming-coaching`), **8 SQLite WAL tables**, **9 wired Desktop OS apps**, **45+ authenticated REST/SSE/WS endpoints** | [`agent/extensions/`](agent/extensions), [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts), [`web/server.ts`](web/server.ts), [`web/src/components/`](web/src/components) |
+| **Security &amp; Isolation** | Live `zeroLocalKeys` + `aiMediaDisabled` telemetry; secrets stripped from `omp` env; ephemeral 24-byte `LMA_INTERNAL_SECRET`; dual-key QStash JWT + SHA-256 body hash; `fly-client-ip` 5/min limiter; `realpathSync` symlink-denying jail + anti-stored-XSS; HTTPS SSRF guard; AST-checked read-only SQL; prompt-injection denylist + human `pending` gate | [`web/server.ts`](web/server.ts), [`web/lib/workspace.ts`](web/lib/workspace.ts), [`agent/extensions/media-reviewer.ts`](agent/extensions/media-reviewer.ts), [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts), [`agent/lib/learned-skills.ts`](agent/lib/learned-skills.ts) |
+| **Deterministic Systems Craft** | Native Bun WS→TCP RFB noVNC proxy; Exit-77 OpenCLI/CDP HITL cookie handoff (3 formats); 12-thread InnerTube parallel chat pull (~30s/4h VOD); 4-signal rolling Z-score + 35s lag pre-roll; dynamic 480p/2fps FFmpeg multimodal proxy; `-14 LUFS` CFR 30fps prep; reschedule delta QStash auto-re-arming + RFC 5545 `.ics` `VALARM`s | [`web/server.ts`](web/server.ts), [`web/lib/browser-manager.ts`](web/lib/browser-manager.ts), [`agent/skills/raw-clip-finder/scripts/`](agent/skills/raw-clip-finder/scripts), [`agent/extensions/media-reviewer.ts`](agent/extensions/media-reviewer.ts), [`agent/extensions/qstash-scheduler.ts`](agent/extensions/qstash-scheduler.ts) |
+| **Reproducible Verification** | **27 deterministic fast checks** (~10s) + `--live` (**28 checks**, live zero-key round-trip) + **5 multi-turn E2E playbooks** graded against golden [`expected-memory.md`](scripts/e2e/expected-memory.md) via Sprite Checkpoint restore | [`scripts/verify-all.sh`](scripts/verify-all.sh), [`scripts/e2e/`](scripts/e2e) |
+
 <br>
 
 ---
 
 ## Replicate This Setup With Your Coding Agent
 
-Already using Claude Code, `omp`, Pi, or Codex? Hand it this prompt to spin up your own **Otto** Sprite in under a minute — no manual config editing required:
+Already using Claude Code, `omp`, Pi, or Codex? Hand it this prompt to spin up your own **Otto OS** Sprite in under a minute — no manual config editing required:
 
 ```text
-Set me up with my own "Otto" personal Livestreamer Manager agent on Fly.io Sprites:
+Set me up with my own "Otto" personal Cloud Studio OS & Livestreamer Manager agent on Fly.io Sprites:
 1. Follow https://fly.io/sprites/agent-ready.md to verify the Sprite CLI and Fly.io auth.
 2. Create a Sprite named "otto" and set it active (`sprite create --skip-console otto && sprite use otto`).
-3. Inside the Sprite, clone https://github.com/roffidaijoubu/otto.git into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
+3. Inside the Sprite, clone https://github.com/roffidaijoubu/otto.git into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, Chrome/noVNC, OpenCLI, symlinks agent config/extensions, and initializes MEMORY.md).
 4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors (then re-run `bash ~/lma/setup.sh` so `~/.omp/agent/models.yml` is written):
    - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl.
-   - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
+   - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube + Google Calendar), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
    - Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.
 ```
 
-> **Zero outbound API keys:** All 6 third-party API keys stay in Fly.io's encrypted organization gateway — never inside the Sprite VM or this repo. `setup.sh` auto-generates your private Web UI passcode in `chmod 600 ~/.config/lma/web.env` and auto-discovers every authorized connector at runtime.
+> **Zero outbound API keys:** All 6 third-party API keys stay inside Fly.io's encrypted organization gateway — never inside the Sprite VM or this repository. `setup.sh` auto-generates your private Web UI passcode in `chmod 600 ~/.config/lma/web.env` and auto-discovers every authorized connector at runtime.
 
-<br>
-
----
-
-## Manual Setup (4 Commands)
+### Manual Setup (4 Commands)
 
 Prefer to run it directly from your terminal?
 
@@ -109,9 +121,9 @@ sprite create --skip-console otto && sprite use otto
 
 # 3. Clone the repo inside the Sprite and run the idempotent installer
 sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/otto.git ~/lma && bash ~/lma/setup.sh"
-#    (setup.sh prints your auto-generated Web Chat UI passcode stored in ~/.config/lma/web.env)
+#    (setup.sh prints your auto-generated Web UI passcode stored in ~/.config/lma/web.env)
 
-# 4. Open Otto Studio Web UI at https://<your-sprite>.sprites.app
+# 4. Open Otto Studio OS at https://<your-sprite>.sprites.app
 #    (or chat directly from your terminal via: sprite console && omp)
 ```
 
@@ -121,43 +133,47 @@ sprite exec -- bash -c "git clone https://github.com/roffidaijoubu/otto.git ~/lm
 
 ## How Sprites Connectors Power Otto
 
-**Otto** never stores `GEMINI_API_KEY`, `EXA_API_KEY`, or `FIRECRAWL_API_KEY` inside the Sprite. Each capability connects through the organization-level Sprites Gateway:
+**Otto OS** never stores `GEMINI_API_KEY`, `EXA_API_KEY`, or `FIRECRAWL_API_KEY` inside the Sprite. Each external capability connects through the organization-level [Fly.io Sprites Connector Gateway](https://docs.fly.io/sprites/concepts/connectors.md):
 
-| Connector | Role in Otto | Discovery Mechanism |
+| Connector | Role in Otto OS | Discovery Mechanism |
 | :--- | :--- | :--- |
-| **Google Gemini** | LLM brain (`gemini-4-neon`, `gemini-4-hydrogen`, `gemini-3.5-flash-lite`) | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
-| **Exa** | First-class `exa_search` & `exa_get_contents` research tools | Auto-discovered at runtime via `agent/extensions/exa-gateway.ts` |
-| **Firecrawl** | First-class `firecrawl_scrape` clean Markdown scraper | Auto-discovered at runtime via `agent/extensions/firecrawl-gateway.ts` |
-| **YouTube (Composio v3)** | Channel stats, recent videos, captions &amp; packaging ops (`youtube_tool`) | Auto-discovered Custom API connector ([setup guide](docs/setup/composio-youtube.md)) |
-| **Buffer (X / TikTok / IG)** | Draft &amp; schedule posts across X, TikTok, and Instagram (`buffer_create_post`) | Auto-discovered Custom API connector ([setup guide](docs/setup/buffer.md)) |
-| **Upstash QStash** | Agent self-scheduled one-shot &amp; cron wake-ups (`schedule_wakeup`) | Auto-discovered Custom API connector ([setup guide](docs/setup/qstash-scheduler.md)) |
+| **Google Gemini** | LLM brain (`google/gemini-4-hydrogen:auto`, `google/gemini-3.5-flash-lite` for smol/memory roles) + multimodal review | Auto-written to `~/.omp/agent/models.yml` by `setup.sh` |
+| **Exa** | First-class `exa_search` &amp; `exa_get_contents` research tools | Auto-discovered at runtime via [`agent/extensions/exa-gateway.ts`](agent/extensions/exa-gateway.ts) |
+| **Firecrawl** | First-class `firecrawl_scrape` clean Markdown scraper | Auto-discovered at runtime via [`agent/extensions/firecrawl-gateway.ts`](agent/extensions/firecrawl-gateway.ts) |
+| **YouTube &amp; GCal (Composio v3)** | Channel stats, recent videos, captions, packaging ops &amp; 2-way Google Calendar sync | Auto-discovered Custom API connector ([setup guide](docs/setup/composio-youtube.md)) |
+| **Buffer (X / TikTok / IG)** | Draft &amp; schedule posts across X, TikTok, and Instagram (`saveToDraft: true` default) | Auto-discovered Custom API connector ([setup guide](docs/setup/buffer.md)) |
+| **Upstash QStash** | Agent self-scheduled one-shot, lifecycle &amp; `CRON_TZ` wake-ups (`schedule_wakeup`) | Auto-discovered Custom API connector ([setup guide](docs/setup/qstash-scheduler.md)) |
 
-> All **connector** extensions (`buffer`, `composio-youtube`, `exa`, `firecrawl`, `media-reviewer`, `qstash-scheduler`) query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs and works across any Fly.io organization out of the box. (`studio-db`, `vod-clipper`, `skill-learner`, and `new-session` are local-only.)
+> All **6 gateway connector extensions** (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`) query `GET https://api.sprites.dev/v1/gateway/list` inside the Sprite and cache the authorized `gateway_base_url`, so the repository contains zero hardcoded connector IDs. The **5 local-only extensions** (`browser-auth`, `studio-db`, `vod-clipper`, `skill-learner`, `new-session`) operate strictly inside the Sprite.
 
 <br>
 
 ---
 
-## Architecture & Key Files
+## Architecture &amp; Key Files
 
-Rather than turning `~/.omp/` into a messy git repo full of session logs and SQLite caches, **Otto** keeps a clean source repository and symlinks only the agent definition into `~/.omp/agent/`:
+Rather than turning `~/.omp/` into a messy git repo full of session logs and SQLite caches, **Otto OS** keeps a clean source repository and symlinks only the agent definition into `~/.omp/agent/`:
 
 | Path | Purpose |
 | :--- | :--- |
-| `agent/APPEND_SYSTEM.md` | Otto persona, pragmatic ops rules, strict no-AI-media guardrail, voice/character rules, and memory protocol |
-| `agent/config.yml` | Gemini-only model roles, Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
-| `agent/MEMORY.md.example` | Starter studio profile template: persona/timezone, platform baseline, topics/style, human team credits, OPSEC boundaries, and schedule notes |
-| `agent/lib/studio-db.ts` | Shared SQLite WAL database (`~/.omp/agent/studio.db`) for Schedule, Content Pipeline, Contacts, Metrics &amp; Custom Trackers |
-| `agent/extensions/*.ts` | 10 extensions exposing 38 auto-discovering `omp` tools for Exa, Firecrawl, Composio (YouTube + Google Calendar), Buffer, QStash, VOD clipper, media review, `studio-db`, learned playbooks, plus a `--new` CLI flag (`new-session.ts`) |
-| `web/` | Vue 3 + Vite + `shadcn-vue` **Otto Studio OS** window manager (`DesktopShell`, `WorkspaceFileManager`, `StudioDatabaseView`, `CalendarWorkspaceApp`, `ContactsWorkspaceApp`, embedded Chrome noVNC, `TodoChecklistCard`, `ThoughtTrace`, `/api/workspace/*`, `/api/db/*`, `/api/calendar`, `/api/wakeup`) |
-| `scripts/` | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), OAuth dossier bootstrap (`bootstrap-dossier.sh`), 27-check `verify-all.sh`, &amp; agentic E2E playbooks (`scripts/e2e/`) |
-| `setup.sh` | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, Chrome/noVNC, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Studio Profile |
-### Why Fly.io Sprites Made Building Otto 10× Faster
-Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** completely solved stateful agent testing:
-- Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, cleared Mnemopi/`studio.db`/`learned-skills`/`workspace/`, rebuilt `web/`).
-- Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run multi-turn behavioral playbooks (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) grading Otto's live tool calls and memory against `expected-memory.md`, and jump right back to live prod state with zero data loss.
+| [`agent/APPEND_SYSTEM.md`](agent/APPEND_SYSTEM.md) | Otto persona, pragmatic ops rules, strict no-AI-media guardrail, voice/character rules, and memory protocol |
+| [`agent/config.yml`](agent/config.yml) | Gemini-only model roles (`google/gemini-4-hydrogen:auto` + `gemini-3.5-flash-lite`), Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
+| [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts) | Shared **8-table** SQLite WAL database (`~/.omp/agent/studio.db`) for Calendar, Content Pipeline, Contacts, Metrics, Custom Trackers, Meta &amp; Learned Playbooks |
+| [`agent/extensions/`](agent/extensions) | **11 extensions** exposing **43 registered `omp` tools** (Exa, Firecrawl, Composio YouTube/GCal, Buffer, QStash, VOD clipper, media review, `browser-auth`/OpenCLI, `studio-db`, learned playbooks) + `--new` CLI flag |
+| [`agent/skills/`](agent/skills) | **6 streamer skills**: 5 core ops skills (`onboarding`, `youtube-audit`, `stream-planner`, `social-promo`, `raw-clip-finder`) + 1 opt-in `streaming-coaching` skill |
+| [`web/`](web) | Bun RPC supervisor (`server.ts`, native WS→TCP RFB proxy, `browser-manager.ts`, `workspace.ts`) + Vue 3 / Vite / `shadcn-vue` / Reka UI / Tailwind CSS v4 **Otto Studio OS** (9 wired desktop apps + `SpotlightCommand` + `OttoMascot` + `StudioSetupWizard`) |
+| [`scripts/`](scripts) | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), headless OAuth dossier bootstrap (`bootstrap-dossier.sh`), **27-check** `verify-all.sh` (**28** with `--live`), &amp; 5 multi-turn E2E playbooks (`scripts/e2e/`) |
+| [`setup.sh`](setup.sh) | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, real Chrome + `Xvfb`/`x11vnc`, `@jackwener/opencli`, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Studio Profile |
 
-> **For judges &amp; engineers:** Read the full [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for why we chose `omp --mode rpc --no-ui` over a custom agent loop, how proactive wake-ups survive 30s auto-sleep, and our defense-in-depth security model.
+### Why Fly.io Sprites Made Building Otto 10× Faster
+
+Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Upstash QStash + `/.sprite/api.sock` Tasks API** for proactive wake-ups), **Sprites' copy-on-write Checkpoints** solved stateful agent testing:
+
+- Every `git commit` auto-refreshes a spotless `initialized: <sha>` checkpoint (blank `MEMORY.md`, cleared Mnemopi/`studio.db`/`learned-skills`/`workspace/`, rebuilt `web/`).
+- Any fresh coding agent can read [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md), `sprite restore` back to `initialized:` in ~1 second, run all 5 multi-turn behavioral playbooks grading Otto's live tool calls and memory against [`expected-memory.md`](scripts/e2e/expected-memory.md), and jump right back to live prod state with zero data loss.
+
+> **For judges &amp; engineers:** Read the full [Architecture Deep Dive (`docs/architecture.md`)](docs/architecture.md) for the `omp` RPC supervisor design, native Bun RFB proxy + Exit-77 HITL Chrome auth sequence, Otto Studio OS window architecture, 12-thread InnerTube chat-pull math, and defense-in-depth security model.
+
 <br>
 
 ---
@@ -166,19 +182,20 @@ Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Ups
 
 Built actively during **Fly.io Hacksgiving 2026**:
 
-- ✅ Persistent Fly.io Sprite runtime (`omp` + Mnemopi SQLite + `MEMORY.md` dossier + OAuth auto-bootstrap) &amp; **Otto Studio Bento OS** Web UI (3-step Setup Wizard w/ 400+ IANA timezones, 3D cursor-tracking SVG Otto mascot, live stream countdown, live `<ThoughtTrace>` + `TodoChecklistCard` &amp; docked Co-Pilot Chat)
-- ✅ **Hermes Nightly Self-Learning &amp; Learned Creator Playbooks** (`CRON_TZ` midnight QStash cron → isolated `omp --no-session` reflection → staged `pending` SOPs with anti-injection guardrails → dedicated **Playbooks** tab &amp; Overview bento card)
-- ✅ Unified 2-way Studio Workspace (`/home/sprite/workspace/` with unified VOD `clips/`, drag-drop + chat `📎` uploads, Range/206 media preview, Markdown editor, folder ZIP export, and 1-click *Review Thumbnail* / *Review Clip*) + Unified SQLite WAL Studio DB (`~/.omp/agent/studio.db`, 8 tables, 14 agent tools, live SSE refresh)
-- ✅ Zero-key Sprites Connectors for Gemini, Exa, Firecrawl, Composio v3 (YouTube + 2-way Google Calendar sync), Buffer (X/TikTok/IG), and Upstash QStash (proactive lifecycle wake-ups + `.ics` export) with live computed guardrail telemetry
-- ✅ Otto persona, strict no-AI-art/video guardrails, 6 streamer skills (5 ops skills + opt-in `streaming-coaching` advice skill), zero-LLM 4-signal `vod-clipper` hype detector + raw `.mp4`/`.srt` cutter + `-14 LUFS` prep, &amp; zero-key Gemini `media-reviewer`
-- ⚠️ Final Hacksgiving demo video &amp; submission — ready to record!
+- ✅ **Otto Studio OS Multi-Window Cloud Desktop** (Vue 3 + Vite + `shadcn-vue` + Reka UI + Tailwind CSS v4, 9 wired draggable apps, edge snapping, layout presets, `Cmd+K` Spotlight URL-to-Chrome routing, pure-SVG 3D cursor-tracking Otto mascot, 3-step Setup Wizard w/ 400+ IANA timezones, headless OAuth dossier bootstrap)
+- ✅ **Embedded Real Chrome (noVNC) + Exit-77 HITL Cookie Auth + OpenCLI** (native Bun WS→TCP RFB proxy, real Chrome w/ 2-min idle shutdown, ephemeral `LMA_INTERNAL_SECRET`, CDP cookie polling, 3-format export, 100+ OpenCLI sites)
+- ✅ **Hermes Nightly Self-Learning &amp; Proactive QStash Ops** (`CRON_TZ` midnight isolated `omp --no-session` reflection → `pending` Playbooks gate; QStash + `/.sprite/api.sock` Tasks API keep-alive hold; reschedule delta auto-re-arming + 2-way Google Calendar + RFC 5545 `.ics` `VALARM`s)
+- ✅ **Unified 2-Way Workspace + 8-Table SQLite WAL Studio DB + Creator Rolodex CRM** (`/home/sprite/workspace/` `realpathSync` jail w/ Range/206 &amp; 500 MB ZIP export; `~/.omp/agent/studio.db` w/ 14 agent tools &amp; live SSE sync; 3-pane human-team Contacts CRM)
+- ✅ **Zero-Key Sprites Connectors, Hard No-AI-Art Enforcement &amp; Deterministic VOD Clipper** (6 zero-key connectors, `generate_image: deny`, 12-thread InnerTube chat pull + 35s lag pre-roll + `-14 LUFS` CFR 30fps output, 480p/2fps FFmpeg multimodal proxy + SSRF guard, **27/27** deterministic checks)
+- ⚠️ Final Hacksgiving demo video &amp; submission — ready to record.
+
 <br>
 
 ---
 
 ## Built By &amp; Acknowledgements
 
-- **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built **Otto** to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
+- **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built **Otto OS** to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
 - **Optional Coaching Skill Acknowledgement:** The opt-in `streaming-coaching` skill (activated only if a creator explicitly asks for streaming strategy or growth advice) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
