@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import {
+  CheckIcon,
   Columns2Icon,
   LayersIcon,
   LayoutGridIcon,
   Maximize2Icon,
+  PencilIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ShieldCheckIcon,
@@ -40,9 +42,65 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:activeTab": [tab: SettingsTab];
   selectMascotColor: [color: string];
+  identityUpdated: [payload: { creatorName: string; timezone: string }];
   openSetup: [];
   askPrompt: [prompt: string];
 }>();
+
+const editingIdentity = ref(false);
+const draftCreatorName = ref("");
+const draftTimezone = ref("");
+const savingIdentity = ref(false);
+const identityError = ref("");
+
+const allTimezones: string[] = (() => {
+  try {
+    const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+      .supportedValuesOf?.("timeZone");
+    if (Array.isArray(supported) && supported.length > 0) return supported;
+  } catch {
+    // fallback
+  }
+  return ["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "Asia/Tokyo", "UTC", "America/Los_Angeles", "America/New_York", "Europe/London"];
+})();
+
+function startEditIdentity() {
+  draftCreatorName.value = props.creatorName || "";
+  draftTimezone.value = props.timezone || "";
+  identityError.value = "";
+  editingIdentity.value = true;
+}
+
+async function saveIdentity() {
+  if (savingIdentity.value) return;
+  savingIdentity.value = true;
+  identityError.value = "";
+  try {
+    const res = await fetch("/api/setup/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creatorName: draftCreatorName.value.trim(),
+        timezone: draftTimezone.value.trim(),
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      identityError.value = data.error || "Failed to update profile";
+      return;
+    }
+    emit("identityUpdated", {
+      creatorName: draftCreatorName.value.trim(),
+      timezone: draftTimezone.value.trim(),
+    });
+    editingIdentity.value = false;
+    await fetchData();
+  } catch (err) {
+    identityError.value = err instanceof Error ? err.message : "Failed to update profile";
+  } finally {
+    savingIdentity.value = false;
+  }
+}
 
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
@@ -135,16 +193,72 @@ watch(
 
       <!-- Studio Identity & Onboarding -->
       <div class="otto-card p-4">
-        <div class="mb-3 flex items-center justify-between gap-2">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <span class="font-mono text-xs font-semibold text-[#303030]">
             Studio Profile &amp; Onboarding
           </span>
-          <Button size="xs" type="button" @click="emit('openSetup')">
-            <SparklesIcon data-icon="inline-start" />
-            Re-run Setup Wizard
-          </Button>
+          <div class="flex items-center gap-1.5">
+            <Button
+              v-if="!editingIdentity"
+              size="xs"
+              variant="secondary"
+              type="button"
+              @click="startEditIdentity"
+            >
+              <PencilIcon data-icon="inline-start" />
+              Edit
+            </Button>
+            <Button size="xs" type="button" @click="emit('openSetup')">
+              <SparklesIcon data-icon="inline-start" />
+              Re-run Setup Wizard
+            </Button>
+          </div>
         </div>
-        <div class="grid grid-cols-2 gap-3 font-mono text-xs">
+
+        <form v-if="editingIdentity" class="flex flex-col gap-3" @submit.prevent="saveIdentity">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 font-mono text-xs">
+            <label class="flex flex-col gap-1">
+              <span class="text-[10.5px] text-[#777]">CREATOR</span>
+              <input
+                v-model="draftCreatorName"
+                type="text"
+                class="h-8 rounded-xl border border-[#d9d9d9] bg-white px-3 font-mono text-xs text-[#303030] outline-none focus:border-[#303030]"
+                placeholder="Creator name / persona"
+              />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[10.5px] text-[#777]">TIMEZONE (IANA)</span>
+              <input
+                v-model="draftTimezone"
+                type="text"
+                list="settings-tz-list"
+                class="h-8 rounded-xl border border-[#d9d9d9] bg-white px-3 font-mono text-xs text-[#303030] outline-none focus:border-[#303030]"
+                placeholder="Asia/Jakarta"
+              />
+              <datalist id="settings-tz-list">
+                <option v-for="tz in allTimezones" :key="tz" :value="tz" />
+              </datalist>
+            </label>
+          </div>
+          <div v-if="identityError" class="font-mono text-xs text-[#991b1b]">{{ identityError }}</div>
+          <div class="flex items-center justify-end gap-1.5">
+            <Button
+              size="xs"
+              variant="secondary"
+              type="button"
+              :disabled="savingIdentity"
+              @click="editingIdentity = false"
+            >
+              Cancel
+            </Button>
+            <Button size="xs" type="submit" :disabled="savingIdentity">
+              <CheckIcon data-icon="inline-start" />
+              {{ savingIdentity ? "Saving..." : "Save to Profile" }}
+            </Button>
+          </div>
+        </form>
+
+        <div v-else class="grid grid-cols-2 gap-3 font-mono text-xs">
           <div class="rounded-xl border border-[#ededed] bg-[#fafafa] p-3">
             <div class="text-[10.5px] text-[#777]">CREATOR</div>
             <div class="mt-0.5 font-semibold text-[#303030]">
@@ -243,7 +357,7 @@ watch(
           </div>
           <div>
             <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-              {{ wm?.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–7
+              {{ wm?.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–8
             </kbd>
             Toggle Apps
           </div>

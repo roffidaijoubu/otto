@@ -8,15 +8,16 @@ import { DesktopShell, type DesktopShellExposed } from "@/components/os";
 import type { CustomAppId, DesktopShortcut } from "@/composables/useWindowManager";
 import CustomStudioAppWindow from "./components/CustomStudioAppWindow.vue";
 import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
+import AnalyticsWorkspaceApp from "./components/AnalyticsWorkspaceApp.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChannelMetricsWidget from "./components/ChannelMetricsWidget.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
+import IdeasWorkspaceApp from "./components/IdeasWorkspaceApp.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import NextStreamWidget from "./components/NextStreamWidget.vue";
 import OttoMascot from "./components/OttoMascot.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
-import StudioDatabaseView from "./components/StudioDatabaseView.vue";
 import StudioSetupWizard from "./components/StudioSetupWizard.vue";
 import SystemSettingsApp, { type SettingsTab } from "./components/SystemSettingsApp.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
@@ -34,7 +35,6 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
 const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
-const studioDbRef = ref<InstanceType<typeof StudioDatabaseView> | null>(null);
 const activeObsOverlaySlug = ref("");
 const studioAppsRefreshTick = ref(0);
 const obsOverlaysRefreshTick = ref(0);
@@ -51,7 +51,8 @@ const installedCustomApps = ref<InstalledCustomApp[]>([]);
 const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
   { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
   { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
-  { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
+  { id: "ideas", label: "Ideas", sublabel: "Content", icon: "lightbulb", appId: "ideas" },
+  { id: "analytics", label: "Analytics", sublabel: "YouTube", icon: "chart", appId: "analytics" },
   { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
   { id: "contacts", label: "Contacts", sublabel: "Rolodex", icon: "contacts", appId: "contacts" },
 ];
@@ -369,8 +370,8 @@ function connectEvents() {
       );
     } else if (type === "db_changed") {
       dbRefreshTick.value += 1;
-      if (wm && wm.focusedWindowId.value !== "studio-db") {
-        wm.setWindowMeta("studio-db", { badgeText: "Updated" });
+      if (wm && wm.focusedWindowId.value !== "ideas") {
+        wm.setWindowMeta("ideas", { badgeText: "Updated" });
       }
     } else if (type === "done") {
       commitLiveAssistant();
@@ -454,11 +455,8 @@ function handleFilesPathChanged(relDir: string) {
   });
 }
 
-function openStudioDbMetrics() {
-  shellRef.value?.wm.openWindow("studio-db", { focus: true });
-  nextTick(() => {
-    studioDbRef.value?.openTab("metrics");
-  });
+function openAnalyticsApp() {
+  shellRef.value?.wm.openWindow("analytics", { focus: true });
 }
 
 function handleDesktopAction(action: "new-note" | "new-folder") {
@@ -601,7 +599,7 @@ watch(shellRef, (val) => {
         <div class="flex flex-col gap-3">
           <ChannelMetricsWidget
             :refresh-tick="dbRefreshTick"
-            @open-metrics="openStudioDbMetrics"
+            @open-metrics="openAnalyticsApp"
           />
           <NextStreamWidget
             :refresh-tick="dbRefreshTick"
@@ -732,16 +730,21 @@ watch(shellRef, (val) => {
         />
       </template>
 
-      <!-- WINDOW 5: STUDIO DATABASE -->
-      <template #app-studio-db>
-        <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
-          <StudioDatabaseView
-            ref="studioDbRef"
-            :refresh-tick="dbRefreshTick"
-            @ask-prompt="handleMissionPrompt"
-            @open-workspace-path="openFilesAtPath"
-          />
-        </div>
+      <!-- WINDOW 4: IDEAS -->
+      <template #app-ideas>
+        <IdeasWorkspaceApp
+          :refresh-tick="dbRefreshTick"
+          @ask-prompt="handleMissionPrompt"
+          @open-workspace-path="openFilesAtPath"
+        />
+      </template>
+
+      <!-- WINDOW 5: ANALYTICS -->
+      <template #app-analytics>
+        <AnalyticsWorkspaceApp
+          :refresh-tick="dbRefreshTick"
+          @ask-prompt="handleMissionPrompt"
+        />
       </template>
 
       <!-- WINDOW 5: CALENDAR -->
@@ -796,6 +799,7 @@ watch(shellRef, (val) => {
           :timezone="setupInitialTimezone"
           @update:active-tab="settingsTab = $event"
           @select-mascot-color="setMascotColor"
+          @identity-updated="setupInitialName = $event.creatorName; setupInitialTimezone = $event.timezone; dbRefreshTick += 1"
           @open-setup="reopenSetup"
           @ask-prompt="handleMissionPrompt"
         />

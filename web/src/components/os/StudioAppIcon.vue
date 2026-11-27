@@ -2,6 +2,7 @@
 import { computed, type Component } from "vue";
 import {
   AppWindow,
+  BarChart3,
   CalendarDays,
   Contact,
   Database,
@@ -9,6 +10,7 @@ import {
   Globe,
   Layers,
   LayoutDashboard,
+  Lightbulb,
   MessageSquare,
   MonitorPlay,
   Settings,
@@ -39,6 +41,8 @@ const ICON_MAP: Record<StudioAppIconName, Component> = {
   calendar: CalendarDays,
   contacts: Contact,
   settings: Settings,
+  lightbulb: Lightbulb,
+  chart: BarChart3,
 };
 
 const resolvedIcon = computed(() => ICON_MAP[props.icon] ?? LayoutDashboard);

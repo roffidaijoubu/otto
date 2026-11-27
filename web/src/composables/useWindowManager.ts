@@ -14,7 +14,8 @@ export type BuiltinAppId =
   | "otto-chat"
   | "files"
   | "obs-overlays"
-  | "studio-db"
+  | "ideas"
+  | "analytics"
   | "calendar"
   | "contacts"
   | "settings";
@@ -34,7 +35,9 @@ export type StudioAppIconName =
   | "sparkles"
   | "calendar"
   | "contacts"
-  | "settings";
+  | "settings"
+  | "lightbulb"
+  | "chart";
 
 export type SnapZone = "left" | "right" | "maximize";
 
@@ -220,16 +223,28 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "3",
   },
   {
-    id: "studio-db",
-    title: "Studio DB",
-    shortLabel: "Studio DB",
-    icon: "database",
+    id: "ideas",
+    title: "Ideas",
+    shortLabel: "Ideas",
+    icon: "lightbulb",
     minWidth: 460,
     minHeight: 360,
-    defaultWidth: 760,
+    defaultWidth: 740,
     defaultHeight: 580,
     dockSection: "primary",
     shortcutDigit: "4",
+  },
+  {
+    id: "analytics",
+    title: "Analytics",
+    shortLabel: "Analytics",
+    icon: "chart",
+    minWidth: 500,
+    minHeight: 400,
+    defaultWidth: 820,
+    defaultHeight: 620,
+    dockSection: "primary",
+    shortcutDigit: "5",
   },
   {
     id: "calendar",
@@ -241,7 +256,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 960,
     defaultHeight: 640,
     dockSection: "primary",
-    shortcutDigit: "5",
+    shortcutDigit: "6",
   },
   {
     id: "contacts",
@@ -253,7 +268,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 880,
     defaultHeight: 580,
     dockSection: "primary",
-    shortcutDigit: "6",
+    shortcutDigit: "7",
   },
   {
     id: "settings",
@@ -265,7 +280,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 660,
     defaultHeight: 580,
     dockSection: "utility",
-    shortcutDigit: "7",
+    shortcutDigit: "8",
   },
 ] as const;
 

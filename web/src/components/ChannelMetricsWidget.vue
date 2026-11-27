@@ -307,13 +307,24 @@ watch(
       <!-- Footer -->
       <div class="flex items-center justify-between border-t border-[#ededed] pt-2 font-mono text-[10px] text-[#808080]">
         <span>{{ syncing ? "Syncing..." : formatRelativeTime(state?.lastSyncedAt) }}</span>
-        <button
-          type="button"
-          class="text-[#303030] underline decoration-black/25 underline-offset-2 hover:decoration-[#303030]"
-          @click="emit('openMetrics')"
-        >
-          History
-        </button>
+        <div class="flex items-center gap-2.5">
+          <a
+            v-if="state?.channelId"
+            :href="`https://studio.youtube.com/channel/${encodeURIComponent(state.channelId)}/analytics/tab-overview/period-default`"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-[#666] underline decoration-black/20 underline-offset-2 hover:text-[#303030] hover:decoration-[#303030]"
+          >
+            YT Studio ↗
+          </a>
+          <button
+            type="button"
+            class="text-[#303030] underline decoration-black/25 underline-offset-2 hover:decoration-[#303030]"
+            @click="emit('openMetrics')"
+          >
+            Analytics
+          </button>
+        </div>
       </div>
     </div>
   </aside>
