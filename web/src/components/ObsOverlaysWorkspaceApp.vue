@@ -529,6 +529,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   selectOverlay,
+  notifyExternalJob,
 });
 </script>
 
