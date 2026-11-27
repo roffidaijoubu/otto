@@ -110,8 +110,8 @@ function launchShortcut(item: DesktopShortcut) {
           <slot name="top-right-widget" />
         </div>
 
-        <!-- Bottom-Right Companion Desktop Widget Slot -->
-        <div class="pointer-events-auto fixed right-6 bottom-[90px] hidden lg:block">
+        <!-- Bottom-Right Companion Desktop Widget Slot (aligned flush with Dock bottom) -->
+        <div class="pointer-events-auto fixed right-5 bottom-3 z-[46] hidden lg:block">
           <slot name="widget">
             <button
               type="button"

@@ -21,6 +21,7 @@ const isDragging = ref(false);
 const isResizing = ref(false);
 
 const isFocused = computed(() => props.wm.focusedWindowId.value === props.win.id);
+const isPinnedChat = computed(() => props.win.id === "otto-chat");
 const isMacControls = computed(() => props.wm.effectivePlatform.value === "mac");
 const isMobile = computed(() => props.wm.isMobile.value);
 const showPointerShield = computed(() => props.wm.isInteracting.value);
@@ -53,6 +54,7 @@ function handleTitlebarPointerDown(event: PointerEvent) {
   if (target?.closest("button, a, input, [data-no-drag='true']")) return;
 
   props.wm.focusWindow(props.win.id);
+  if (isPinnedChat.value) return;
 
   const el = event.currentTarget as HTMLElement | null;
 
@@ -427,7 +429,7 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
       />
     </div>
 
-    <!-- 8-Way Resize Handles (desktop, unmaximized only) -->
+    <!-- Resize Handles (desktop, unmaximized only; pinned Otto Chat only resizes from top/left/top-left) -->
     <template v-if="!isMobile && !win.isMaximized">
       <div
         data-resize-handle="n"
@@ -435,11 +437,13 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
         @pointerdown="startResize('n', $event)"
       />
       <div
+        v-if="!isPinnedChat"
         data-resize-handle="s"
         class="absolute right-3 bottom-0 left-3 h-1.5 cursor-ns-resize"
         @pointerdown="startResize('s', $event)"
       />
       <div
+        v-if="!isPinnedChat"
         data-resize-handle="e"
         class="absolute top-3 right-0 bottom-3 w-1.5 cursor-ew-resize"
         @pointerdown="startResize('e', $event)"
@@ -455,16 +459,19 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
         @pointerdown="startResize('nw', $event)"
       />
       <div
+        v-if="!isPinnedChat"
         data-resize-handle="ne"
         class="absolute top-0 right-0 size-3 cursor-nesw-resize"
         @pointerdown="startResize('ne', $event)"
       />
       <div
+        v-if="!isPinnedChat"
         data-resize-handle="sw"
         class="absolute bottom-0 left-0 size-3 cursor-nesw-resize"
         @pointerdown="startResize('sw', $event)"
       />
       <div
+        v-if="!isPinnedChat"
         data-resize-handle="se"
         class="absolute right-0 bottom-0 size-3.5 cursor-nwse-resize"
         @pointerdown="startResize('se', $event)"

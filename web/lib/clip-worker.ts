@@ -9,6 +9,7 @@
 import {
   createClipJob,
   getClipJob,
+  listClipJobs,
   listClipRecords,
   updateClipJob,
   type ClipJob,
@@ -51,6 +52,26 @@ export function isClipWorkerBusy(): boolean {
 
 export function getActiveClipWorkerIds(): string[] {
   return Array.from(activeWorkers.keys());
+}
+
+/**
+ * Mark any clip jobs left in `running`/`queued` from a previous server process as interrupted
+ * so the UI never displays a permanently stuck spinner after a restart or deploy.
+ */
+export function reconcileOrphanedClipJobs(): number {
+  let fixed = 0;
+  for (const job of listClipJobs(50)) {
+    if ((job.status === "running" || job.status === "queued") && !activeWorkers.has(job.id)) {
+      updateClipJob(job.id, {
+        status: "failed",
+        stage: "Interrupted",
+        error: "Server restarted while this background clip job was running. Cached chat/transcript data is preserved — re-run to resume fast.",
+        logMessage: "Marked as interrupted after server restart (worker process no longer active).",
+      });
+      fixed += 1;
+    }
+  }
+  return fixed;
 }
 
 export function cancelBackgroundClipJob(

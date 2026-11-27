@@ -381,6 +381,25 @@ function buildDefaultCenteredRect(
   return clampRectToViewport(id, { x, y, width, height }, vw, vh, appLookup);
 }
 
+const OTTO_CHAT_BOTTOM_OFFSET = 12; // Flush with Dock bottom-3 (12px)
+
+function buildAnchoredOttoChatRect(
+  desiredWidth: number,
+  desiredHeight: number,
+  vw: number,
+  vh: number
+): WindowRect {
+  const def = STUDIO_APP_MAP["otto-chat"];
+  const rightOffset = vw >= MOBILE_BREAKPOINT ? 118 : WINDOW_GAP; // 20px right + 84px mascot + 14px gap
+  const maxW = Math.max(def.minWidth, vw - rightOffset - WINDOW_GAP);
+  const maxH = Math.max(def.minHeight, vh - TOP_BAR_HEIGHT - WINDOW_GAP - OTTO_CHAT_BOTTOM_OFFSET);
+  const width = Math.round(Math.max(def.minWidth, Math.min(desiredWidth, maxW)));
+  const height = Math.round(Math.max(def.minHeight, Math.min(desiredHeight, maxH)));
+  const x = Math.round(Math.max(WINDOW_GAP, vw - rightOffset - width));
+  const y = Math.round(Math.max(TOP_BAR_HEIGHT + WINDOW_GAP, vh - OTTO_CHAT_BOTTOM_OFFSET - height));
+  return { x, y, width, height };
+}
+
 function createInitialWindows(vw: number, vh: number): Record<StudioAppId, StudioWindowState> {
   const area = getWorkArea(vw, vh);
   const leftWidth = Math.max(
@@ -410,12 +429,18 @@ function createInitialWindows(vw: number, vh: number): Record<StudioAppId, Studi
     };
   });
 
-  // Clean default Studio OS layout: Otto Chat (left) + open Desktop Widgets (right)
+  // Clean default Studio OS layout: Otto Chat anchored bottom-right beside circular Otto mascot (flush with Dock bottom)
+  const anchoredChat = buildAnchoredOttoChatRect(
+    STUDIO_APP_MAP["otto-chat"].defaultWidth,
+    Math.min(STUDIO_APP_MAP["otto-chat"].defaultHeight, area.height),
+    vw,
+    vh
+  );
   result["otto-chat"].isOpen = true;
-  result["otto-chat"].x = area.left + 104;
-  result["otto-chat"].y = area.top;
-  result["otto-chat"].width = Math.min(leftWidth, Math.max(360, area.width - 440));
-  result["otto-chat"].height = area.height;
+  result["otto-chat"].x = anchoredChat.x;
+  result["otto-chat"].y = anchoredChat.y;
+  result["otto-chat"].width = anchoredChat.width;
+  result["otto-chat"].height = anchoredChat.height;
   result["otto-chat"].zIndex = Z_INDEX_MIN + 2;
 
   return result;
@@ -591,6 +616,19 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         win.y = clamped.y;
         win.width = clamped.width;
         win.height = clamped.height;
+        if (app.id === "otto-chat" && !win.isMaximized) {
+          const anchored = buildAnchoredOttoChatRect(
+            win.width,
+            win.height,
+            viewport.width,
+            viewport.height
+          );
+          win.x = anchored.x;
+          win.y = anchored.y;
+          win.width = anchored.width;
+          win.height = anchored.height;
+          win.snapZone = null;
+        }
         win.restoreRect = saved.restoreRect
           ? clampRectToViewport(app.id, saved.restoreRect, viewport.width, viewport.height)
           : null;
@@ -821,6 +859,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   }
 
   function moveWindow(id: StudioAppId, x: number, y: number) {
+    if (id === "otto-chat") return;
     const win = windows[id];
     if (!win) return;
     const clamped = clampRectToViewport(
@@ -870,7 +909,10 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   function resizeWindow(id: StudioAppId, rect: WindowRect) {
     const win = windows[id];
     if (!win) return;
-    const clamped = clampRectToViewport(id, rect, viewport.width, viewport.height, appMap);
+    const clamped =
+      id === "otto-chat"
+        ? buildAnchoredOttoChatRect(rect.width, rect.height, viewport.width, viewport.height)
+        : clampRectToViewport(id, rect, viewport.width, viewport.height, appMap);
     win.x = clamped.x;
     win.y = clamped.y;
     win.width = clamped.width;
@@ -970,6 +1012,19 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         win.y = clamped.y;
         win.width = clamped.width;
         win.height = clamped.height;
+        if (win.id === "otto-chat" && !win.isMaximized) {
+          const anchored = buildAnchoredOttoChatRect(
+            win.width,
+            win.height,
+            viewport.width,
+            viewport.height
+          );
+          win.x = anchored.x;
+          win.y = anchored.y;
+          win.width = anchored.width;
+          win.height = anchored.height;
+          win.snapZone = null;
+        }
         win.zIndex = Z_INDEX_MIN + i + 1;
       });
       normalizeZOrder();
@@ -1073,6 +1128,19 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
         win.y = clamped.y;
         win.width = clamped.width;
         win.height = clamped.height;
+        if (app.id === "otto-chat" && !win.isMaximized) {
+          const anchored = buildAnchoredOttoChatRect(
+            win.width,
+            win.height,
+            viewport.width,
+            viewport.height
+          );
+          win.x = anchored.x;
+          win.y = anchored.y;
+          win.width = anchored.width;
+          win.height = anchored.height;
+          win.snapZone = null;
+        }
       }
     }
   }

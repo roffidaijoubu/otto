@@ -5,10 +5,11 @@ import {
   CheckIcon,
   CopyIcon,
   ExternalLinkIcon,
+  Loader2Icon,
   MonitorPlayIcon,
   PlusIcon,
   RefreshCwIcon,
-  SlidersHorizontalIcon,
+  SendIcon,
   SparklesIcon,
   Trash2Icon,
 } from "@lucide/vue";
@@ -54,6 +55,12 @@ interface MachineStatus {
   machineState?: string;
 }
 
+interface RefineMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+}
+
 const props = defineProps<{
   refreshTick: number;
   initialSlug?: string;
@@ -73,7 +80,7 @@ const overlays = ref<ObsOverlayItem[]>([]);
 const viewMode = ref<"list" | "detail">("list");
 const selectedSlug = ref("");
 const stageBackdrop = ref<"checker" | "dark" | "chroma">("checker");
-const showRemote = ref(true);
+const showRefinePanel = ref(true);
 const loading = ref(true);
 const frameKey = ref(0);
 const copiedKey = ref("");
@@ -83,14 +90,25 @@ const deleting = ref(false);
 const showCreateDialog = ref(false);
 const customOverlayPrompt = ref("");
 
+// Isolated per-overlay Refine with Otto chat state (never pollutes main Otto Chat)
+const refineInput = ref("");
+const refining = ref(false);
+const refineThreads = ref<Record<string, RefineMessage[]>>({});
+const refineScrollRef = ref<HTMLElement | null>(null);
+
 // ResizeObserver for true 1920x1080 aspect-ratio scaling on Detail stage
 const stageWrapRef = ref<HTMLElement | null>(null);
-const previewScale = ref(0.35);
+const previewScale = ref(0.32);
 let stageObserver: ResizeObserver | null = null;
 
 const selectedOverlay = computed(
   () => overlays.value.find((o) => o.slug === selectedSlug.value) || null
 );
+
+const activeRefineMessages = computed<RefineMessage[]>(() => {
+  if (!selectedSlug.value) return [];
+  return refineThreads.value[selectedSlug.value] ?? [];
+});
 
 const scaledBoxStyle = computed(() => ({
   width: `${Math.round(1920 * previewScale.value)}px`,
@@ -131,13 +149,18 @@ const starters = [
   },
 ];
 
+const quickRefineChips = [
+  "Make typography bigger & sharper",
+  "Move overlay to bottom-left safe zone",
+  "Use cleaner high-contrast dark pill style",
+  "Add subtle entrance animation",
+];
+
 function recalcPreviewScale() {
   const el = stageWrapRef.value;
   if (!el) return;
-  const padX = 24;
-  const padY = 24;
-  const availW = Math.max(160, el.clientWidth - padX);
-  const availH = Math.max(90, el.clientHeight - padY);
+  const availW = Math.max(200, el.clientWidth - 20);
+  const availH = Math.max(112, el.clientHeight - 20);
   const scale = Math.min(availW / 1920, availH / 1080, 1);
   previewScale.value = Math.max(0.1, Number(scale.toFixed(4)));
 }
@@ -151,6 +174,13 @@ function attachStageObserver() {
     recalcPreviewScale();
   });
   stageObserver.observe(stageWrapRef.value);
+}
+
+async function scrollRefineToBottom() {
+  await nextTick();
+  if (refineScrollRef.value) {
+    refineScrollRef.value.scrollTop = refineScrollRef.value.scrollHeight;
+  }
 }
 
 async function loadOverlays(preferSlug?: string, openDetail = false) {
@@ -214,6 +244,74 @@ async function copyUrl(ov: ObsOverlayItem, kind: "obs" | "remote") {
   }
 }
 
+async function sendRefine(instructionOverride?: string) {
+  const ov = selectedOverlay.value;
+  const text = (instructionOverride ?? refineInput.value).trim();
+  if (!ov || !text || refining.value) return;
+
+  const slug = ov.slug;
+  if (!refineThreads.value[slug]) refineThreads.value[slug] = [];
+  const historySnapshot = refineThreads.value[slug].map((m) => ({
+    role: m.role,
+    text: m.text,
+  }));
+
+  refineThreads.value[slug].push({
+    id: `u_${Date.now()}`,
+    role: "user",
+    text,
+  });
+  if (!instructionOverride) refineInput.value = "";
+  refining.value = true;
+  await scrollRefineToBottom();
+
+  try {
+    const res = await fetch(`/api/obs-overlays/${encodeURIComponent(slug)}/refine`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction: text,
+        title: ov.title,
+        history: historySnapshot,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      reply?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Refine failed (${res.status})`);
+    }
+    refineThreads.value[slug].push({
+      id: `a_${Date.now()}`,
+      role: "assistant",
+      text: data.reply || "Overlay updated.",
+    });
+    frameKey.value += 1;
+    await loadOverlays(slug, true);
+    toast.success(`Refined "${ov.title}"`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Could not refine overlay";
+    refineThreads.value[slug].push({
+      id: `e_${Date.now()}`,
+      role: "assistant",
+      text: `Error: ${msg}`,
+    });
+    toast.error(msg);
+  } finally {
+    refining.value = false;
+    await scrollRefineToBottom();
+  }
+}
+
+function handleRefineKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    void sendRefine();
+  }
+}
+
 async function confirmDeleteOverlay() {
   const ov = deleteTarget.value;
   if (!ov || deleting.value) return;
@@ -272,7 +370,7 @@ watch(
   }
 );
 
-watch([viewMode, showRemote, selectedSlug], () => {
+watch([viewMode, showRefinePanel, selectedSlug], () => {
   if (viewMode.value === "detail") {
     void nextTick(() => attachStageObserver());
   }
@@ -300,7 +398,6 @@ defineExpose({
   <div class="flex h-full min-h-0 flex-col bg-[#FAFAFA] text-[#171717]">
     <!-- ==================== PAGE 1: OVERLAYS LIST ==================== -->
     <template v-if="viewMode === 'list'">
-      <!-- List Toolbar -->
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#EDEDED] bg-white px-4 py-2.5">
         <div class="flex items-center gap-2.5">
           <span class="font-mono text-xs font-semibold text-[#171717]">
@@ -344,7 +441,6 @@ defineExpose({
         </div>
       </div>
 
-      <!-- List Body -->
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
         <div
           v-if="loading && overlays.length === 0"
@@ -396,14 +492,12 @@ defineExpose({
           </div>
         </div>
 
-        <!-- Deployed Overlays Grid -->
         <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <article
             v-for="ov in overlays"
             :key="ov.slug"
             class="group flex flex-col overflow-hidden rounded-2xl border border-[#E5E5E5] bg-white transition-colors hover:border-[#171717]/40"
           >
-            <!-- Clickable 16:9 Mini Preview -->
             <button
               type="button"
               class="obs-checker relative aspect-video w-full overflow-hidden border-b border-[#EDEDED] text-left"
@@ -471,7 +565,6 @@ defineExpose({
             </div>
           </article>
 
-          <!-- Add New Overlay Card -->
           <button
             v-if="status.connectorAvailable"
             type="button"
@@ -490,7 +583,8 @@ defineExpose({
       </div>
     </template>
 
-    <!-- ==================== PAGE 2: OVERLAY DETAIL (1920x1080 LEFT + CONTROLLER RIGHT) ==================== -->
+    <!-- ==================== PAGE 2: OVERLAY DETAIL ==================== -->
+    <!-- Left = Box 1 (1920x1080 Canvas) + Box 2 (Live Controller always visible) | Right = Isolated Refine with Otto -->
     <template v-else-if="selectedOverlay">
       <!-- Detail Top Bar -->
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#EDEDED] bg-white px-3 py-2">
@@ -542,17 +636,17 @@ defineExpose({
           >
             <CheckIcon v-if="copiedKey === `${selectedOverlay.slug}:remote`" class="size-3" />
             <CopyIcon v-else class="size-3" />
-            <span>Remote</span>
+            <span>Remote URL</span>
           </Button>
           <Button
             size="xs"
-            :variant="showRemote ? 'secondary' : 'ghost'"
+            :variant="showRefinePanel ? 'secondary' : 'ghost'"
             class="h-7 gap-1 rounded-lg font-mono text-[11px]"
-            title="Toggle side controller panel"
-            @click="showRemote = !showRemote"
+            title="Toggle Refine with Otto sidebar"
+            @click="showRefinePanel = !showRefinePanel"
           >
-            <SlidersHorizontalIcon class="size-3" />
-            <span class="hidden sm:inline">Controller</span>
+            <SparklesIcon class="size-3" />
+            <span class="hidden sm:inline">Refine</span>
           </Button>
           <Button
             size="icon-xs"
@@ -585,68 +679,177 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Side-by-Side Workspace: Left = True 1920x1080 Scaled Preview, Right = Live Controller -->
+      <!-- Main Split: Left Studio (Overlay Box + Live Controller Box Always Visible) | Right (Refine with Otto) -->
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        <!-- Left Stage: True 1920x1080 Scaled Canvas -->
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#F2F1EE]">
-          <div
-            ref="stageWrapRef"
-            class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3"
-          >
+        <!-- Left Workspace: 2 Framed Boxes -->
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#F2F1EE] p-3">
+          <!-- BOX 1: True 1920x1080 Scaled Overlay Preview Box -->
+          <div class="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+            <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3 py-1.5">
+              <span class="font-mono text-[11px] font-semibold text-[#171717]">
+                OBS Canvas Preview
+              </span>
+              <span class="font-mono text-[10.5px] text-neutral-500 tabular-nums">
+                1920×1080 · {{ Math.round(previewScale * 100) }}%
+              </span>
+            </div>
+
             <div
-              class="relative shrink-0 overflow-hidden rounded-xl border border-black/12 shadow-sm"
-              :class="{
-                'obs-checker': stageBackdrop === 'checker',
-                'bg-[#111111]': stageBackdrop === 'dark',
-                'bg-[#00b140]': stageBackdrop === 'chroma',
-              }"
-              :style="scaledBoxStyle"
+              ref="stageWrapRef"
+              class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#ECEBE7] p-2.5"
             >
-              <iframe
-                :key="`ov-${selectedOverlay.slug}-${frameKey}`"
-                :src="selectedOverlay.overlayUrl"
-                class="block border-0 bg-transparent"
-                :style="scaledIframeStyle"
-                allow="autoplay"
-                :title="selectedOverlay.title"
-              />
+              <div
+                class="relative shrink-0 overflow-hidden rounded-lg border border-black/12 shadow-xs"
+                :class="{
+                  'obs-checker': stageBackdrop === 'checker',
+                  'bg-[#111111]': stageBackdrop === 'dark',
+                  'bg-[#00b140]': stageBackdrop === 'chroma',
+                }"
+                :style="scaledBoxStyle"
+              >
+                <iframe
+                  :key="`ov-${selectedOverlay.slug}-${frameKey}`"
+                  :src="selectedOverlay.overlayUrl"
+                  class="block border-0 bg-transparent"
+                  :style="scaledIframeStyle"
+                  allow="autoplay"
+                  :title="selectedOverlay.title"
+                />
+              </div>
+
+              <!-- Subtle Refining Overlay Indicator -->
+              <div
+                v-if="refining"
+                class="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-black/15 bg-white/95 px-3 py-1.5 font-mono text-[11px] font-medium text-[#171717] shadow-sm"
+              >
+                <Loader2Icon class="size-3.5 animate-spin" />
+                <span>Otto is refining this overlay...</span>
+              </div>
             </div>
           </div>
 
-          <!-- Compact Canvas Footer -->
-          <div class="flex shrink-0 items-center justify-between gap-2 border-t border-[#E5E5E5] bg-white px-3 py-1.5 font-mono text-[10.5px] text-neutral-500">
-            <span class="truncate">{{ selectedOverlay.overlayUrl }}</span>
-            <span class="shrink-0 tabular-nums">
-              1920×1080 · {{ Math.round(previewScale * 100) }}%
-            </span>
+          <!-- BOX 2: Live Controller Box (Always Visible, Framed Just Like Overlay) -->
+          <div class="flex min-h-[190px] flex-[2] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+            <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3 py-1.5">
+              <span class="font-mono text-[11px] font-semibold text-[#171717]">
+                Live Controller
+              </span>
+              <a
+                :href="selectedOverlay.controlUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 font-mono text-[10.5px] text-neutral-500 no-underline hover:text-[#171717]"
+              >
+                Pop out
+                <ExternalLinkIcon class="size-3" />
+              </a>
+            </div>
+            <iframe
+              :key="`ctl-${selectedOverlay.slug}-${frameKey}`"
+              :src="selectedOverlay.controlUrl"
+              class="min-h-0 w-full flex-1 border-0 bg-[#FAFAFA]"
+              :title="`${selectedOverlay.title} Remote Control`"
+            />
           </div>
         </div>
 
-        <!-- Right Sidebar: Live SSE Remote Controller -->
+        <!-- Right Sidebar: Isolated "Refine with Otto" Chat (Never Pollutes Main Otto Chat) -->
         <aside
-          v-if="showRemote"
-          class="flex h-[280px] w-full shrink-0 flex-col border-t border-[#E5E5E5] bg-white md:h-auto md:w-[340px] md:border-l md:border-t-0 lg:w-[380px]"
+          v-if="showRefinePanel"
+          class="flex h-[280px] w-full shrink-0 flex-col border-t border-[#E5E5E5] bg-white md:h-auto md:w-[330px] md:border-l md:border-t-0 lg:w-[370px]"
         >
-          <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3 py-2">
-            <span class="font-mono text-[11px] font-semibold text-[#171717]">
-              Live Controller
+          <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3.5 py-2.5">
+            <div class="flex items-center gap-1.5">
+              <SparklesIcon class="size-3.5 text-[#171717]" />
+              <span class="font-mono text-xs font-semibold text-[#171717]">
+                Refine with Otto
+              </span>
+            </div>
+            <span class="rounded-full bg-[#F2F2F2] px-2 py-0.5 font-mono text-[10px] text-neutral-500">
+              isolated
             </span>
-            <a
-              :href="selectedOverlay.controlUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 font-mono text-[10.5px] text-neutral-500 no-underline hover:text-[#171717]"
-            >
-              Pop out
-              <ExternalLinkIcon class="size-3" />
-            </a>
           </div>
-          <iframe
-            :key="`ctl-${selectedOverlay.slug}-${frameKey}`"
-            :src="selectedOverlay.controlUrl"
-            class="min-h-0 w-full flex-1 border-0 bg-[#FAFAFA]"
-            :title="`${selectedOverlay.title} Remote Control`"
-          />
+
+          <!-- Per-Overlay Revision Messages -->
+          <div ref="refineScrollRef" class="min-h-0 flex-1 overflow-y-auto p-3.5">
+            <div
+              v-if="activeRefineMessages.length === 0"
+              class="flex flex-col gap-3"
+            >
+              <p class="text-xs leading-relaxed text-neutral-500">
+                Tell Otto how to tweak <strong class="font-mono text-[#171717]">{{ selectedOverlay.title }}</strong> — layout, colors, animations, or controller buttons. Runs in place without cluttering main Otto Chat.
+              </p>
+
+              <div class="flex flex-col gap-1.5">
+                <span class="font-mono text-[10px] uppercase text-neutral-400">Quick tweaks</span>
+                <button
+                  v-for="chip in quickRefineChips"
+                  :key="chip"
+                  type="button"
+                  class="rounded-xl border border-[#E5E5E5] bg-[#FAFAFA] px-3 py-2 text-left text-xs text-neutral-700 transition-colors hover:border-[#171717] hover:bg-white"
+                  :disabled="refining"
+                  @click="sendRefine(chip)"
+                >
+                  {{ chip }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="flex flex-col gap-2.5">
+              <div
+                v-for="msg in activeRefineMessages"
+                :key="msg.id"
+                class="flex flex-col"
+                :class="msg.role === 'user' ? 'items-end' : 'items-start'"
+              >
+                <div
+                  class="max-w-[90%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap"
+                  :class="
+                    msg.role === 'user'
+                      ? 'bg-[#171717] text-white'
+                      : 'border border-[#EDEDED] bg-[#FAFAFA] text-[#171717]'
+                  "
+                >
+                  {{ msg.text }}
+                </div>
+              </div>
+
+              <div
+                v-if="refining"
+                class="flex items-center gap-2 rounded-2xl border border-[#EDEDED] bg-[#FAFAFA] px-3 py-2 font-mono text-[11px] text-neutral-500"
+              >
+                <Loader2Icon class="size-3.5 animate-spin" />
+                <span>Updating overlay on Fly Machine...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Refine Input Composer -->
+          <form
+            class="shrink-0 border-t border-[#EDEDED] bg-[#FAFAFA] p-2.5"
+            @submit.prevent="sendRefine()"
+          >
+            <div class="flex items-end gap-1.5 rounded-xl border border-[#E2E2E2] bg-white p-1.5 focus-within:border-[#171717]">
+              <textarea
+                v-model="refineInput"
+                rows="2"
+                placeholder="Describe a change (Enter to refine)..."
+                class="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent px-1.5 py-1 text-xs text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+                :disabled="refining"
+                @keydown="handleRefineKeydown"
+              />
+              <Button
+                type="submit"
+                size="icon-xs"
+                class="size-8 shrink-0 rounded-lg bg-[#171717] text-white hover:bg-neutral-800"
+                :disabled="refining || !refineInput.trim()"
+                title="Send refinement to Otto"
+              >
+                <Loader2Icon v-if="refining" class="size-3.5 animate-spin" />
+                <SendIcon v-else class="size-3.5" />
+              </Button>
+            </div>
+          </form>
         </aside>
       </div>
     </template>

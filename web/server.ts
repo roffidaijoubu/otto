@@ -32,6 +32,7 @@ import {
   cancelBackgroundClipJob,
   getActiveClipWorkerIds,
   isClipWorkerBusy,
+  reconcileOrphanedClipJobs,
   startBackgroundClipJob,
 } from "./lib/clip-worker.ts";
 import {
@@ -1098,6 +1099,7 @@ class OmpRpcBridge {
 }
 
 const rpc = new OmpRpcBridge();
+reconcileOrphanedClipJobs();
 
 // Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
 ensureWorkspaceScaffold();
@@ -2390,7 +2392,7 @@ Bun.serve({
       return Response.json(result);
     }
 
-    const obsOverlayMatch = url.pathname.match(/^\/api\/obs-overlays\/([^/]+)(?:\/(state))?$/);
+    const obsOverlayMatch = url.pathname.match(/^\/api\/obs-overlays\/([^/]+)(?:\/(state|refine))?$/);
     if (obsOverlayMatch) {
       const slug = decodeURIComponent(obsOverlayMatch[1]).trim();
       const sub = obsOverlayMatch[2] || "";
@@ -2403,6 +2405,90 @@ Bun.serve({
           const out = await updateObsOverlayState(slug, body.patch || {}, body.replace === true);
           broadcast({ type: "obs_overlays_changed", slug });
           return Response.json({ ok: true, state: out.state });
+        }
+        if (sub === "refine" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as {
+            instruction?: string;
+            title?: string;
+            history?: Array<{ role: "user" | "assistant"; text: string }>;
+          };
+          const instruction = String(body.instruction || "").trim();
+          if (!instruction) {
+            return Response.json({ error: "Refinement instruction is required" }, { status: 400 });
+          }
+
+          const historyLines = Array.isArray(body.history)
+            ? body.history
+                .slice(-6)
+                .map((h) => `${h.role === "user" ? "Creator" : "Otto"}: ${String(h.text || "").slice(0, 400)}`)
+                .join("\n")
+            : "";
+
+          const prompt = [
+            `ISOLATED OBS OVERLAY REFINEMENT TASK (never asks unnecessary questions; executes directly).`,
+            `Target overlay slug: "${slug}"${body.title ? ` (title: "${body.title}")` : ""}.`,
+            historyLines ? `\nRecent refinement context for this overlay:\n${historyLines}\n` : "",
+            `Creator request: ${instruction}`,
+            ``,
+            `Instructions:`,
+            `1. Call obs_overlay_list first to inspect the current overlay metadata and live state for slug "${slug}".`,
+            `2. If the creator only wants a live state change (text, timer, visibility, counter), call obs_overlay_control(slug="${slug}", patch=...).`,
+            `3. If the creator wants a layout, styling, animation, or controller change, call obs_overlay_deploy with the EXACT same slug "${slug}" (transparent 1920x1080 OBS Browser Source HTML + matching Live Remote Control Deck HTML, strictly no controls inside the OBS HTML and zero AI-generated images).`,
+            `4. Reply concisely (1-2 plain sentences) summarizing what you changed on "${slug}".`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const childEnv: Record<string, string | undefined> = {
+            ...process.env,
+            LMA_INTERNAL_SECRET,
+            LMA_WEB_PORT: String(PORT),
+          };
+          delete childEnv.LMA_WEB_PASSWORD;
+          delete childEnv.QSTASH_CURRENT_SIGNING_KEY;
+          delete childEnv.QSTASH_NEXT_SIGNING_KEY;
+
+          rpc.backgroundBusy = true;
+          void rpc.holdSpriteActive();
+          try {
+            const proc = Bun.spawn(
+              [
+                OMP_BIN,
+                "--no-session",
+                "--tools",
+                "obs_overlay_list,obs_overlay_deploy,obs_overlay_control,read",
+                "-p",
+                prompt,
+              ],
+              {
+                cwd: WORK_DIR,
+                stdin: "ignore",
+                stdout: "pipe",
+                stderr: "pipe",
+                env: childEnv,
+              }
+            );
+            const [stdoutText, stderrText, exitCode] = await Promise.all([
+              new Response(proc.stdout).text(),
+              new Response(proc.stderr).text(),
+              proc.exited,
+            ]);
+            broadcast({ type: "obs_overlays_changed", slug });
+            if (exitCode !== 0) {
+              return Response.json(
+                { error: stderrText.trim() || `Refinement worker exited (${exitCode})` },
+                { status: 500 }
+              );
+            }
+            return Response.json({
+              ok: true,
+              slug,
+              reply: stdoutText.trim() || `Updated overlay "${slug}".`,
+            });
+          } finally {
+            rpc.backgroundBusy = false;
+            rpc.releaseSpriteHold();
+          }
         }
         if (!sub && req.method === "DELETE") {
           const ok = await deleteHostedObsOverlay(slug);
