@@ -24,7 +24,7 @@ Remember: **YouTube live chat lags 10–25 seconds behind what happens on screen
 Review every Candidate Card and:
 1. **Filter out false positives:** Skip stream intro/absen, tech issues, ads, generic chatter, outro, or moments without a clear funny/dramatic/insightful payoff.
 2. **Enforce OPSEC boundaries:** Silently check `~/.omp/agent/MEMORY.md` — reject any candidate containing accidental personal/doxable info or out-of-context rage-bait.
-3. **Snap exact boundaries:** Pick `startSec` and `endSec` (typically **30–90 seconds**, plus ~2s breathing handles) snapped cleanly to the transcript timestamps so both the **3-second opening hook** and the **payoff/reaction** are complete.
+3. **Snap exact boundaries (full story arc, no 60s cutoff):** Pick `startSec` and `endSec` following the natural beginning and ending of the moment (typically **45–210 seconds / up to ~3.5 minutes**, plus **3–5s breathing handles** before the setup and after the reaction). **NEVER artificially cut a strong moment short at 60 seconds** — YouTube Shorts support up to 3 minutes, and a human editor will tighten/cut down the raw clip.
 
 ---
 

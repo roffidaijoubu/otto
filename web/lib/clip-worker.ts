@@ -114,7 +114,7 @@ export async function cancelBackgroundClipJob(
 function buildWorkerPrompt(job: ClipJob, resumeRemaining?: ClipPlanEntry[], alreadySaved?: ClipRecord[]): string {
   const focusLine = job.focusNotes
     ? `Creator focus instructions: ${job.focusNotes}`
-    : "Creator focus instructions: Pick the highest-energy, funniest, most quotable, or most shareable standalone moments (30-75 seconds each).";
+    : "Creator focus instructions: Pick the highest-energy, funniest, most quotable, or most shareable standalone moments. Capture the full natural story arc (typically 45-210 seconds / up to ~3.5 minutes) — NEVER artificially cut a strong moment short at 60s, because Shorts support up to 3 minutes and a human editor will cut down the raw footage.";
 
   const isAuto = job.maxClips <= 0;
   const topK = isAuto ? 30 : Math.max(12, Math.min(40, job.maxClips * 2));
@@ -143,7 +143,7 @@ function buildWorkerPrompt(job: ClipJob, resumeRemaining?: ClipPlanEntry[], alre
       `4. Call vod_prep_clip(inputPath=<mp4_path from cut>).`,
       `5. Call vod_update_job_progress(jobId="${job.id}", stage="Reviewing clip <index>/<total>", message="Watching clip for 3-second hook and editor notes...")`,
       `6. Call watch_clip(target=<output_path from prep>).`,
-      `7. Call vod_save_clip(jobId="${job.id}", videoId="${job.videoId}", title=<title>, filePath=<output_path from prep>, srtPath=<srt_path if present>, startSec=<startSec>, endSec=<endSec>, hookScore=<1-10>, editorNotes=<concise notes>, youtubeUrl=<youtube_url from cut>).`,
+      `7. Call vod_save_clip(jobId="${job.id}", videoId="${job.videoId}", title=<title>, filePath=<output_path from prep>, srtPath=<srt_path from prep (ElevenLabs Scribe) or srt_path from cut>, startSec=<startSec>, endSec=<endSec>, hookScore=<1-10>, editorNotes=<concise notes>, youtubeUrl=<youtube_url from cut>).`,
       `When all remaining clips are saved, call vod_update_job_progress(jobId="${job.id}", stage="Completed", message="Resumed job finished extracting all remaining clips.") and reply concisely.`,
     ].join("\n");
   }
@@ -157,7 +157,7 @@ function buildWorkerPrompt(job: ClipJob, resumeRemaining?: ClipPlanEntry[], alre
     ``,
     `Execute these steps strictly in order:`,
     `1. Call vod_update_job_progress(jobId="${job.id}", stage="Scanning hype", message="Pulling live chat replay and transcript to detect hype peaks...")`,
-    `2. Call vod_scan_hype(url="${job.vodUrl}", topK=${topK}). Inspect ALL returned candidate cards and select ${isAuto ? "every distinct, high-potential moment" : `up to ${job.maxClips} distinct, high-potential moments`} with clean start/end boundaries (30-75s each, with pre-roll context).`,
+    `2. Call vod_scan_hype(url="${job.vodUrl}", topK=${topK}). Inspect ALL returned candidate cards and select ${isAuto ? "every distinct, high-potential moment" : `up to ${job.maxClips} distinct, high-potential moments`} with clean, complete start/end boundaries (typically 45-210s / up to ~3.5 min — NEVER artificially cap at 60s; include 3-5s pre-roll setup and let the full payoff/reaction land so a human editor can cut it down cleanly).`,
     `2b. IMPORTANT (Resumable Checkpoint): Immediately call vod_save_clip_plan(jobId="${job.id}", clips=[{ index: 1, title: "...", startSec: ..., endSec: ..., reason: "..." }, ...]) BEFORE cutting clip #1 so progress can be resumed if anything interrupts the run!`,
     `3. For each selected clip (1..N):`,
     `   a. Call vod_update_job_progress(jobId="${job.id}", stage="Cutting clip i/N", message="Downloading and cutting <short title>...")`,
@@ -166,7 +166,7 @@ function buildWorkerPrompt(job: ClipJob, resumeRemaining?: ClipPlanEntry[], alre
     `   d. Call vod_prep_clip(inputPath=<mp4_path from cut>).`,
     `   e. Call vod_update_job_progress(jobId="${job.id}", stage="Reviewing clip i/N", message="Watching clip for 3-second hook and editor notes...")`,
     `   f. Call watch_clip(target=<output_path from prep>) to inspect the actual hook, framing, and audio.`,
-    `   g. Call vod_save_clip(jobId="${job.id}", videoId="${job.videoId}", title=<punchy title>, filePath=<output_path from prep>, srtPath=<srt_path from cut if present>, startSec=..., endSec=..., hookScore=<1-10>, editorNotes=<concise actionable notes for human editor>, youtubeUrl=<youtube_url from cut>).`,
+    `   g. Call vod_save_clip(jobId="${job.id}", videoId="${job.videoId}", title=<punchy title>, filePath=<output_path from prep>, srtPath=<srt_path from prep (ElevenLabs Scribe) or srt_path from cut>, startSec=..., endSec=..., hookScore=<1-10>, editorNotes=<concise actionable notes for human editor>, youtubeUrl=<youtube_url from cut>).`,
     `4. When all clips are saved, call vod_update_job_progress(jobId="${job.id}", stage="Completed", message="Finished extracting and reviewing clips for human editor handoff.")`,
     `5. Reply with a single concise line summarizing how many clips were saved.`,
   ].join("\n");

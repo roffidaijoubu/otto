@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import {
+  ArrowLeft,
   Box,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ClipboardPaste,
   Clock,
   Copy,
   Database,
   Download,
   ExternalLink,
+  FileText,
   Film,
   FolderOpen,
   LayoutGrid,
@@ -27,13 +31,6 @@ import {
 } from "@lucide/vue";
 import { toast } from "vue-sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -159,8 +156,22 @@ const records = ref<ClipRecord[]>([]);
 const untrackedFiles = ref<UntrackedClipFile[]>([]);
 const boxUploadingId = ref<string | null>(null);
 const copiedBoxId = ref<string | null>(null);
+const copiedNotes = ref(false);
 const expandedJobId = ref<string | null>(null);
-const previewClip = ref<ClipRecord | null>(null);
+const selectedClipId = ref<string | null>(null);
+const detailVideoRef = ref<HTMLVideoElement | null>(null);
+
+interface SrtCue {
+  index: number;
+  startSec: number;
+  endSec: number;
+  startLabel: string;
+  text: string;
+}
+const srtCues = ref<SrtCue[]>([]);
+const srtLoading = ref(false);
+const showCaptions = ref(true);
+const detailCurrentTime = ref(0);
 
 // Creator Archive (Pinecone) state
 const archiveStatus = ref<ArchiveStatusPayload | null>(null);
@@ -209,6 +220,121 @@ const filteredUntracked = computed(() => {
 });
 
 const totalClipsCount = computed(() => records.value.length + untrackedFiles.value.length);
+
+const selectedClip = computed<ClipRecord | null>(() => {
+  if (!selectedClipId.value) return null;
+  return records.value.find((r) => r.id === selectedClipId.value) ?? null;
+});
+
+const selectedClipIndex = computed(() => {
+  if (!selectedClip.value) return -1;
+  return filteredRecords.value.findIndex((r) => r.id === selectedClip.value?.id);
+});
+
+function parseSrtTimestampToSec(ts: string): number {
+  const m = ts.trim().match(/(\d+):(\d+):(\d+)[,.](\d+)/);
+  if (!m) return 0;
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000;
+}
+
+function parseSrtContent(raw: string): SrtCue[] {
+  const blocks = raw.replace(/\r\n/g, "\n").trim().split(/\n\s*\n/);
+  const cues: SrtCue[] = [];
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+    const tsIdx = lines.findIndex((l) => l.includes("-->"));
+    if (tsIdx < 0) continue;
+    const [startRaw, endRaw] = lines[tsIdx].split("-->").map((s) => s.trim());
+    const startSec = parseSrtTimestampToSec(startRaw || "00:00:00,000");
+    const endSec = parseSrtTimestampToSec(endRaw || startRaw || "00:00:02,000");
+    const text = lines.slice(tsIdx + 1).join(" ").trim();
+    if (!text) continue;
+    cues.push({
+      index: cues.length + 1,
+      startSec,
+      endSec: Math.max(startSec + 0.4, endSec),
+      startLabel: formatSec(startSec),
+      text,
+    });
+  }
+  return cues;
+}
+
+const activeSrtCue = computed<SrtCue | null>(() => {
+  if (!showCaptions.value || srtCues.value.length === 0) return null;
+  const t = detailCurrentTime.value;
+  return srtCues.value.find((c) => t >= c.startSec && t <= c.endSec) ?? null;
+});
+
+function onDetailTimeUpdate(e: Event) {
+  const el = e.target as HTMLVideoElement | null;
+  if (el) detailCurrentTime.value = el.currentTime;
+}
+
+async function loadSrtForClip(clip: ClipRecord | null) {
+  srtCues.value = [];
+  if (!clip?.srtPath) return;
+  srtLoading.value = true;
+  try {
+    const res = await fetch(clipMediaUrl(clip.srtPath));
+    if (!res.ok) return;
+    const raw = await res.text();
+    srtCues.value = parseSrtContent(raw);
+  } catch {
+    // ignore
+  } finally {
+    srtLoading.value = false;
+  }
+}
+
+function openClipDetail(clip: ClipRecord) {
+  selectedClipId.value = clip.id;
+  playSound("toggle");
+}
+
+function closeClipDetail() {
+  selectedClipId.value = null;
+}
+
+function goPrevClip() {
+  const idx = selectedClipIndex.value;
+  if (idx > 0) {
+    selectedClipId.value = filteredRecords.value[idx - 1].id;
+  }
+}
+
+function goNextClip() {
+  const idx = selectedClipIndex.value;
+  if (idx >= 0 && idx < filteredRecords.value.length - 1) {
+    selectedClipId.value = filteredRecords.value[idx + 1].id;
+  }
+}
+
+function seekDetailVideo(sec: number) {
+  const video = detailVideoRef.value;
+  if (!video) return;
+  video.currentTime = Math.max(0, sec);
+  void video.play().catch(() => {});
+}
+
+async function copyEditorNotes(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    copiedNotes.value = true;
+    toast.success("Editor notes copied");
+    setTimeout(() => {
+      copiedNotes.value = false;
+    }, 1800);
+  } catch {
+    toast.error("Could not copy notes");
+  }
+}
+
+watch(selectedClip, (clip) => {
+  detailCurrentTime.value = 0;
+  void loadSrtForClip(clip);
+});
 
 function formatSec(sec: number | null): string {
   if (sec === null || !Number.isFinite(sec)) return "";
@@ -419,7 +545,7 @@ async function removeClipRecord(id: string) {
   try {
     const res = await fetch(`/api/clips/records/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.ok) playSound("delete");
-    if (previewClip.value?.id === id) previewClip.value = null;
+    if (selectedClipId.value === id) selectedClipId.value = null;
     await loadEcosystem(true);
   } catch {
     toast.error("Failed to remove clip record");
@@ -559,7 +685,7 @@ onMounted(() => {
           type="button"
           class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
           :class="activeTab === 'archive' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-          @click="activeTab = 'archive'; playSound('toggle'); loadArchiveStatus(true)"
+          @click="activeTab = 'archive'; selectedClipId = null; playSound('toggle'); loadArchiveStatus(true)"
         >
           <Database class="size-3.5" aria-hidden="true" />
           <span>Archive</span>
@@ -804,7 +930,270 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- ==================== LIBRARY TAB (EXISTING) ==================== -->
+    <!-- ==================== LIBRARY TAB (2-PAGE: LIST -> DETAIL) ==================== -->
+    <template v-else>
+    <!-- PAGE 2: CLIP DETAIL VIEW -->
+    <template v-if="selectedClip">
+      <!-- Sticky Detail Header Bar -->
+      <div class="flex shrink-0 items-center justify-between gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2.5">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            class="h-7 shrink-0 gap-1 rounded-lg bg-white px-2.5 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+            @click="closeClipDetail"
+          >
+            <ArrowLeft class="size-3.5" aria-hidden="true" />
+            <span>Back</span>
+          </Button>
+          <h3 class="truncate text-xs font-semibold text-[#171717]">
+            {{ selectedClip.title }}
+          </h3>
+          <span
+            v-if="selectedClip.hookScore !== null"
+            class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-emerald-800"
+          >
+            Hook {{ selectedClip.hookScore }}/10
+          </span>
+        </div>
+
+        <div class="flex shrink-0 items-center gap-1.5">
+          <span
+            v-if="selectedClipIndex >= 0 && filteredRecords.length > 1"
+            class="mr-1 font-mono text-[11px] text-neutral-500 tabular-nums"
+          >
+            {{ selectedClipIndex + 1 }} / {{ filteredRecords.length }}
+          </span>
+          <Button
+            v-if="filteredRecords.length > 1"
+            variant="outline"
+            size="icon"
+            type="button"
+            class="size-7 rounded-lg bg-white"
+            :disabled="selectedClipIndex <= 0"
+            title="Previous clip"
+            @click="goPrevClip"
+          >
+            <ChevronLeft class="size-3.5" aria-hidden="true" />
+          </Button>
+          <Button
+            v-if="filteredRecords.length > 1"
+            variant="outline"
+            size="icon"
+            type="button"
+            class="size-7 rounded-lg bg-white"
+            :disabled="selectedClipIndex < 0 || selectedClipIndex >= filteredRecords.length - 1"
+            title="Next clip"
+            @click="goNextClip"
+          >
+            <ChevronRight class="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      <!-- Detail Body: Almost Full-Size Video Stage + Compact Editor Sidebar -->
+      <div class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+        <!-- Left: Full-Height Video Player with Live SRT Caption Overlay + Action Bar -->
+        <div class="flex min-h-0 flex-col gap-3 p-3 lg:overflow-hidden">
+          <div class="relative flex min-h-[300px] flex-1 items-center justify-center overflow-hidden rounded-xl border border-black/10 bg-black shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+            <video
+              :key="selectedClip.id"
+              ref="detailVideoRef"
+              :src="clipMediaUrl(selectedClip.filePath)"
+              controls
+              preload="metadata"
+              class="h-full w-full object-contain"
+              @timeupdate="onDetailTimeUpdate"
+              @seeked="onDetailTimeUpdate"
+            />
+            <!-- Live Synced SRT Caption Overlay (Black BG, White Text) -->
+            <div
+              v-if="activeSrtCue"
+              class="pointer-events-none absolute inset-x-4 bottom-14 z-10 flex justify-center"
+            >
+              <span
+                class="max-w-[90%] rounded-md bg-black/85 px-3.5 py-1.5 text-center text-sm font-medium leading-snug text-white shadow-sm sm:text-base"
+              >
+                {{ activeSrtCue.text }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Metadata & Handoff Actions -->
+          <div class="flex shrink-0 flex-wrap items-center justify-between gap-2.5 rounded-xl border border-black/8 bg-[#FAF9F6] px-3.5 py-2">
+            <div class="flex flex-wrap items-center gap-2 font-mono text-[11px] text-neutral-600">
+              <span
+                v-if="selectedClip.startSec !== null && selectedClip.endSec !== null"
+                class="inline-flex items-center gap-1 font-medium text-[#171717]"
+              >
+                <Clock class="size-3 text-neutral-500" aria-hidden="true" />
+                {{ formatSec(selectedClip.startSec) }}–{{ formatSec(selectedClip.endSec) }}
+              </span>
+              <span v-if="selectedClip.durationSec" class="text-neutral-500">
+                · {{ formatSec(selectedClip.durationSec) }} ({{ selectedClip.durationSec }}s)
+              </span>
+              <span class="text-neutral-400">· CFR 30fps · -14 LUFS</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <Button
+                v-if="srtCues.length > 0"
+                variant="outline"
+                size="sm"
+                type="button"
+                class="h-8 gap-1 rounded-lg px-2.5 text-xs font-mono"
+                :class="showCaptions ? 'border-[#171717] bg-[#171717] text-white hover:bg-neutral-800 hover:text-white' : 'bg-white text-neutral-700'"
+                title="Toggle live SRT caption overlay"
+                @click="showCaptions = !showCaptions"
+              >
+                CC
+              </Button>
+              <a
+                :href="`${clipMediaUrl(selectedClip.filePath)}&download=1`"
+                class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#171717] px-3 text-xs font-medium text-white hover:bg-neutral-800"
+              >
+                <Download class="size-3.5" aria-hidden="true" />
+                Download MP4
+              </a>
+              <a
+                v-if="selectedClip.srtPath"
+                :href="`${clipMediaUrl(selectedClip.srtPath)}&download=1`"
+                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 text-xs font-medium text-neutral-800 hover:bg-neutral-50"
+              >
+                <Download class="size-3.5" aria-hidden="true" />
+                SRT
+              </a>
+              <a
+                v-if="selectedClip.youtubeUrl"
+                :href="selectedClip.youtubeUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 text-xs font-medium text-neutral-800 hover:bg-neutral-50"
+              >
+                <ExternalLink class="size-3.5" aria-hidden="true" />
+                VOD Jump
+              </a>
+              <Button
+                v-if="!selectedClip.boxUrl"
+                variant="outline"
+                size="sm"
+                class="h-8 gap-1.5 rounded-lg bg-white text-xs"
+                :disabled="boxUploadingId === selectedClip.id"
+                @click="sendClipToBox(selectedClip)"
+              >
+                <Loader2 v-if="boxUploadingId === selectedClip.id" class="size-3.5 animate-spin" aria-hidden="true" />
+                <Box v-else class="size-3.5" aria-hidden="true" />
+                Send to Box
+              </Button>
+              <Button
+                v-else
+                variant="outline"
+                size="sm"
+                class="h-8 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-xs text-emerald-800"
+                @click="copyBoxUrl(selectedClip.id, selectedClip.boxUrl)"
+              >
+                <Check v-if="copiedBoxId === selectedClip.id" class="size-3.5" aria-hidden="true" />
+                <Copy v-else class="size-3.5" aria-hidden="true" />
+                Copy Box Link
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-8 rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                title="Delete clip"
+                @click="removeClipRecord(selectedClip.id)"
+              >
+                <Trash2 class="size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Editor Notes + Synced Transcript (.srt) -->
+        <aside class="flex min-h-0 flex-col border-t border-black/8 bg-[#FAF9F6] lg:border-t-0 lg:border-l">
+          <!-- Editor Notes Section -->
+          <div class="shrink-0 border-b border-black/8 p-4">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-semibold text-[#171717]">Editor Notes</span>
+              <Button
+                v-if="selectedClip.editorNotes"
+                variant="ghost"
+                size="xs"
+                type="button"
+                class="h-6 gap-1 rounded-md px-2 text-[11px] text-neutral-600 hover:bg-black/5"
+                @click="copyEditorNotes(selectedClip.editorNotes)"
+              >
+                <Check v-if="copiedNotes" class="size-3 text-emerald-700" aria-hidden="true" />
+                <Copy v-else class="size-3" aria-hidden="true" />
+                <span>{{ copiedNotes ? "Copied" : "Copy" }}</span>
+              </Button>
+            </div>
+            <p
+              v-if="selectedClip.editorNotes"
+              class="mt-2 rounded-lg border border-black/8 bg-white p-3 text-xs leading-relaxed text-neutral-700"
+            >
+              {{ selectedClip.editorNotes }}
+            </p>
+            <p v-else class="mt-2 text-xs text-neutral-400">
+              No editor notes recorded for this clip.
+            </p>
+          </div>
+
+          <!-- Synced Subtitles (.srt) Preview -->
+          <div class="flex min-h-0 flex-1 flex-col p-4">
+            <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
+              <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-[#171717]">
+                <FileText class="size-3.5 text-neutral-500" aria-hidden="true" />
+                Transcript
+              </span>
+              <span v-if="srtCues.length > 0" class="font-mono text-[10.5px] text-neutral-400 tabular-nums">
+                {{ srtCues.length }} lines · click to seek
+              </span>
+            </div>
+
+            <div
+              v-if="srtLoading"
+              class="flex items-center gap-2 py-6 text-xs text-neutral-500"
+            >
+              <Loader2 class="size-3.5 animate-spin" aria-hidden="true" />
+              Loading subtitles...
+            </div>
+            <div
+              v-else-if="srtCues.length > 0"
+              class="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1"
+            >
+              <button
+                v-for="cue in srtCues"
+                :key="cue.index"
+                type="button"
+                class="flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors"
+                :class="activeSrtCue?.index === cue.index ? 'bg-[#171717] text-white' : 'hover:bg-white'"
+                @click="seekDetailVideo(cue.startSec)"
+              >
+                <span
+                  class="mt-0.5 shrink-0 font-mono text-[10.5px] font-medium tabular-nums"
+                  :class="activeSrtCue?.index === cue.index ? 'text-white/70' : 'text-neutral-400'"
+                >
+                  {{ cue.startLabel }}
+                </span>
+                <span
+                  class="text-xs leading-relaxed"
+                  :class="activeSrtCue?.index === cue.index ? 'text-white font-medium' : 'text-neutral-700'"
+                >
+                  {{ cue.text }}
+                </span>
+              </button>
+            </div>
+            <p v-else class="text-xs text-neutral-400">
+              No synced `.srt` transcript available for this clip.
+            </p>
+          </div>
+        </aside>
+      </div>
+    </template>
+
+    <!-- PAGE 1: CLIPS LIST VIEW -->
     <template v-else>
     <!-- Row 1: Stacher-Style Full-Width Command / URL Omnibar -->
     <div class="shrink-0 border-b border-black/8 bg-[#FAF9F6] px-4 py-3">
@@ -1132,8 +1521,8 @@ onMounted(() => {
           <button
             type="button"
             class="group relative aspect-video w-[88px] overflow-hidden rounded-lg border border-black/10 bg-black text-left"
-            title="Preview clip"
-            @click="previewClip = clip"
+            title="Open clip detail"
+            @click="openClipDetail(clip)"
           >
             <video
               :src="clipMediaUrl(clip.filePath)"
@@ -1151,7 +1540,7 @@ onMounted(() => {
             <button
               type="button"
               class="block max-w-full truncate text-left text-xs font-semibold text-[#171717] hover:underline"
-              @click="previewClip = clip"
+              @click="openClipDetail(clip)"
             >
               {{ clip.title }}
             </button>
@@ -1297,19 +1686,38 @@ onMounted(() => {
           <article
             v-for="clip in filteredRecords"
             :key="clip.id"
-            class="flex flex-col overflow-hidden rounded-xl border border-black/10 bg-white"
+            class="flex flex-col overflow-hidden rounded-xl border border-black/10 bg-white transition-colors hover:border-black/25"
           >
-            <div class="relative aspect-video bg-black">
+            <button
+              type="button"
+              class="group relative aspect-video w-full bg-black text-left"
+              @click="openClipDetail(clip)"
+            >
               <video
                 :src="clipMediaUrl(clip.filePath)"
-                controls
                 preload="metadata"
-                class="h-full w-full object-contain"
+                muted
+                class="h-full w-full object-cover"
               />
-            </div>
+              <span class="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors group-hover:bg-black/35">
+                <Play class="size-7 fill-white text-white" aria-hidden="true" />
+              </span>
+              <span
+                v-if="clip.durationSec"
+                class="absolute right-2 bottom-2 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white tabular-nums"
+              >
+                {{ formatSec(clip.durationSec) }}
+              </span>
+            </button>
             <div class="flex flex-1 flex-col gap-2 p-3">
               <div class="flex items-start justify-between gap-2">
-                <h4 class="text-xs font-semibold leading-snug text-[#171717]">{{ clip.title }}</h4>
+                <button
+                  type="button"
+                  class="text-left text-xs font-semibold leading-snug text-[#171717] hover:underline"
+                  @click="openClipDetail(clip)"
+                >
+                  {{ clip.title }}
+                </button>
                 <span
                   v-if="clip.hookScore !== null"
                   class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-800"
@@ -1362,98 +1770,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
-
-    <!-- Native Video Preview Modal (when clicking any clip in List view) -->
-    <Dialog :open="Boolean(previewClip)" @update:open="(open) => { if (!open) previewClip = null; }">
-      <DialogContent class="max-w-2xl overflow-hidden p-0">
-        <div v-if="previewClip" class="flex flex-col">
-          <div class="aspect-video w-full bg-black">
-            <video
-              :src="clipMediaUrl(previewClip.filePath)"
-              controls
-              autoplay
-              class="h-full w-full object-contain"
-            />
-          </div>
-          <div class="flex flex-col gap-3 p-4">
-            <DialogHeader>
-              <div class="flex items-center justify-between gap-2">
-                <DialogTitle class="text-sm font-semibold">{{ previewClip.title }}</DialogTitle>
-                <span
-                  v-if="previewClip.hookScore !== null"
-                  class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-xs font-semibold text-emerald-800"
-                >
-                  Hook {{ previewClip.hookScore }}/10
-                </span>
-              </div>
-              <DialogDescription class="font-mono text-[11px]">
-                <span v-if="previewClip.startSec !== null && previewClip.endSec !== null">
-                  {{ formatSec(previewClip.startSec) }}–{{ formatSec(previewClip.endSec) }}
-                  ({{ previewClip.durationSec }}s) ·
-                </span>
-                {{ previewClip.filePath }}
-              </DialogDescription>
-            </DialogHeader>
-
-            <p
-              v-if="previewClip.editorNotes"
-              class="rounded-xl border border-black/8 bg-[#FAF9F6] p-3 text-xs leading-relaxed text-neutral-700"
-            >
-              {{ previewClip.editorNotes }}
-            </p>
-
-            <div class="flex flex-wrap items-center gap-2">
-              <a
-                :href="`${clipMediaUrl(previewClip.filePath)}&download=1`"
-                class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#171717] px-3 text-xs font-medium text-white hover:bg-neutral-800"
-              >
-                <Download class="size-3.5" aria-hidden="true" />
-                Download MP4
-              </a>
-              <a
-                v-if="previewClip.srtPath"
-                :href="`${clipMediaUrl(previewClip.srtPath)}&download=1`"
-                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 text-xs font-medium text-neutral-800 hover:bg-neutral-50"
-              >
-                <Download class="size-3.5" aria-hidden="true" />
-                Download SRT
-              </a>
-              <a
-                v-if="previewClip.youtubeUrl"
-                :href="previewClip.youtubeUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 text-xs font-medium text-neutral-800 hover:bg-neutral-50"
-              >
-                <ExternalLink class="size-3.5" aria-hidden="true" />
-                VOD Jump
-              </a>
-              <Button
-                v-if="!previewClip.boxUrl"
-                variant="outline"
-                size="sm"
-                class="ml-auto h-8 gap-1.5 rounded-lg text-xs"
-                :disabled="boxUploadingId === previewClip.id"
-                @click="sendClipToBox(previewClip)"
-              >
-                <Box class="size-3.5" aria-hidden="true" />
-                Send to Box
-              </Button>
-              <Button
-                v-else
-                variant="outline"
-                size="sm"
-                class="ml-auto h-8 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-xs text-emerald-800"
-                @click="copyBoxUrl(previewClip.id, previewClip.boxUrl)"
-              >
-                <Copy class="size-3.5" aria-hidden="true" />
-                Copy Box Link
-              </Button>
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    </template>
     </template>
   </div>
 </template>

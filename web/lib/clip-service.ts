@@ -117,7 +117,13 @@ export async function listClipEcosystem() {
     listClipJobs(30),
     listClipRecords({ limit: 80 }),
   ]);
-  const trackedPaths = new Set(records.map((r) => r.filePath));
+  const trackedPaths = new Set<string>();
+  for (const r of records) {
+    trackedPaths.add(r.filePath);
+    if (r.filePath.endsWith("_prepped.mp4")) {
+      trackedPaths.add(r.filePath.replace(/_prepped\.mp4$/, ".mp4"));
+    }
+  }
   const untrackedFiles = scanClipsDir({ trackedPaths });
   return {
     jobs,

@@ -9,6 +9,7 @@ import {
   updateClipJob,
   upsertClipRecord,
 } from "../lib/studio-db.ts";
+import { transcribeClipToSrt } from "../lib/elevenlabs-stt.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -289,12 +290,29 @@ export default function (pi: ExtensionAPI) {
         throw err;
       }
       const stat = fs.statSync(outPath);
+
+      // Generate accurate word-timed .srt via ElevenLabs Scribe v2 (zero-key Sprites Connector),
+      // falling back gracefully to any existing YouTube auto-transcript .srt if unavailable.
+      const preppedSrtPath = path.join(dir, `${base}_prepped.srt`);
+      const legacySrtPath = path.join(dir, `${base}.srt`);
+      const sttRes = await transcribeClipToSrt(outPath, preppedSrtPath);
+      const finalSrtPath = sttRes.ok
+        ? sttRes.srtPath
+        : fs.existsSync(legacySrtPath)
+          ? legacySrtPath
+          : null;
+
       const result = {
         input_path: resolvedIn,
         output_path: outPath,
         output_bytes: stat.size,
         target_lufs: lufs,
         format: "H.264 yuv420p CFR 30fps + AAC 192k +faststart",
+        srt_path: finalSrtPath,
+        srt_provider: sttRes.ok ? sttRes.provider : finalSrtPath ? "youtube-auto-transcript" : null,
+        srt_cues: sttRes.ok ? sttRes.cueCount : undefined,
+        srt_language: sttRes.ok ? sttRes.languageCode : undefined,
+        srt_warning: sttRes.ok ? undefined : sttRes.error,
       };
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
