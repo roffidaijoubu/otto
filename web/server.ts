@@ -54,6 +54,12 @@ import {
   syncYouTubeMetrics,
 } from "../agent/lib/youtube-metrics.ts";
 import {
+  getSocialMetricsOverview,
+  syncAllSocialMetrics,
+  syncSocialPlatform,
+  type SocialPlatform,
+} from "../agent/lib/social-metrics.ts";
+import {
   exportWorkspaceEntryToBox,
   resolveBoxGatewayUrl,
 } from "../agent/lib/box.ts";
@@ -1382,14 +1388,23 @@ Bun.serve({
       }
       const label = typeof payload.label === "string" ? payload.label : "Scheduled Wake-Up";
 
-      // Deterministic zero-LLM daily YouTube metrics sync (no omp turn spawned)
+      // Deterministic zero-LLM daily multi-platform metrics sync (YouTube + TikTok + IG + X)
       if (payload.mode === "metrics_sync") {
         const identity = readSetupIdentity();
-        const res = await syncYouTubeMetrics({ timezone: identity.timezone || "UTC" });
-        if (res.ok) broadcast({ type: "db_changed" });
+        const [ytRes, socialRes] = await Promise.all([
+          syncYouTubeMetrics({ timezone: identity.timezone || "UTC" }),
+          syncAllSocialMetrics().catch(() => []),
+        ]);
+        if (ytRes.ok || socialRes.some((r) => r.ok)) broadcast({ type: "db_changed" });
         return Response.json(
-          { ok: res.ok, mode: "metrics_sync", label, error: res.error },
-          { status: res.ok ? 200 : 500 }
+          {
+            ok: ytRes.ok || socialRes.some((r) => r.ok),
+            mode: "metrics_sync",
+            label,
+            error: ytRes.error,
+            socials: socialRes.map((r) => ({ platform: r.platform, ok: r.ok, error: r.error })),
+          },
+          { status: ytRes.ok || socialRes.some((r) => r.ok) ? 200 : 500 }
         );
       }
 
@@ -2515,9 +2530,52 @@ Bun.serve({
       return Response.json({ state, autoSyncStarted });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/db/metrics/platforms") {
+      return Response.json({ socials: getSocialMetricsOverview() });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/db/metrics/sync") {
       const identity = readSetupIdentity();
-      const res = await syncYouTubeMetrics({ timezone: identity.timezone || "UTC" });
+      const tz = identity.timezone || "UTC";
+      const body = (await req.json().catch(() => ({}))) as { platform?: string };
+      const target = String(body.platform || "youtube").toLowerCase();
+
+      if (target === "all") {
+        const [ytRes, socialRes] = await Promise.all([
+          syncYouTubeMetrics({ timezone: tz }),
+          syncAllSocialMetrics(),
+        ]);
+        const anyOk = ytRes.ok || socialRes.some((r) => r.ok);
+        if (anyOk) broadcast({ type: "db_changed" });
+        return Response.json(
+          {
+            ok: anyOk,
+            state: ytRes.state,
+            socials: getSocialMetricsOverview(),
+            results: {
+              youtube: { ok: ytRes.ok, error: ytRes.error },
+              ...Object.fromEntries(socialRes.map((r) => [r.platform, { ok: r.ok, error: r.error }])),
+            },
+          },
+          { status: anyOk ? 200 : 502 }
+        );
+      }
+
+      if (target === "tiktok" || target === "instagram" || target === "x") {
+        const sRes = await syncSocialPlatform(target as SocialPlatform);
+        if (sRes.ok) broadcast({ type: "db_changed" });
+        return Response.json(
+          {
+            ok: sRes.ok,
+            result: sRes,
+            socials: getSocialMetricsOverview(),
+            error: sRes.error,
+          },
+          { status: sRes.ok ? 200 : 502 }
+        );
+      }
+
+      const res = await syncYouTubeMetrics({ timezone: tz });
       if (res.ok) broadcast({ type: "db_changed" });
       return Response.json(res, { status: res.ok ? 200 : 502 });
     }
