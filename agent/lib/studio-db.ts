@@ -164,6 +164,25 @@ export interface ArchiveStats {
   totalChunks: number;
 }
 
+export type StudioMemoryCategory =
+  | "preference"
+  | "decision"
+  | "workflow"
+  | "team"
+  | "content"
+  | "opsec"
+  | "general";
+
+export interface StudioMemory {
+  id: string;
+  category: StudioMemoryCategory;
+  content: string;
+  tags: string[];
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------- Dual Backend Driver (Neon Serverless Postgres Primary + SQLite Fallback) ----------
 
 type SqlParam = string | number | boolean | null;
@@ -287,6 +306,16 @@ const SCHEMA_STATEMENTS: readonly string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_clips_job ON clips(job_id)`,
+  `CREATE TABLE IF NOT EXISTS studio_memories (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL DEFAULT 'general',
+    content TEXT NOT NULL,
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    source TEXT NOT NULL DEFAULT 'otto',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_studio_memories_updated ON studio_memories(updated_at DESC)`,
 ];
 
 function convertPlaceholdersToPg(sql: string): string {
@@ -1403,5 +1432,96 @@ export async function getArchiveStats(): Promise<ArchiveStats> {
 export async function deleteArchiveVideo(videoId: string): Promise<boolean> {
   const db = await getDb();
   const res = await db.run("DELETE FROM archive_videos WHERE video_id = ?", videoId);
+  return res.changes > 0;
+}
+
+// ---------- Cloud Persistent Long-Term Memories (Neon + Pinecone otto-memory) ----------
+
+function rowToStudioMemory(row: Record<string, unknown>): StudioMemory {
+  return {
+    id: String(row.id ?? ""),
+    category: (String(row.category ?? "general") as StudioMemoryCategory),
+    content: String(row.content ?? ""),
+    tags: safeJsonParse<string[]>(row.tags_json as string, []),
+    source: String(row.source ?? "otto"),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+export async function upsertStudioMemory(input: {
+  id?: string;
+  category?: StudioMemoryCategory;
+  content: string;
+  tags?: string[];
+  source?: string;
+}): Promise<StudioMemory> {
+  const db = await getDb();
+  const nowIso = new Date().toISOString();
+  const content = input.content.trim();
+  if (!content) throw new Error("Memory content is required");
+
+  const existing = input.id
+    ? await db.get<Record<string, unknown>>("SELECT * FROM studio_memories WHERE id = ?", input.id.trim())
+    : null;
+  const id = existing ? String(existing.id) : input.id?.trim() || makeId("mem");
+  const category = input.category ?? (existing ? (String(existing.category ?? "general") as StudioMemoryCategory) : "general");
+  const tags = Array.isArray(input.tags)
+    ? input.tags.map((t) => t.trim()).filter(Boolean).slice(0, 12)
+    : existing
+      ? safeJsonParse<string[]>(existing.tags_json as string, [])
+      : [];
+  const source = (input.source ?? (existing ? String(existing.source ?? "otto") : "otto")).trim();
+
+  await db.run(
+    `INSERT INTO studio_memories (
+      id, category, content, tags_json, source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      category = excluded.category,
+      content = excluded.content,
+      tags_json = excluded.tags_json,
+      source = excluded.source,
+      updated_at = excluded.updated_at`,
+    id,
+    category,
+    content,
+    JSON.stringify(tags),
+    source,
+    existing ? String(existing.created_at ?? nowIso) : nowIso,
+    nowIso
+  );
+
+  const saved = (await db.get<Record<string, unknown>>(
+    "SELECT * FROM studio_memories WHERE id = ?",
+    id
+  ))!;
+  return rowToStudioMemory(saved);
+}
+
+export async function listStudioMemories(opts?: {
+  category?: StudioMemoryCategory;
+  limit?: number;
+}): Promise<StudioMemory[]> {
+  const db = await getDb();
+  const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
+  if (opts?.category) {
+    const rows = await db.all<Record<string, unknown>>(
+      "SELECT * FROM studio_memories WHERE category = ? ORDER BY updated_at DESC LIMIT ?",
+      opts.category,
+      limit
+    );
+    return rows.map(rowToStudioMemory);
+  }
+  const rows = await db.all<Record<string, unknown>>(
+    "SELECT * FROM studio_memories ORDER BY updated_at DESC LIMIT ?",
+    limit
+  );
+  return rows.map(rowToStudioMemory);
+}
+
+export async function deleteStudioMemory(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM studio_memories WHERE id = ?", id);
   return res.changes > 0;
 }

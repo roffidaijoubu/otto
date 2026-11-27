@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readSetupIdentity, writeIdentityToMemoryMd } from "../lib/identity.ts";
+import { pushLocalMemoryMdToCloud } from "../lib/memory-sync.ts";
 import { getStudioMeta, setStudioMeta } from "../../agent/lib/studio-db.ts";
 import { updatePrivateWebPassword, buildAuthCookieHeader } from "../lib/auth.ts";
 import { broadcast } from "../lib/sse.ts";
@@ -49,6 +50,7 @@ export async function handleSetupRoutes(req: Request, url: URL): Promise<Respons
         const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
         if (creatorName || timezone) {
           writeIdentityToMemoryMd(creatorName, timezone);
+          void pushLocalMemoryMdToCloud().catch(() => {});
         }
         const newPw = typeof body.newPassword === "string" ? body.newPassword.trim() : "";
         if (newPw) {
