@@ -363,9 +363,11 @@ export default function (pi: ExtensionAPI) {
       title: Type.Optional(Type.String({ description: "Optional discovered VOD title" })),
     }),
     async execute(_id, params) {
+      const isFailureStage = /^(failed|blocked|error)/i.test(params.stage.trim());
       const updated = updateClipJob(params.jobId, {
         stage: params.stage,
         logMessage: params.message,
+        ...(isFailureStage ? { status: "failed", error: params.message } : {}),
         ...(params.title ? { title: params.title } : {}),
       });
       if (!updated) throw new Error(`Clip job not found: ${params.jobId}`);
