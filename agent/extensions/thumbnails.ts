@@ -4,6 +4,7 @@ import {
   deleteThumbnailProject,
   getThumbnailProject,
   listThumbnailProjects,
+  renderThumbnailHeadless,
   saveThumbnailProject,
 } from "../lib/thumbnails.ts";
 
@@ -194,6 +195,47 @@ export default function (pi: ExtensionAPI) {
       }
       return {
         content: [{ type: "text", text: JSON.stringify(detail, null, 2) }],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "thumbnail_render",
+    label: "Render Thumbnail Project to JPG/PNG (Headless Chrome)",
+    description:
+      "Autonomously render a saved 1280x720 Thumbnail Studio HTML project into a YouTube-ready JPG (< 2 MB) or PNG image inside /home/sprite/workspace/thumbnails/<slug>/ using headless Chrome. Use this whenever you need the final image file (for YouTube upload, Box handoff, or critique_thumbnail) without asking the user to click Export manually.",
+    parameters: Type.Object({
+      slug: Type.String({ description: "Thumbnail project slug to render." }),
+      format: Type.Optional(
+        Type.Union([Type.Literal("jpg"), Type.Literal("png")], {
+          description: "Output image format (default 'jpg' for guaranteed < 2 MB YouTube compatibility).",
+        })
+      ),
+    }),
+    async execute(_id, params) {
+      const format = params.format === "png" ? "png" : "jpg";
+      const out = renderThumbnailHeadless(params.slug, format);
+      await notifyStudioThumbnail("/api/internal/thumbnail/changed", { slug: params.slug });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ok: true,
+                slug: params.slug,
+                format,
+                workspacePath: out.workspacePath,
+                absPath: out.filePath,
+                size: out.size,
+                exportedUrl: out.project.exportedUrl,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        details: { slug: params.slug, size: out.size },
       };
     },
   });

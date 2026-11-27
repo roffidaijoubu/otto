@@ -7,6 +7,7 @@
  * - thumbnail.png / thumbnail.jpg (exported 1280x720 image when rendered)
  */
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -277,4 +278,78 @@ export function getThumbnailAssetPath(slug: string, rawName: string): { absPath:
             ? "image/svg+xml"
             : "application/octet-stream";
   return { absPath, mimeType };
+}
+
+export function renderThumbnailHeadless(
+  slug: string,
+  format: "jpg" | "png" = "jpg"
+): { project: ThumbnailProjectSummary; workspacePath: string; filePath: string; size: number } {
+  const safe = sanitizeThumbnailSlug(slug);
+  const detail = getThumbnailProject(safe);
+  if (!detail) {
+    throw new Error(`Thumbnail project "${safe}" not found.`);
+  }
+  const dir = getThumbnailProjectDir(safe);
+  const assetsDir = path.join(dir, "assets");
+  const tmpHtml = path.join(dir, `._render_${process.pid}_${Date.now()}.html`);
+  const tmpPng = path.join(dir, `._render_${process.pid}_${Date.now()}.png`);
+  const tmpJpg = path.join(dir, `._render_${process.pid}_${Date.now()}.jpg`);
+
+  // Rewrite same-origin /api/thumbnails/<slug>/assets/<name> URLs to local file:// paths for headless Chrome
+  const fileAssetPrefix = `file://${assetsDir.replace(/\\/g, "/")}/`;
+  const standaloneHtml = detail.html.replace(
+    new RegExp(`/api/thumbnails/${safe.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/assets/`, "g"),
+    fileAssetPrefix
+  );
+
+  try {
+    fs.writeFileSync(tmpHtml, standaloneHtml, "utf8");
+    const chromeBin = fs.existsSync("/usr/bin/google-chrome")
+      ? "/usr/bin/google-chrome"
+      : fs.existsSync("/usr/bin/chromium")
+        ? "/usr/bin/chromium"
+        : "google-chrome";
+
+    execFileSync(
+      chromeBin,
+      [
+        "--headless=new",
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--hide-scrollbars",
+        "--window-size=1280,720",
+        "--force-device-scale-factor=1",
+        "--virtual-time-budget=4000",
+        `--screenshot=${tmpPng}`,
+        `file://${tmpHtml}`,
+      ],
+      { timeout: 30_000, stdio: "pipe" }
+    );
+
+    if (!fs.existsSync(tmpPng)) {
+      throw new Error("Headless Chrome did not produce a screenshot.");
+    }
+
+    let finalBytes: Buffer;
+    if (format === "jpg") {
+      execFileSync("ffmpeg", ["-y", "-i", tmpPng, "-q:v", "2", tmpJpg], {
+        timeout: 15_000,
+        stdio: "pipe",
+      });
+      finalBytes = fs.readFileSync(tmpJpg);
+    } else {
+      finalBytes = fs.readFileSync(tmpPng);
+    }
+
+    return saveThumbnailExportBytes(safe, finalBytes, format);
+  } finally {
+    for (const f of [tmpHtml, tmpPng, tmpJpg]) {
+      try {
+        if (fs.existsSync(f)) fs.unlinkSync(f);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }

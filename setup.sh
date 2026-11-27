@@ -43,6 +43,15 @@ if ! command -v yt-dlp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/yt-dlp" ]; 
   chmod +x "${HOME}/.local/bin/yt-dlp"
 fi
 
+# 1b. Ensure headless Chrome/Chromium is available for autonomous Thumbnail Studio JPG/PNG rendering
+if ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "==> Installing headless chromium for Thumbnail Studio rendering..."
+    SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+    ${SUDO} apt-get update -qq && (${SUDO} apt-get install -y -qq --no-install-recommends chromium || ${SUDO} apt-get install -y -qq --no-install-recommends chromium-browser) || true
+  fi
+fi
+
 # 2. Symlink agent persona, config, extensions, and skills
 mkdir -p "${OMP_AGENT_DIR}/extensions"
 ln -sf "${REPO_DIR}/agent/APPEND_SYSTEM.md" "${OMP_AGENT_DIR}/APPEND_SYSTEM.md"

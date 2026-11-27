@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { renderThumbnailHeadless } from "../lib/thumbnails.ts";
 
 interface ComposioContext {
   baseUrl: string;
@@ -152,6 +154,151 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
         details: {},
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "youtube_schedule_live_broadcast",
+    label: "Schedule YouTube Live Broadcast (with Optional Auto-Rendered Thumbnail)",
+    description:
+      "Create a scheduled YouTube Live Broadcast (waiting room) via Composio v3 Proxy using the creator's connected YouTube account. Defaults safely to privacyStatus='unlisted'. Optionally pass `thumbnailSlug` (a Thumbnail Studio project slug) to autonomously render the 1280x720 JPG via headless Chrome and attach it to the scheduled broadcast. ALWAYS confirm title, scheduledStartTime, and privacyStatus with the creator before calling.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "YouTube Live stream title (max 100 chars)." },
+        description: { type: "string", description: "YouTube Live stream description." },
+        scheduledStartTime: {
+          type: "string",
+          description: "ISO-8601 start timestamp with timezone offset (e.g. '2026-12-20T19:30:00+07:00').",
+        },
+        privacyStatus: {
+          type: "string",
+          enum: ["unlisted", "private", "public"],
+          description: "Broadcast visibility (default 'unlisted' for safe review).",
+        },
+        thumbnailSlug: {
+          type: "string",
+          description:
+            "Optional Thumbnail Studio slug — Otto will autonomously render it to 1280x720 JPG via headless Chrome and upload it as the broadcast thumbnail.",
+        },
+      },
+      required: ["title", "scheduledStartTime"],
+    },
+    async execute(
+      _toolCallId,
+      params: {
+        title: string;
+        description?: string;
+        scheduledStartTime: string;
+        privacyStatus?: "unlisted" | "private" | "public";
+        thumbnailSlug?: string;
+      }
+    ) {
+      const ctx = await getComposioContext();
+      const privacyStatus = params.privacyStatus || "unlisted";
+
+      // 1. Create the scheduled YouTube Live Broadcast via Composio v3 Proxy
+      const createRes = await fetch(`${ctx.baseUrl}/api/v3/tools/execute/proxy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connected_account_id: ctx.connectedAccountId,
+          user_id: ctx.userId,
+          endpoint: "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status,contentDetails",
+          method: "POST",
+          body: {
+            snippet: {
+              title: params.title.trim().slice(0, 100),
+              description: (params.description || "").trim(),
+              scheduledStartTime: params.scheduledStartTime.trim(),
+            },
+            status: {
+              privacyStatus,
+              selfDeclaredMadeForKids: false,
+            },
+            contentDetails: {
+              enableAutoStart: false,
+              enableAutoStop: true,
+              enableDvr: true,
+              recordFromStart: true,
+            },
+          },
+        }),
+      });
+      const createData = (await createRes.json().catch(() => ({}))) as {
+        data?: { id?: string; snippet?: { title?: string; scheduledStartTime?: string } };
+        error?: { message?: string };
+      };
+      if (!createRes.ok || !createData.data?.id) {
+        throw new Error(
+          `Failed to schedule YouTube Live Broadcast (HTTP ${createRes.status}): ${JSON.stringify(createData).slice(0, 260)}`
+        );
+      }
+
+      const broadcastId = createData.data.id;
+      let renderedThumbnailPath: string | null = null;
+      let thumbnailAttached = false;
+      let thumbnailNote: string | null = null;
+
+      // 2. Optionally auto-render Thumbnail Studio project via headless Chrome & attach to broadcast
+      if (params.thumbnailSlug?.trim()) {
+        try {
+          const rendered = renderThumbnailHeadless(params.thumbnailSlug.trim(), "jpg");
+          renderedThumbnailPath = rendered.workspacePath;
+          const bytes = fs.readFileSync(rendered.filePath);
+
+          const thumbRes = await fetch(`${ctx.baseUrl}/api/v3/tools/execute/YOUTUBE_UPDATE_THUMBNAIL`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              connected_account_id: ctx.connectedAccountId,
+              user_id: ctx.userId,
+              arguments: {
+                video_id: broadcastId,
+                thumbnail: {
+                  name: `${params.thumbnailSlug.trim()}.jpg`,
+                  mimetype: "image/jpeg",
+                  s3key: undefined,
+                  content: bytes.toString("base64"),
+                },
+              },
+            }),
+          });
+          if (thumbRes.ok) {
+            thumbnailAttached = true;
+          } else {
+            const errTxt = await thumbRes.text().catch(() => "");
+            thumbnailNote = `Thumbnail rendered cleanly to ${rendered.workspacePath}, but YouTube thumbnail upload returned HTTP ${thumbRes.status}: ${errTxt.slice(0, 140)}`;
+          }
+        } catch (err) {
+          thumbnailNote = `Thumbnail step note: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ok: true,
+                broadcastId,
+                title: createData.data.snippet?.title || params.title,
+                scheduledStartTime: createData.data.snippet?.scheduledStartTime || params.scheduledStartTime,
+                privacyStatus,
+                watchUrl: `https://youtube.com/watch?v=${broadcastId}`,
+                studioUrl: `https://studio.youtube.com/video/${broadcastId}/livestreaming`,
+                renderedThumbnailPath,
+                thumbnailAttached,
+                thumbnailNote,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        details: { broadcastId, thumbnailAttached },
       };
     },
   });
