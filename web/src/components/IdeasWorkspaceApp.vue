@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { playSound } from "@/lib/sounds";
 
 export interface ContentIdeaItem {
   id: string;
@@ -120,6 +121,7 @@ async function addIdea() {
   });
   if (!res.ok) {
     errorMsg.value = "Could not save idea";
+    playSound("error");
     return;
   }
   newTitle.value = "";
@@ -138,7 +140,8 @@ async function patchIdea(id: string, patch: Partial<ContentIdeaItem>) {
 }
 
 async function removeIdea(id: string) {
-  await fetch(`/api/db/pipeline/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`/api/db/pipeline/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (res.ok) playSound("delete");
   await fetchIdeas();
 }
 

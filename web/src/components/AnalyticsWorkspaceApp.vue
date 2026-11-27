@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { YouTubeMetricsWidgetState } from "./ChannelMetricsWidget.vue";
 import PlatformBrandIcon from "./PlatformBrandIcon.vue";
+import { playSound } from "@/lib/sounds";
 
 export interface ChannelMetric {
   id: string;
@@ -226,7 +227,12 @@ async function toggleDaily() {
     };
     if (data.state) widgetState.value = data.state;
     if (data.note) dailyNote.value = data.note;
-    if (!res.ok && data.error) errorMsg.value = data.error;
+    if (!res.ok && data.error) {
+      errorMsg.value = data.error;
+      playSound("error");
+    } else if (res.ok) {
+      playSound("toggle");
+    }
   } finally {
     togglingDaily.value = false;
   }
@@ -260,7 +266,8 @@ async function addManualMetric() {
 }
 
 async function removeMetric(id: string) {
-  await fetch(`/api/db/metrics/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`/api/db/metrics/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (res.ok) playSound("delete");
   await fetchAll();
 }
 

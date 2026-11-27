@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { playSound } from "@/lib/sounds";
 
 export interface StudioContact {
   id: string;
@@ -307,6 +308,7 @@ async function submitNewContact() {
     } | null;
     if (!res.ok || !data?.ok) {
       toast.error(data?.error || "Could not create contact");
+      playSound("error");
       return;
     }
     newModalOpen.value = false;
@@ -336,6 +338,7 @@ async function confirmDelete() {
         mobileDetailOpen.value = false;
       }
       toast.success(`Removed ${target.name}`);
+      playSound("delete");
       await fetchContacts();
     }
   } finally {

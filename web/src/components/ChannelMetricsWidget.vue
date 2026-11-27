@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { RefreshCwIcon } from "@lucide/vue";
 import PlatformBrandIcon from "./PlatformBrandIcon.vue";
+import { playSound } from "@/lib/sounds";
 
 interface SocialWidgetItem {
   platform: "tiktok" | "instagram" | "x";
@@ -168,7 +169,12 @@ async function toggleDailySync() {
       error?: string;
     };
     if (data.state) state.value = data.state;
-    if (!res.ok && data.error) errorMsg.value = data.error;
+    if (!res.ok && data.error) {
+      errorMsg.value = data.error;
+      playSound("error");
+    } else if (res.ok) {
+      playSound("toggle");
+    }
   } finally {
     togglingDaily.value = false;
   }

@@ -10,7 +10,10 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  Volume2,
+  VolumeX,
 } from "@lucide/vue";
+import { soundsEnabled, toggleSounds } from "@/lib/sounds";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -234,6 +237,20 @@ const focusedWin = computed(() => {
       <span class="px-1.5 font-mono text-[11.5px] font-medium tabular-nums text-[#4a4a4a]">
         {{ formattedClock }}
       </span>
+
+      <button
+        type="button"
+        data-os-sound-toggle
+        :aria-label="soundsEnabled ? 'Mute UI sounds' : 'Unmute UI sounds'"
+        :title="soundsEnabled ? 'UI sounds on (click to mute for OBS)' : 'UI sounds muted (click to enable)'"
+        :aria-pressed="soundsEnabled"
+        class="flex size-6 items-center justify-center rounded-full transition-colors hover:bg-black/6"
+        :class="soundsEnabled ? 'text-[#525252] hover:text-[#303030]' : 'text-[#a3a3a3] hover:text-[#303030]'"
+        @click="toggleSounds()"
+      >
+        <Volume2 v-if="soundsEnabled" class="size-3.5" aria-hidden="true" />
+        <VolumeX v-else class="size-3.5" aria-hidden="true" />
+      </button>
 
       <button
         type="button"

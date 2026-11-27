@@ -23,6 +23,7 @@ import StudioSetupWizard from "./components/StudioSetupWizard.vue";
 import SystemSettingsApp, { type SettingsTab } from "./components/SystemSettingsApp.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import WorkspaceFileManager from "./components/WorkspaceFileManager.vue";
+import { playSound } from "@/lib/sounds";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
 
 const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
@@ -342,6 +343,9 @@ function connectEvents() {
       liveText.value += msg.delta;
       scrollToBottom();
     } else if (type === "assistant_end" && typeof msg.text === "string") {
+      if (msg.text.trim()) {
+        playSound("chat_receive");
+      }
       commitLiveAssistant(msg.text);
     } else if (type === "workspace_changed") {
       workspaceRefreshTick.value += 1;
@@ -390,6 +394,7 @@ function connectEvents() {
     } else if (type === "error") {
       error.value = typeof msg.message === "string" ? msg.message : "Unexpected error";
       busy.value = false;
+      playSound("error");
     }
   };
 }
@@ -410,6 +415,7 @@ async function sendMessage(attachments: ComposerAttachment[] = []) {
   draft.value = "";
   busy.value = true;
   activity.value = "Thinking...";
+  playSound("chat_send");
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
@@ -422,10 +428,12 @@ async function sendMessage(attachments: ComposerAttachment[] = []) {
       };
       error.value = err.error || "Failed to send message";
       busy.value = false;
+      playSound("error");
     }
   } catch (err) {
     error.value = "Network error: " + (err instanceof Error ? err.message : String(err));
     busy.value = false;
+    playSound("error");
   }
 }
 

@@ -15,10 +15,13 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
   UserIcon,
+  Volume2Icon,
+  VolumeXIcon,
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import OttoMascot from "./OttoMascot.vue";
 import { renderMarkdown } from "@/lib/markdown";
+import { playSound, setSoundsEnabled, soundsEnabled } from "@/lib/sounds";
 import type { WindowManagerInstance } from "@/composables/useWindowManager";
 
 export interface ConnectorInfo {
@@ -399,8 +402,45 @@ watch(
                     :class="mascotColor === sw ? 'scale-110 border-[#171717]' : 'border-black/15'"
                     :style="{ background: sw }"
                     :aria-label="`Set Otto color ${sw}`"
-                    @click="emit('selectMascotColor', sw)"
+                    @click="playSound('toggle'); emit('selectMascotColor', sw)"
                   />
+                </div>
+              </div>
+            </section>
+
+            <section class="flex flex-col gap-2">
+              <h3 class="text-xs font-semibold text-[#171717]">Sound Effects</h3>
+              <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/8 bg-[#FAF9F6]/60 px-4 py-3">
+                <div class="flex items-center gap-2.5">
+                  <Volume2Icon v-if="soundsEnabled" class="size-4 shrink-0 text-[#171717]" />
+                  <VolumeXIcon v-else class="size-4 shrink-0 text-neutral-400" />
+                  <div>
+                    <div class="text-xs font-medium text-[#171717]">Tactile UI Audio</div>
+                    <div class="text-[11px] text-neutral-500">
+                      Subtle desk feedback for windows, chat, and background jobs. Mute anytime from the top bar when live in OBS.
+                    </div>
+                  </div>
+                </div>
+                <div
+                  data-settings-sounds-toggle
+                  class="inline-flex items-center gap-0.5 rounded-lg border border-black/10 bg-white p-0.5"
+                >
+                  <button
+                    type="button"
+                    class="rounded-md px-2.5 py-1 font-mono text-[10.5px] font-medium transition-colors"
+                    :class="soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+                    @click="setSoundsEnabled(true)"
+                  >
+                    On
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-md px-2.5 py-1 font-mono text-[10.5px] font-medium transition-colors"
+                    :class="!soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+                    @click="setSoundsEnabled(false)"
+                  >
+                    Muted
+                  </button>
                 </div>
               </div>
             </section>
@@ -423,7 +463,7 @@ watch(
                       data-controls-mode="auto"
                       class="rounded-md px-2 py-1 font-mono text-[10.5px] font-medium transition-colors"
                       :class="wm.controlsMode.value === 'auto' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-                      @click="wm.setControlsMode('auto')"
+                      @click="playSound('toggle'); wm.setControlsMode('auto')"
                     >
                       Auto
                     </button>
@@ -432,7 +472,7 @@ watch(
                       data-controls-mode="mac"
                       class="rounded-md px-2 py-1 font-mono text-[10.5px] font-medium transition-colors"
                       :class="wm.controlsMode.value === 'mac' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-                      @click="wm.setControlsMode('mac')"
+                      @click="playSound('toggle'); wm.setControlsMode('mac')"
                     >
                       macOS
                     </button>
@@ -441,7 +481,7 @@ watch(
                       data-controls-mode="windows"
                       class="rounded-md px-2 py-1 font-mono text-[10.5px] font-medium transition-colors"
                       :class="wm.controlsMode.value === 'windows' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-                      @click="wm.setControlsMode('windows')"
+                      @click="playSound('toggle'); wm.setControlsMode('windows')"
                     >
                       Windows
                     </button>

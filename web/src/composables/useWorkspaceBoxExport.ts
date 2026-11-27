@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { toast } from "vue-sonner";
+import { playSound } from "@/lib/sounds";
 import type { BoxExportResult } from "../types/workspace";
 
 export function useWorkspaceBoxExport() {
@@ -46,6 +47,7 @@ export function useWorkspaceBoxExport() {
       };
       if (!res.ok || !data.ok || !data.url) {
         boxError.value = data.error || "Box upload failed";
+        playSound("error");
       } else {
         boxResult.value = {
           kind: data.kind === "folder" ? "folder" : "file",
@@ -56,10 +58,12 @@ export function useWorkspaceBoxExport() {
           uploadedCount: data.uploadedCount ?? 1,
           skipped: Array.isArray(data.skipped) ? data.skipped : [],
         };
+        playSound("job_complete");
         toast.success(`Uploaded ${boxResult.value.name} to Box`);
       }
     } catch (err) {
       boxError.value = err instanceof Error ? err.message : "Box upload failed";
+      playSound("error");
     } finally {
       boxUploading.value = false;
     }

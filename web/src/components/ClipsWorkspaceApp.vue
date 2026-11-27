@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { playSound } from "@/lib/sounds";
 
 interface ClipJobLogEntry {
   at: string;
@@ -191,6 +192,8 @@ async function pasteFromClipboard() {
   }
 }
 
+const prevJobStatus = new Map<string, ClipJob["status"]>();
+
 async function loadEcosystem(silent = false) {
   if (!silent) loading.value = true;
   try {
@@ -201,7 +204,28 @@ async function loadEcosystem(silent = false) {
       records?: ClipRecord[];
       untrackedFiles?: UntrackedClipFile[];
     };
-    jobs.value = data.jobs ?? [];
+    const nextJobs = data.jobs ?? [];
+    if (prevJobStatus.size > 0) {
+      let playedDone = false;
+      let playedErr = false;
+      for (const job of nextJobs) {
+        const before = prevJobStatus.get(job.id);
+        if (before === "queued" || before === "running") {
+          if (job.status === "done" && !playedDone) {
+            playSound("job_complete");
+            playedDone = true;
+          } else if (job.status === "failed" && !playedErr) {
+            playSound("error");
+            playedErr = true;
+          }
+        }
+      }
+    }
+    prevJobStatus.clear();
+    for (const job of nextJobs) {
+      prevJobStatus.set(job.id, job.status);
+    }
+    jobs.value = nextJobs;
     records.value = data.records ?? [];
     untrackedFiles.value = data.untrackedFiles ?? [];
   } catch (err) {
@@ -244,6 +268,7 @@ async function launchJob() {
     await loadEcosystem(true);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Could not start clip job");
+    playSound("error");
   } finally {
     launching.value = false;
   }
@@ -264,11 +289,13 @@ async function cancelJob(id: string) {
 
 async function removeJob(id: string) {
   try {
-    await fetch(`/api/clips/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/clips/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) playSound("delete");
     if (expandedJobId.value === id) expandedJobId.value = null;
     await loadEcosystem(true);
   } catch {
     toast.error("Failed to remove job");
+    playSound("error");
   }
 }
 
@@ -282,10 +309,12 @@ async function sendClipToBox(rec: ClipRecord) {
     if (!res.ok || !data.ok) {
       throw new Error(data.error || "Box upload failed");
     }
+    playSound("job_complete");
     toast.success("Clip uploaded to Box (Otto Handoffs/)!");
     await loadEcosystem(true);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Box upload failed");
+    playSound("error");
   } finally {
     boxUploadingId.value = null;
   }
@@ -306,11 +335,13 @@ async function copyBoxUrl(id: string, url: string) {
 
 async function removeClipRecord(id: string) {
   try {
-    await fetch(`/api/clips/records/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/clips/records/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) playSound("delete");
     if (previewClip.value?.id === id) previewClip.value = null;
     await loadEcosystem(true);
   } catch {
     toast.error("Failed to remove clip record");
+    playSound("error");
   }
 }
 

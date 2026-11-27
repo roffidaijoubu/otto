@@ -1,0 +1,114 @@
+{
+ "theme": null,
+ "format": "webm",
+ "formats": [
+  "webm",
+  "mp3"
+ ],
+ "sounds": [
+  {
+   "name": "window_open",
+   "file": "window_open.webm",
+   "files": [
+    "window_open.webm",
+    "window_open.mp3"
+   ],
+   "sound": "open/drawer",
+   "dur_s": 0.679,
+   "lufs_max": -18.0,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "window_close",
+   "file": "window_close.webm",
+   "files": [
+    "window_close.webm",
+    "window_close.mp3"
+   ],
+   "sound": "close/drawer",
+   "dur_s": 0.736,
+   "lufs_max": -18.1,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "chat_send",
+   "file": "chat_send.webm",
+   "files": [
+    "chat_send.webm",
+    "chat_send.mp3"
+   ],
+   "sound": "send/swoosh",
+   "dur_s": 0.272,
+   "lufs_max": -18.0,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "chat_receive",
+   "file": "chat_receive.webm",
+   "files": [
+    "chat_receive.webm",
+    "chat_receive.mp3"
+   ],
+   "sound": "receive/cork",
+   "dur_s": 0.41,
+   "lufs_max": -17.0,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "job_complete",
+   "file": "job_complete.webm",
+   "files": [
+    "job_complete.webm",
+    "job_complete.mp3"
+   ],
+   "sound": "success/shutter",
+   "dur_s": 0.373,
+   "lufs_max": -16.1,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "toggle",
+   "file": "toggle.webm",
+   "files": [
+    "toggle.webm",
+    "toggle.mp3"
+   ],
+   "sound": "toggle/key_down",
+   "dur_s": 0.076,
+   "lufs_max": -19.2,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "delete",
+   "file": "delete.webm",
+   "files": [
+    "delete.webm",
+    "delete.mp3"
+   ],
+   "sound": "delete/snip",
+   "dur_s": 0.653,
+   "lufs_max": -18.0,
+   "loop": false,
+   "ok": true
+  },
+  {
+   "name": "error",
+   "file": "error.webm",
+   "files": [
+    "error.webm",
+    "error.mp3"
+   ],
+   "sound": "error/knock",
+   "dur_s": 0.593,
+   "lufs_max": -18.0,
+   "loop": false,
+   "ok": true
+  }
+ ]
+}

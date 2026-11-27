@@ -9,6 +9,7 @@ import {
   type InjectionKey,
   type Ref,
 } from "vue";
+import { playSound } from "@/lib/sounds";
 
 export type BuiltinAppId =
   | "otto-chat"
@@ -726,8 +727,12 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
     if (!win) return;
 
     const wasClosed = !win.isOpen;
+    const wasHidden = wasClosed || win.isMinimized;
     win.isOpen = true;
     win.isMinimized = false;
+    if (wasHidden) {
+      playSound("window_open");
+    }
 
     if (opts.subtitle !== undefined) win.subtitle = opts.subtitle;
     if (opts.badgeText !== undefined) win.badgeText = opts.badgeText;
@@ -771,17 +776,24 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
   function closeWindow(id: StudioAppId) {
     const win = windows[id];
     if (!win) return;
+    const wasVisible = win.isOpen && !win.isMinimized;
     win.isOpen = false;
     win.isMinimized = false;
     win.isMaximized = false;
     win.snapZone = null;
     win.attention = false;
+    if (wasVisible) {
+      playSound("window_close");
+    }
     schedulePersist();
   }
 
   function minimizeWindow(id: StudioAppId) {
     const win = windows[id];
     if (!win || !win.isOpen) return;
+    if (!win.isMinimized) {
+      playSound("window_close");
+    }
     win.isMinimized = true;
     schedulePersist();
   }

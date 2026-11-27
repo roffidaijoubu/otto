@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { playSound } from "@/lib/sounds";
 
 interface ObsOverlayItem {
   slug: string;
@@ -265,6 +266,7 @@ async function sendRefine(instructionOverride?: string) {
   });
   if (!instructionOverride) refineInput.value = "";
   refining.value = true;
+  playSound("chat_send");
   await scrollRefineToBottom();
 
   try {
@@ -292,6 +294,7 @@ async function sendRefine(instructionOverride?: string) {
     });
     frameKey.value += 1;
     await loadOverlays(slug, true);
+    playSound("job_complete");
     toast.success(`Refined "${ov.title}"`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not refine overlay";
@@ -300,6 +303,7 @@ async function sendRefine(instructionOverride?: string) {
       role: "assistant",
       text: `Error: ${msg}`,
     });
+    playSound("error");
     toast.error(msg);
   } finally {
     refining.value = false;
@@ -325,6 +329,7 @@ async function confirmDeleteOverlay() {
     if (!res.ok) throw new Error("Delete failed");
     const wasSelected = selectedSlug.value === ov.slug;
     deleteTarget.value = null;
+    playSound("delete");
     toast.success(`Deleted ${ov.title}`);
     if (wasSelected) {
       selectedSlug.value = "";
@@ -332,6 +337,7 @@ async function confirmDeleteOverlay() {
     }
     await loadOverlays();
   } catch {
+    playSound("error");
     toast.error("Could not delete overlay");
   } finally {
     deleting.value = false;
@@ -367,8 +373,10 @@ async function requestNewOverlay(prompt: string, label?: string) {
     if (data.slug) {
       void nextTick(() => attachStageObserver());
     }
+    playSound("job_complete");
     toast.success("OBS overlay deployed live to your Fly Machine!");
   } catch (err) {
+    playSound("error");
     toast.error(err instanceof Error ? err.message : "Could not create overlay");
   } finally {
     creatingOverlay.value = false;
@@ -916,11 +924,11 @@ defineExpose({
 
     <!-- Create New Overlay Dialog (Prompt-First Hero Composer + Starter Templates Below) -->
     <Dialog v-model:open="showCreateDialog">
-      <DialogContent class="max-w-2xl p-6">
+      <DialogContent class="sm:max-w-3xl p-6">
         <DialogHeader>
-          <div class="flex items-center justify-between gap-2 pr-6">
+          <div class="flex items-center justify-between gap-3 pr-7">
             <DialogTitle class="font-mono text-base font-semibold">Create New OBS Overlay</DialogTitle>
-            <span class="rounded-full bg-[#F2F2F2] px-2.5 py-0.5 font-mono text-[10.5px] text-neutral-600">
+            <span class="shrink-0 whitespace-nowrap rounded-full bg-[#F2F2F2] px-2.5 py-0.5 font-mono text-[10.5px] text-neutral-600">
               Isolated worker · 1920×1080
             </span>
           </div>
@@ -937,9 +945,9 @@ defineExpose({
           <div class="flex flex-col overflow-hidden rounded-2xl border border-[#D4D4D4] bg-[#FAFAFA] transition-colors focus-within:border-[#171717] focus-within:bg-white">
             <textarea
               v-model="customOverlayPrompt"
-              rows="4"
+              rows="5"
               placeholder="Describe your overlay... e.g. 'Minimal cyberpunk Starting Soon screen with a 10-minute countdown, editable stream title, animated pulse dot, and Start/Pause/Reset buttons on the remote deck'"
-              class="min-h-[112px] w-full resize-none bg-transparent p-3.5 text-sm leading-relaxed text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+              class="min-h-[128px] w-full resize-none bg-transparent p-4 text-sm leading-relaxed text-[#171717] placeholder:text-neutral-400 focus:outline-none"
               @keydown="handleCreateKeydown"
             />
             <div class="flex items-center justify-between border-t border-[#EDEDED] bg-white/80 px-3 py-2">
