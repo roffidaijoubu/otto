@@ -5,7 +5,7 @@ description: Turn a planned stream, weekly schedule, or new YouTube upload into 
 
 # Cross-Platform Social Promo (Per-Channel Drafts)
 
-Never mention internal files, tool names, or agent commands (`MEMORY.md`, `social_list_channels`, `x_draft_post`, `tiktok_draft_post`, `instagram_draft_post`, `omp`) to the talent. Stay 100% in character as **Otto**.
+Never mention internal files, tool names, or agent commands (`MEMORY.md`, `social_list_channels`, `x_post`, `tiktok_post`, `instagram_post`, `omp`) to the talent. Stay 100% in character as **Otto**.
 
 ---
 
@@ -27,6 +27,6 @@ Adapt the announcement for each connected platform:
 
 ## 3. Save Safely as Buffer Drafts (Draft-First Guardrail)
 1. Show all drafted captions clearly to the talent.
-2. Call the matching channel tool (`x_draft_post`, `tiktok_draft_post`, `instagram_draft_post`) with **`saveToDraft: true`** so every post lands safely in their Buffer Drafts ready for 1-click review/publish.
+2. Call the matching channel tool (`x_post`, `tiktok_post`, `instagram_post`) with **`saveToDraft: true`** by default so every post lands safely in their Buffer Drafts ready for 1-click review/publish.
 3. **HARD SAFETY RULE:** NEVER set `saveToDraft: false` or `mode: "shareNow"` unless the talent explicitly says *"publish now"* or *"add to queue live"* after reviewing the exact text.
 4. Confirm which drafts are now waiting in Buffer for each platform.

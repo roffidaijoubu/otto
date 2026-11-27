@@ -1,8 +1,8 @@
 /**
  * Shared zero-key Buffer GraphQL Sprites Connector helper (`agent/lib/buffer.ts`).
  *
- * Powers channel-scoped draft creation (`tiktok_draft_post`, `instagram_draft_post`,
- * `x_draft_post`) and channel auto-resolution without exposing vendor internals to Otto.
+ * Powers channel-scoped posting (`tiktok_post`, `instagram_post`, `x_post`)
+ * and channel auto-resolution without exposing vendor internals to Otto.
  */
 
 export type SocialService = "twitter" | "tiktok" | "instagram";

@@ -120,10 +120,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "x_draft_post",
-    label: "Draft X (Twitter) Post",
+    name: "x_post",
+    label: "Create X (Twitter) Post (Draft, Schedule, or Publish)",
     description:
-      "Save an X (Twitter) post as a draft (or scheduled post) on the creator's connected X channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
+      "Create an X (Twitter) post (draft, scheduled, or publish now) on the creator's connected X channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
     parameters: {
       type: "object",
       properties: {

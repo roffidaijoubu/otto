@@ -130,10 +130,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "tiktok_draft_post",
-    label: "Draft TikTok Post",
+    name: "tiktok_post",
+    label: "Create TikTok Post (Draft, Schedule, or Publish)",
     description:
-      "Save a TikTok caption as a draft (or scheduled post) on the creator's connected TikTok channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
+      "Create a TikTok post (draft, scheduled, or publish now) on the creator's connected TikTok channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
     parameters: {
       type: "object",
       properties: {

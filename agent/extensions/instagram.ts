@@ -165,10 +165,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "instagram_draft_post",
-    label: "Draft Instagram Post",
+    name: "instagram_post",
+    label: "Create Instagram Post (Draft, Schedule, or Publish)",
     description:
-      "Save an Instagram caption as a draft (or scheduled post) on the creator's connected Instagram channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
+      "Create an Instagram post (draft, scheduled, or publish now) on the creator's connected Instagram channel. Defaults to saveToDraft=true for safety. NEVER set saveToDraft=false or mode='shareNow' without explicit user confirmation.",
     parameters: {
       type: "object",
       properties: {
