@@ -135,10 +135,10 @@ WEB_ENV_DIR="${HOME}/.config/lma"
 WEB_ENV_FILE="${WEB_ENV_DIR}/web.env"
 mkdir -p "${WEB_ENV_DIR}"
 if [ ! -f "${WEB_ENV_FILE}" ] || ! grep -q '^LMA_WEB_PASSWORD=' "${WEB_ENV_FILE}"; then
-  GEN_PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
+  GEN_PASS=$(python3 -c 'import secrets; print(f"{secrets.randbelow(1000000):06d}")')
   echo "LMA_WEB_PASSWORD=${GEN_PASS}" >> "${WEB_ENV_FILE}"
   chmod 600 "${WEB_ENV_FILE}"
-  echo "==> Generated Web Chat UI passcode in ${WEB_ENV_FILE} (chmod 600). View it with: cat ${WEB_ENV_FILE}"
+  echo "==> Generated 6-digit Web UI PIN in ${WEB_ENV_FILE} (chmod 600). View it with: cat ${WEB_ENV_FILE}"
 fi
 
 # 6. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)

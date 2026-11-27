@@ -73,21 +73,44 @@ export const LOGIN_HTML = `<!DOCTYPE html>
       margin: 0 0 18px 0; font-family: "IBM Plex Mono", monospace;
       font-size: 11.5px; color: #808080; line-height: 1.5;
     }
-    input {
-      width: 100%; padding: 11px 16px; border: none; border-radius: 25px;
-      background: #ededed; color: #303030;
-      font-family: "IBM Plex Mono", monospace; font-size: 13px;
-      margin-bottom: 12px; outline: none; text-align: center;
+    .pin-group {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+      margin: 0 auto 14px; max-width: 312px;
     }
-    input:focus { box-shadow: 0 0 0 2px #303030; }
+    .pin-box {
+      width: 100%; height: 50px; padding: 0;
+      border: 1.5px solid transparent; border-radius: 13px;
+      background: #ededed; color: #303030;
+      font-family: "IBM Plex Mono", monospace; font-size: 20px; font-weight: 500;
+      text-align: center; outline: none; caret-color: #303030;
+      transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.12s ease;
+    }
+    .pin-box:focus {
+      background: #ffffff; border-color: #303030;
+      box-shadow: 0 0 0 2px rgba(48,48,48,0.14);
+    }
+    .pin-box.filled {
+      background: #f5f5f5; border-color: rgba(48,48,48,0.22);
+    }
+    .pin-group.shake {
+      animation: pin-shake 0.32s ease;
+    }
+    @keyframes pin-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(6px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(4px); }
+    }
     button {
       width: 100%; padding: 11px 16px; border: none; border-radius: 9999px;
       background: #303030; color: #ffffff;
       font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 500;
-      cursor: pointer;
+      cursor: pointer; transition: background 0.14s ease, opacity 0.14s ease;
     }
     button:hover { background: #141414; }
-    .err { color: #991b1b; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; margin-top: 10px; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .err { color: #991b1b; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; margin-top: 10px; min-height: 16px; }
   </style>
 </head>
 <body>
@@ -137,9 +160,16 @@ export const LOGIN_HTML = `<!DOCTYPE html>
         </g>
       </svg>
       <h1>Otto is <span class="mark">(y)</span>our stream manager.</h1>
-      <p>Enter your passcode to unlock this private Sprite studio.</p>
-      <input type="password" id="pw" placeholder="Input your passcode." autocomplete="current-password" autofocus required />
-      <button type="submit">Unlock Studio</button>
+      <p>Enter your 6-digit PIN to unlock this private Sprite studio.</p>
+      <div class="pin-group" id="pin-group" role="group" aria-label="6-digit PIN">
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="PIN digit 1" autofocus />
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="PIN digit 2" />
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="PIN digit 3" />
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="PIN digit 4" />
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="PIN digit 5" />
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="PIN digit 6" />
+      </div>
+      <button type="submit" id="submit-btn">Unlock Studio</button>
       <div class="err" id="err"></div>
     </div>
   </form>
@@ -183,21 +213,132 @@ export const LOGIN_HTML = `<!DOCTYPE html>
         if (!raf) raf = requestAnimationFrame(draw);
       }, { passive: true });
     })();
-    document.getElementById("f").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    (function () {
+      const form = document.getElementById("f");
+      const group = document.getElementById("pin-group");
+      const boxes = Array.from(group.querySelectorAll(".pin-box"));
+      const btn = document.getElementById("submit-btn");
       const err = document.getElementById("err");
-      err.textContent = "";
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: document.getElementById("pw").value }),
-      });
-      if (res.ok) location.reload();
-      else {
-        const data = await res.json().catch(() => ({}));
-        err.textContent = data.error || "Invalid passcode.";
+      let submitting = false;
+
+      function getPin() {
+        return boxes.map((b) => b.value).join("");
       }
-    });
+
+      function syncFilled() {
+        boxes.forEach((b) => b.classList.toggle("filled", b.value.length > 0));
+      }
+
+      function clearPin() {
+        boxes.forEach((b) => { b.value = ""; });
+        syncFilled();
+        boxes[0].focus();
+      }
+
+      async function submitPin() {
+        if (submitting) return;
+        const pin = getPin();
+        if (pin.length < 6) {
+          err.textContent = "Please enter all 6 digits.";
+          const firstEmpty = boxes.find((b) => !b.value) || boxes[0];
+          firstEmpty.focus();
+          return;
+        }
+        submitting = true;
+        btn.disabled = true;
+        btn.textContent = "Unlocking...";
+        err.textContent = "";
+        try {
+          const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pin }),
+          });
+          if (res.ok) {
+            location.reload();
+            return;
+          }
+          const data = await res.json().catch(() => ({}));
+          err.textContent = data.error || "Invalid PIN.";
+          group.classList.remove("shake");
+          void group.offsetWidth;
+          group.classList.add("shake");
+          clearPin();
+        } catch {
+          err.textContent = "Connection failed. Try again.";
+        } finally {
+          submitting = false;
+          btn.disabled = false;
+          btn.textContent = "Unlock Studio";
+        }
+      }
+
+      boxes.forEach((box, idx) => {
+        box.addEventListener("input", (e) => {
+          const digits = (box.value || "").replace(/\\D/g, "");
+          err.textContent = "";
+          if (digits.length > 1) {
+            for (let i = 0; i < digits.length && idx + i < boxes.length; i++) {
+              boxes[idx + i].value = digits[i];
+            }
+            syncFilled();
+            const nextIdx = Math.min(idx + digits.length, boxes.length - 1);
+            boxes[nextIdx].focus();
+            if (getPin().length === 6) submitPin();
+            return;
+          }
+          box.value = digits;
+          syncFilled();
+          if (digits && idx < boxes.length - 1) {
+            boxes[idx + 1].focus();
+          } else if (digits && getPin().length === 6) {
+            submitPin();
+          }
+        });
+
+        box.addEventListener("keydown", (e) => {
+          if (e.key === "Backspace") {
+            if (box.value) {
+              box.value = "";
+              syncFilled();
+            } else if (idx > 0) {
+              boxes[idx - 1].value = "";
+              syncFilled();
+              boxes[idx - 1].focus();
+            }
+            e.preventDefault();
+          } else if (e.key === "ArrowLeft" && idx > 0) {
+            boxes[idx - 1].focus();
+            e.preventDefault();
+          } else if (e.key === "ArrowRight" && idx < boxes.length - 1) {
+            boxes[idx + 1].focus();
+            e.preventDefault();
+          }
+        });
+
+        box.addEventListener("paste", (e) => {
+          const text = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+          const digits = text.replace(/\\D/g, "").slice(0, 6);
+          if (!digits) return;
+          e.preventDefault();
+          for (let i = 0; i < boxes.length; i++) {
+            boxes[i].value = digits[i] || "";
+          }
+          syncFilled();
+          boxes[Math.min(digits.length, boxes.length - 1)].focus();
+          if (digits.length === 6) submitPin();
+        });
+
+        box.addEventListener("focus", () => {
+          box.select();
+        });
+      });
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitPin();
+      });
+    })();
   </script>
 </body>
 </html>`;

@@ -54,15 +54,9 @@ export async function handleSetupRoutes(req: Request, url: URL): Promise<Respons
         }
         const newPw = typeof body.newPassword === "string" ? body.newPassword.trim() : "";
         if (newPw) {
-          if (newPw.length < 8) {
+          if (!/^\d{6}$/.test(newPw)) {
             return Response.json(
-              { error: "Passcode must be at least 8 characters long." },
-              { status: 400 }
-            );
-          }
-          if (/[\r\n\0]/.test(newPw)) {
-            return Response.json(
-              { error: "Passcode cannot contain line breaks." },
+              { error: "PIN must be exactly 6 digits." },
               { status: 400 }
             );
           }

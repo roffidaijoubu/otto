@@ -36,7 +36,7 @@ export async function handlePublicRoutes(
         : "";
     if (!timingSafeStrEqual(pw, webPassword)) {
       recordLoginFailure(clientKey);
-      return Response.json({ error: "Invalid passcode" }, { status: 401 });
+      return Response.json({ error: "Invalid PIN" }, { status: 401 });
     }
     return new Response(JSON.stringify({ ok: true }), {
       headers: {

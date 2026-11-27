@@ -103,12 +103,12 @@ function goStep3() {
   errorMsg.value = "";
   const pw = newPassword.value.trim();
   if (pw) {
-    if (pw.length < 8) {
-      errorMsg.value = "New passcode must be at least 8 characters.";
+    if (!/^\d{6}$/.test(pw)) {
+      errorMsg.value = "New PIN must be exactly 6 digits.";
       return;
     }
     if (pw !== confirmPassword.value.trim()) {
-      errorMsg.value = "Passcodes do not match.";
+      errorMsg.value = "PINs do not match.";
       return;
     }
   }
@@ -185,7 +185,7 @@ onMounted(() => {
             1. Identity
           </button>
           <button type="button" class="step-pill" :class="{ active: step === 2, done: step > 2 }" @click="step = 2">
-            2. Passcode
+            2. PIN
           </button>
           <button type="button" class="step-pill" :class="{ active: step === 3 }" @click="goStep3">
             3. Connectors
@@ -255,40 +255,48 @@ onMounted(() => {
               Skip for now
             </Button>
             <Button type="button" size="sm" @click="goStep2">
-              Next: Passcode
+              Next: PIN
             </Button>
           </div>
         </div>
 
-        <!-- STEP 2: OPTIONAL PASSCODE UPDATE -->
+        <!-- STEP 2: OPTIONAL 6-DIGIT PIN UPDATE -->
         <div v-else-if="step === 2" class="step-pane">
           <div class="wizard-hero">
             <OttoMascot :size="48" :color="mascotColor" state="ready" />
-            <h1>Lock <span class="mark-y">(y)</span>our studio passcode.</h1>
-            <p>Optional. Replace the auto-generated passcode with one you'll remember, or leave blank to keep your current passcode.</p>
+            <h1>Lock <span class="mark-y">(y)</span>our studio PIN.</h1>
+            <p>Optional. Replace the auto-generated 6-digit PIN with one you'll remember, or leave blank to keep your current PIN.</p>
           </div>
 
           <div class="field-group">
-            <label class="field-label" for="wiz-pw">New Passcode (optional, min 8 chars)</label>
+            <label class="field-label" for="wiz-pw">New 6-Digit PIN (optional)</label>
             <input
               id="wiz-pw"
               v-model="newPassword"
               type="password"
-              class="wiz-input"
-              placeholder="Leave blank to keep current passcode"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              class="wiz-input text-center tracking-[0.45em]"
+              placeholder="••••••"
               autocomplete="new-password"
+              @input="newPassword = newPassword.replace(/\D/g, '').slice(0, 6)"
             />
           </div>
 
           <div v-if="newPassword.trim()" class="field-group">
-            <label class="field-label" for="wiz-pw2">Confirm New Passcode</label>
+            <label class="field-label" for="wiz-pw2">Confirm New 6-Digit PIN</label>
             <input
               id="wiz-pw2"
               v-model="confirmPassword"
               type="password"
-              class="wiz-input"
-              placeholder="Re-enter new passcode"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              class="wiz-input text-center tracking-[0.45em]"
+              placeholder="••••••"
               autocomplete="new-password"
+              @input="confirmPassword = confirmPassword.replace(/\D/g, '').slice(0, 6)"
               @keydown.enter="goStep3"
             />
           </div>
