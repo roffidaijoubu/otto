@@ -109,10 +109,10 @@ const liveThinking = ref("");
 const liveSteps = ref<TraceStep[]>([]);
 
 const starters = [
-  "Plan tonight's stream, lock it on Calendar, and draft X, TikTok & IG promos.",
+  "Plan tonight's stream, lock it on Calendar, create the YouTube Live waiting room (unlisted) with a thumbnail, and draft X, TikTok & IG promos.",
   "Run a background VOD clip job on my latest stream and prep clips for my editor.",
   "Check my recent TikTok, Instagram, and X posts — what's getting the best traction?",
-  "Build a live OBS Starting Soon overlay with a countdown timer and remote deck.",
+  "Build a live OBS Starting Soon overlay with my brand logo, matching visual style, countdown timer, and remote deck.",
 ];
 
 const hasLiveContent = computed(
