@@ -8,9 +8,9 @@ description: Design and composite 100% non-AI-generated 1280x720 YouTube and liv
 Use `thumbnail_save` whenever the creator asks to design, compose, or refine a YouTube or livestream thumbnail.
 
 **Non-Negotiable Rule:** **STRICTLY ZERO AI-GENERATED IMAGES.** Never call an image generator and never use AI-generated stock art. Every visual element MUST come from:
-1. **Creator's own real assets** in Box `Otto Assets/` (`Characters/`, `Logos/`, `Backgrounds/`) via `box_list_assets` + `box_download_file`.
-2. **Real human photography backgrounds** from Pixabay (`pixabay_search_backgrounds` + `pixabay_download_image`, which automatically filters `isAiGenerated === false`).
-3. **Real VOD frames** from `/home/sprite/workspace/clips/` or crisp **CSS/SVG typography, color grading, gradients, lighting vignettes, and graphic frames**.
+1. **Creator's own real assets** in `/home/sprite/workspace/assets/` (synced from Box `Otto Assets/`: `Characters/`, `Logos/`, `Backgrounds/`) or uploaded attachments.
+2. **Code-crafted CSS/SVG backgrounds (First-Class Choice):** Rich directional gradients, dramatic studio radial spotlights, high-contrast split-color blocks, subtle halftone/grid/grain patterns, or clean editorial dark backdrops — fast, ultra-crisp at 120px, and often cleaner than busy photos.
+3. **Real human photography backgrounds (Optional):** From Pixabay (`pixabay_search_backgrounds` + `pixabay_download_image`, strictly `isAiGenerated === false`) or real VOD frames from `/home/sprite/workspace/clips/` whenever a specific photographic scene adds story context.
 
 ---
 
@@ -19,7 +19,7 @@ Use `thumbnail_save` whenever the creator asks to design, compose, or refine a Y
 Before writing HTML:
 1. **Check local synced assets FIRST (`/home/sprite/workspace/assets/`):** Box `Otto Assets/` (`Characters/`, `Logos/`, `Backgrounds/`) is incrementally synced into `/home/sprite/workspace/assets/`. Check local files first with `read` / `ls` for instant zero-API access; only fall back to `box_list_assets` + `box_download_file` if the folder is empty or a newly uploaded file isn't synced yet.
 2. **Pick the right character pose & logo:** Pick the expression that best matches the video's emotional hook (e.g., `gloom-horrified` for drama/shock, `wink-left-smug` for hot takes, `serious-stare` for deep dives, `laughing-open` for fun/collab). Avoid `solidbg` files unless intentionally placed inside a framed box.
-3. **Pick a real photo background:** Call `pixabay_search_backgrounds(query=..., limit=6)` for a high-contrast, uncluttered horizontal photo matching the topic mood, then download the best fit with `pixabay_download_image` to `assets/backgrounds/<slug>.jpg`.
+3. **Choose the best background style (Code vs Photo):** You do **NOT** need a photo background for every thumbnail. Use a **code-crafted CSS/SVG background** (bold studio gradients, radial rim-light glows, split color blocks, subtle geometric/halftone textures) whenever clean visual punch works best — or call `pixabay_search_backgrounds(query=..., limit=6)` + `pixabay_download_image` to `assets/backgrounds/<slug>.jpg` when a real photographic scene genuinely strengthens the hook.
 4. **Visually inspect with `read`:** Call `read` on your chosen character/logo/background files so you visually confirm expression, framing, lighting direction, and brand palette before styling.
 
 ---

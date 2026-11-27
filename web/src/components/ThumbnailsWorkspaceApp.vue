@@ -420,17 +420,75 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-async function exportThumbnail(format: "jpg" | "png") {
+async function inlineCssUrls(cssText: string): Promise<string> {
+  const urlRegex = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+  const matches = Array.from(cssText.matchAll(urlRegex));
+  let out = cssText;
+  for (const m of matches) {
+    const rawUrl = m[2].trim();
+    if (!rawUrl || rawUrl.startsWith("data:")) continue;
+    try {
+      const resp = await fetch(rawUrl);
+      if (!resp.ok) continue;
+      const dataUrl = await blobToDataUrl(await resp.blob());
+      out = out.replace(m[0], `url("${dataUrl}")`);
+    } catch {
+      // strip unreachable external url so canvas stays untainted
+      out = out.replace(m[0], "none");
+    }
+  }
+  return out;
+}
+
+async function exportThumbnail(format: "jpg" | "png", skipDownload = false): Promise<boolean> {
   const thumb = selectedThumbnail.value;
   const iframe = previewFrameRef.value;
-  if (!thumb || !iframe?.contentDocument || exporting.value) return;
+  if (!thumb || !iframe?.contentDocument || exporting.value) return false;
 
   exporting.value = true;
   try {
     const doc = iframe.contentDocument;
     const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
 
-    // Inline same-origin <img> sources so SVG foreignObject renders cleanly without CORS taint
+    // 1. Inline external stylesheets (e.g. Google Fonts) with embedded font data URIs so SVG foreignObject never taints canvas
+    const links = Array.from(clone.querySelectorAll('link[rel="stylesheet"]'));
+    for (const link of links) {
+      const href = link.getAttribute("href") || "";
+      if (href) {
+        try {
+          const cssResp = await fetch(href);
+          if (cssResp.ok) {
+            const rawCss = await cssResp.text();
+            const inlinedCss = await inlineCssUrls(rawCss);
+            const styleEl = doc.createElement("style");
+            styleEl.textContent = inlinedCss;
+            link.replaceWith(styleEl);
+            continue;
+          }
+        } catch {
+          // fall through and remove external link so canvas cannot be tainted
+        }
+      }
+      link.remove();
+    }
+
+    // 2. Inline any CSS url(...) inside <style> tags and inline style attributes
+    const styleEls = Array.from(clone.querySelectorAll("style"));
+    for (const st of styleEls) {
+      if (st.textContent && st.textContent.includes("url(")) {
+        st.textContent = await inlineCssUrls(st.textContent);
+      }
+    }
+    const styledNodes = Array.from(clone.querySelectorAll("[style]"));
+    for (const node of styledNodes) {
+      const val = node.getAttribute("style") || "";
+      if (val.includes("url(")) {
+        node.setAttribute("style", await inlineCssUrls(val));
+      }
+    }
+
+    // 3. Inline all <img> sources as data URLs
     const imgs = Array.from(clone.querySelectorAll("img"));
     await Promise.all(
       imgs.map(async (img) => {
@@ -438,19 +496,24 @@ async function exportThumbnail(format: "jpg" | "png") {
         if (!src || src.startsWith("data:")) return;
         try {
           const resp = await fetch(src);
-          if (!resp.ok) return;
+          if (!resp.ok) {
+            img.remove();
+            return;
+          }
           const dataUrl = await blobToDataUrl(await resp.blob());
           img.setAttribute("src", dataUrl);
         } catch {
-          // keep original if unreachable
+          img.remove();
         }
       })
     );
 
+    // Remove any <script> tags so SVG XML stays strictly self-contained
+    for (const s of Array.from(clone.querySelectorAll("script"))) s.remove();
+
     const serialized = new XMLSerializer().serializeToString(clone);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
-    const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-    const svgUrl = URL.createObjectURL(svgBlob);
+    const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
     const image = new Image();
     image.width = 1280;
@@ -459,7 +522,7 @@ async function exportThumbnail(format: "jpg" | "png") {
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
       image.onerror = () => reject(new Error("Could not rasterize thumbnail canvas"));
-      image.src = svgUrl;
+      image.src = svgDataUrl;
     });
 
     const canvas = document.createElement("canvas");
@@ -470,7 +533,6 @@ async function exportThumbnail(format: "jpg" | "png") {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, 1280, 720);
     ctx.drawImage(image, 0, 0, 1280, 720);
-    URL.revokeObjectURL(svgUrl);
 
     const mime = format === "png" ? "image/png" : "image/jpeg";
     const dataUrl = format === "png" ? canvas.toDataURL(mime) : canvas.toDataURL(mime, 0.92);
@@ -490,18 +552,20 @@ async function exportThumbnail(format: "jpg" | "png") {
       throw new Error(out.error || `Export failed (${res.status})`);
     }
 
-    // Trigger immediate local browser download too
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `${thumb.slug}.${format}`;
-    a.click();
-
-    playSound("complete");
-    toast.success(`Exported ${thumb.slug}.${format} (${formatBytes(out.size || 0)}) to Studio Files`);
+    if (!skipDownload) {
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `${thumb.slug}.${format}`;
+      a.click();
+      playSound("complete");
+      toast.success(`Exported ${thumb.slug}.${format} (${formatBytes(out.size || 0)}) to Studio Files`);
+    }
     await fetchThumbnails(thumb.slug);
+    return true;
   } catch (err) {
     playSound("error");
     toast.error(err instanceof Error ? err.message : "Could not export thumbnail");
+    return false;
   } finally {
     exporting.value = false;
   }
@@ -511,8 +575,8 @@ async function handoffToBox() {
   const thumb = selectedThumbnail.value;
   if (!thumb || handingOffBox.value) return;
   if (!thumb.exportedFile) {
-    toast.info("Export to JPG or PNG first before uploading to Box Handoffs.");
-    return;
+    const ok = await exportThumbnail("jpg", true);
+    if (!ok) return;
   }
   handingOffBox.value = true;
   try {
@@ -661,11 +725,11 @@ defineExpose({ selectThumbnail, notifyExternalJob, refresh: fetchThumbnails });
             variant="outline"
             size="sm"
             class="h-7 gap-1 px-2 text-xs"
-            :disabled="handingOffBox || !selectedThumbnail.exportedFile"
+            :disabled="handingOffBox || exporting"
             @click="handoffToBox"
           >
             <UploadCloudIcon class="size-3.5" />
-            Box
+            {{ handingOffBox ? "Uploading…" : "Box" }}
           </Button>
           <Button
             variant="ghost"
