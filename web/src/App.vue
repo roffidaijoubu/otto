@@ -401,9 +401,9 @@ function connectEvents() {
       if (wm && wm.focusedWindowId.value !== "ideas") {
         wm.setWindowMeta("ideas", { badgeText: "Updated" });
       }
-    } else if (type === "clips_changed") {
+    } else if (type === "clips_changed" || type === "archive_changed") {
       clipsRefreshTick.value += 1;
-      if (wm && wm.focusedWindowId.value !== "clips") {
+      if (type === "clips_changed" && wm && wm.focusedWindowId.value !== "clips") {
         wm.setWindowMeta("clips", { badgeText: "Updated" });
       }
     } else if (type === "done") {

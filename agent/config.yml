@@ -12,12 +12,12 @@ modelRoles:
   vision: google/gemini-4-hydrogen:high
   audio: google/gemini-4-hydrogen:auto
   video: google/gemini-4-hydrogen:auto
-  smol: google/gemini-3.5-flash-lite:low
-  autorename: google/gemini-3.5-flash-lite:low
-  tiny: google/gemini-3.5-flash-lite:auto
-  memory: google/gemini-3.5-flash-lite:auto
-  commit: google/gemini-3.5-flash-lite:low
-  widget: google/gemini-3.5-flash-lite:low
+  smol: otto-hybrid/ollama-auto
+  autorename: otto-hybrid/ollama-auto
+  tiny: otto-hybrid/ollama-auto
+  memory: otto-hybrid/ollama-auto
+  commit: otto-hybrid/ollama-auto
+  widget: otto-hybrid/ollama-auto
 
 defaultThinkingLevel: auto
 

@@ -20,6 +20,7 @@ import { handleObsOverlaysRoutes } from "./routes/obs-overlays.ts";
 import { handleThumbnailsRoutes } from "./routes/thumbnails.ts";
 import { handleDbRoutes } from "./routes/db.ts";
 import { handleClipsRoutes } from "./routes/clips.ts";
+import { handleArchiveRoutes } from "./routes/archive.ts";
 
 loadPrivateEnv();
 initWebPassword();
@@ -99,6 +100,9 @@ Bun.serve({
 
     const clipsRes = await handleClipsRoutes(req, url);
     if (clipsRes) return clipsRes;
+
+    const archiveRes = await handleArchiveRoutes(req, url);
+    if (archiveRes) return archiveRes;
 
     const spaRes = serveSpa(req, url);
     if (spaRes) return spaRes;

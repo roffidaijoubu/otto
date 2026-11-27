@@ -249,6 +249,23 @@ function initSchema(db: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_clip_jobs_created ON clip_jobs(created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS archive_videos (
+      video_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      published_at TEXT NOT NULL DEFAULT '',
+      duration_sec INTEGER NOT NULL DEFAULT 0,
+      content_type TEXT NOT NULL DEFAULT 'video',
+      status TEXT NOT NULL DEFAULT 'pending',
+      chunk_count INTEGER NOT NULL DEFAULT 0,
+      lang TEXT NOT NULL DEFAULT '',
+      error TEXT NOT NULL DEFAULT '',
+      indexed_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_archive_videos_status ON archive_videos(status);
+    CREATE INDEX IF NOT EXISTS idx_archive_videos_published ON archive_videos(published_at DESC);
+
     CREATE TABLE IF NOT EXISTS clips (
       id TEXT PRIMARY KEY,
       job_id TEXT,
@@ -1205,5 +1222,154 @@ export function updateClipBoxUrl(id: string, boxUrl: string): ClipRecord | null 
 export function deleteClipRecord(id: string): boolean {
   const db = getStudioDb();
   const res = db.prepare("DELETE FROM clips WHERE id = ?").run(id);
+  return res.changes > 0;
+}
+
+// ---------- Creator Archive (Pinecone Video Transcript Index) ----------
+
+export type ArchiveVideoStatus = "pending" | "indexing" | "indexed" | "no_captions" | "failed";
+export type ArchiveContentType = "video" | "live" | "short";
+
+export interface ArchiveVideoRecord {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  durationSec: number;
+  contentType: ArchiveContentType;
+  status: ArchiveVideoStatus;
+  chunkCount: number;
+  lang: string;
+  error: string;
+  indexedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ArchiveStats {
+  totalTracked: number;
+  indexedVideos: number;
+  noCaptionsVideos: number;
+  failedVideos: number;
+  pendingVideos: number;
+  totalChunks: number;
+}
+
+function rowToArchiveVideo(row: Record<string, unknown>): ArchiveVideoRecord {
+  return {
+    videoId: String(row.video_id ?? ""),
+    title: String(row.title ?? ""),
+    publishedAt: String(row.published_at ?? ""),
+    durationSec: Number(row.duration_sec ?? 0),
+    contentType: (String(row.content_type ?? "video") as ArchiveContentType),
+    status: (String(row.status ?? "pending") as ArchiveVideoStatus),
+    chunkCount: Number(row.chunk_count ?? 0),
+    lang: String(row.lang ?? ""),
+    error: String(row.error ?? ""),
+    indexedAt: row.indexed_at ? String(row.indexed_at) : null,
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+export function upsertArchiveVideo(input: {
+  videoId: string;
+  title?: string;
+  publishedAt?: string;
+  durationSec?: number;
+  contentType?: ArchiveContentType;
+  status: ArchiveVideoStatus;
+  chunkCount?: number;
+  lang?: string;
+  error?: string;
+  indexedAt?: string | null;
+}): ArchiveVideoRecord {
+  const db = getStudioDb();
+  const nowIso = new Date().toISOString();
+  const existing = db
+    .query("SELECT * FROM archive_videos WHERE video_id = ?")
+    .get(input.videoId) as Record<string, unknown> | null;
+
+  db.prepare(`
+    INSERT INTO archive_videos (
+      video_id, title, published_at, duration_sec, content_type,
+      status, chunk_count, lang, error, indexed_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(video_id) DO UPDATE SET
+      title = CASE WHEN excluded.title != '' THEN excluded.title ELSE archive_videos.title END,
+      published_at = CASE WHEN excluded.published_at != '' THEN excluded.published_at ELSE archive_videos.published_at END,
+      duration_sec = CASE WHEN excluded.duration_sec > 0 THEN excluded.duration_sec ELSE archive_videos.duration_sec END,
+      content_type = excluded.content_type,
+      status = excluded.status,
+      chunk_count = CASE WHEN excluded.chunk_count > 0 OR excluded.status != 'indexed' THEN excluded.chunk_count ELSE archive_videos.chunk_count END,
+      lang = CASE WHEN excluded.lang != '' THEN excluded.lang ELSE archive_videos.lang END,
+      error = excluded.error,
+      indexed_at = COALESCE(excluded.indexed_at, archive_videos.indexed_at),
+      updated_at = excluded.updated_at
+  `).run(
+    input.videoId.trim(),
+    (input.title ?? (existing ? String(existing.title ?? "") : "")).trim(),
+    (input.publishedAt ?? (existing ? String(existing.published_at ?? "") : "")).trim(),
+    input.durationSec ?? (existing ? Number(existing.duration_sec ?? 0) : 0),
+    input.contentType ?? (existing ? (String(existing.content_type ?? "video") as ArchiveContentType) : "video"),
+    input.status,
+    input.chunkCount ?? (existing ? Number(existing.chunk_count ?? 0) : 0),
+    (input.lang ?? (existing ? String(existing.lang ?? "") : "")).trim(),
+    (input.error ?? "").trim(),
+    input.indexedAt !== undefined ? input.indexedAt : input.status === "indexed" ? nowIso : null,
+    nowIso
+  );
+
+  const saved = db
+    .query("SELECT * FROM archive_videos WHERE video_id = ?")
+    .get(input.videoId.trim()) as Record<string, unknown>;
+  return rowToArchiveVideo(saved);
+}
+
+export function listArchiveVideos(opts?: {
+  status?: ArchiveVideoStatus;
+  limit?: number;
+}): ArchiveVideoRecord[] {
+  const db = getStudioDb();
+  const limit = Math.max(1, Math.min(500, opts?.limit ?? 120));
+  if (opts?.status) {
+    const rows = db
+      .query(
+        "SELECT * FROM archive_videos WHERE status = ? ORDER BY published_at DESC, updated_at DESC LIMIT ?"
+      )
+      .all(opts.status, limit) as Array<Record<string, unknown>>;
+    return rows.map(rowToArchiveVideo);
+  }
+  const rows = db
+    .query("SELECT * FROM archive_videos ORDER BY published_at DESC, updated_at DESC LIMIT ?")
+    .all(limit) as Array<Record<string, unknown>>;
+  return rows.map(rowToArchiveVideo);
+}
+
+export function getArchiveStats(): ArchiveStats {
+  const db = getStudioDb();
+  const row = db
+    .query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) AS indexed_cnt,
+        SUM(CASE WHEN status = 'no_captions' THEN 1 ELSE 0 END) AS nocap_cnt,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_cnt,
+        SUM(CASE WHEN status IN ('pending', 'indexing') THEN 1 ELSE 0 END) AS pending_cnt,
+        COALESCE(SUM(chunk_count), 0) AS total_chunks
+      FROM archive_videos
+    `)
+    .get() as Record<string, unknown> | null;
+
+  return {
+    totalTracked: Number(row?.total ?? 0),
+    indexedVideos: Number(row?.indexed_cnt ?? 0),
+    noCaptionsVideos: Number(row?.nocap_cnt ?? 0),
+    failedVideos: Number(row?.failed_cnt ?? 0),
+    pendingVideos: Number(row?.pending_cnt ?? 0),
+    totalChunks: Number(row?.total_chunks ?? 0),
+  };
+}
+
+export function deleteArchiveVideo(videoId: string): boolean {
+  const db = getStudioDb();
+  const res = db.prepare("DELETE FROM archive_videos WHERE video_id = ?").run(videoId);
   return res.changes > 0;
 }

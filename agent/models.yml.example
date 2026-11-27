@@ -1,5 +1,17 @@
-# Copy to ~/.omp/agent/models.yml (or run ./setup.sh to auto-discover your Gemini connector ID)
+# Copy to ~/.omp/agent/models.yml (or run ./setup.sh to auto-discover your Gemini & Ollama connectors)
 providers:
   google:
     baseUrl: https://api.sprites.dev/v1/gateway/gemini/<YOUR_GEMINI_CONNECTOR_ID>/v1beta
     apiKey: sprite-gateway
+  otto-hybrid:
+    baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    apiKey: LMA_INTERNAL_SECRET
+    api: openai-completions
+    models:
+      - id: ollama-auto
+        name: Ollama-First (Gemini Fallback)
+        reasoning: false
+        input:
+          - text
+        contextWindow: 128000
+        maxTokens: 8192

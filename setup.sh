@@ -77,7 +77,7 @@ if [ ! -f "${OMP_AGENT_DIR}/MEMORY.md" ]; then
   echo "==> Initialized ${OMP_AGENT_DIR}/MEMORY.md"
 fi
 
-# 4. Auto-configure Google Gemini Sprites Connector in models.yml if absent
+# 4. Auto-configure Google Gemini + Hybrid Ollama-first Router in models.yml
 if [ ! -f "${OMP_AGENT_DIR}/models.yml" ]; then
   GEMINI_URL=$(curl -s https://api.sprites.dev/v1/gateway/list | jq -r '.connections[] | select(.provider=="gemini") | .gateway_base_url' | head -n 1 || true)
   if [ -n "${GEMINI_URL}" ] && [ "${GEMINI_URL}" != "null" ]; then
@@ -86,11 +86,39 @@ providers:
   google:
     baseUrl: ${GEMINI_URL}/v1beta
     apiKey: sprite-gateway
+  otto-hybrid:
+    baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    apiKey: LMA_INTERNAL_SECRET
+    api: openai-completions
+    models:
+      - id: ollama-auto
+        name: Ollama-First (Gemini Fallback)
+        reasoning: false
+        input:
+          - text
+        contextWindow: 128000
+        maxTokens: 8192
 EOF
-    echo "==> Configured ${OMP_AGENT_DIR}/models.yml with Gemini Sprites Connector"
+    echo "==> Configured ${OMP_AGENT_DIR}/models.yml with Gemini + Ollama-First Hybrid Router"
   else
     echo "WARNING: No authorized Gemini Sprites Connector found. Add Google Gemini in Sprites Dashboard and re-run bash ~/lma/setup.sh."
   fi
+elif ! grep -q '^  otto-hybrid:' "${OMP_AGENT_DIR}/models.yml"; then
+  cat >> "${OMP_AGENT_DIR}/models.yml" <<EOF
+  otto-hybrid:
+    baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    apiKey: LMA_INTERNAL_SECRET
+    api: openai-completions
+    models:
+      - id: ollama-auto
+        name: Ollama-First (Gemini Fallback)
+        reasoning: false
+        input:
+          - text
+        contextWindow: 128000
+        maxTokens: 8192
+EOF
+  echo "==> Added otto-hybrid (Ollama-First -> Gemini Fallback) provider to ${OMP_AGENT_DIR}/models.yml"
 fi
 
 # 5. Ensure fail-closed Web UI passcode exists in ~/.config/lma/web.env (chmod 600)

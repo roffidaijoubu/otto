@@ -4,7 +4,9 @@ import {
   Box,
   Check,
   ClipboardPaste,
+  Clock,
   Copy,
+  Database,
   Download,
   ExternalLink,
   Film,
@@ -17,6 +19,7 @@ import {
   Scissors,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Square,
   Terminal,
   Trash2,
@@ -92,10 +95,63 @@ interface UntrackedClipFile {
   updatedAt: string;
 }
 
+interface ArchiveSearchMatch {
+  id: string;
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  contentType: "video" | "live" | "short";
+  startSec: number;
+  endSec: number;
+  startStr: string;
+  endStr: string;
+  durationSec: number;
+  lang: string;
+  text: string;
+  score: number;
+  youtubeUrl: string;
+  thumbUrl: string;
+}
+
+interface ArchiveStatusPayload {
+  ok?: boolean;
+  pinecone?: {
+    connected: boolean;
+    indexName: string;
+    ready: boolean;
+    totalVectorCount: number;
+    namespaceVectorCount: number;
+    error?: string;
+  };
+  local?: {
+    totalTracked: number;
+    indexedVideos: number;
+    noCaptionsVideos: number;
+    failedVideos: number;
+    pendingVideos: number;
+    totalChunks: number;
+  };
+  channelUrl?: string | null;
+  sync?: {
+    running: boolean;
+    stage: string;
+    discovered: number;
+    alreadyIndexed: number;
+    processed: number;
+    totalToIndex: number;
+    indexedThisRun: number;
+    noCaptionsThisRun: number;
+    failedThisRun: number;
+    currentTitle: string;
+    error: string;
+  };
+}
+
 const props = defineProps<{
   refreshTick: number;
 }>();
 
+const activeTab = ref<"library" | "archive">("library");
 const loading = ref(false);
 const launching = ref(false);
 const jobs = ref<ClipJob[]>([]);
@@ -105,6 +161,16 @@ const boxUploadingId = ref<string | null>(null);
 const copiedBoxId = ref<string | null>(null);
 const expandedJobId = ref<string | null>(null);
 const previewClip = ref<ClipRecord | null>(null);
+
+// Creator Archive (Pinecone) state
+const archiveStatus = ref<ArchiveStatusPayload | null>(null);
+const archiveLoading = ref(false);
+const archiveQuery = ref("");
+const archiveContentType = ref<"all" | "live" | "video" | "short">("all");
+const archiveSearching = ref(false);
+const archiveHasSearched = ref(false);
+const archiveMatches = ref<ArchiveSearchMatch[]>([]);
+const archiveSyncStarting = ref(false);
 
 const viewMode = ref<"list" | "grid">("list");
 const searchQuery = ref("");
@@ -345,20 +411,385 @@ async function removeClipRecord(id: string) {
   }
 }
 
+async function loadArchiveStatus(silent = false) {
+  if (!silent) archiveLoading.value = true;
+  try {
+    const res = await fetch("/api/archive/status");
+    if (!res.ok) return;
+    const data = (await res.json()) as ArchiveStatusPayload;
+    if (data.ok) {
+      archiveStatus.value = data;
+    }
+  } catch {
+    // ignore transient errors
+  } finally {
+    if (!silent) archiveLoading.value = false;
+  }
+}
+
+async function runArchiveSearch() {
+  const q = archiveQuery.value.trim();
+  if (!q || archiveSearching.value) return;
+  archiveSearching.value = true;
+  archiveHasSearched.value = true;
+  try {
+    const res = await fetch("/api/archive/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: q,
+        topK: 10,
+        contentType: archiveContentType.value,
+        useRerank: true,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      matches?: ArchiveSearchMatch[];
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Archive search failed (${res.status})`);
+    }
+    archiveMatches.value = data.matches ?? [];
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Archive search failed");
+    playSound("error");
+  } finally {
+    archiveSearching.value = false;
+  }
+}
+
+async function startArchiveSync() {
+  if (archiveSyncStarting.value) return;
+  archiveSyncStarting.value = true;
+  try {
+    const res = await fetch("/api/archive/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ includeShorts: true }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Could not start archive sync");
+    }
+    playSound("toggle");
+    toast.success(data.message || "Background archive sync started.");
+    await loadArchiveStatus(true);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Could not start archive sync");
+    playSound("error");
+  } finally {
+    archiveSyncStarting.value = false;
+  }
+}
+
+async function stopArchiveSync() {
+  try {
+    await fetch("/api/archive/sync/cancel", { method: "POST" });
+    toast.message("Stopping archive sync...");
+    await loadArchiveStatus(true);
+  } catch {
+    toast.error("Could not stop sync");
+  }
+}
+
+function handoffMomentToClipper(m: ArchiveSearchMatch) {
+  vodUrl.value = `https://www.youtube.com/watch?v=${m.videoId}`;
+  vodTitle.value = m.title;
+  maxClipsStr.value = "3";
+  focusNotes.value = `Focus around ${m.startStr}–${m.endStr} (${m.startSec}s): ${m.text.slice(0, 180)}`;
+  showAdvanced.value = true;
+  activeTab.value = "library";
+  playSound("toggle");
+  toast.success(`Loaded "${m.title}" at ${m.startStr} into Clipper — press Clip to cut!`);
+}
+
 watch(
   () => props.refreshTick,
   () => {
     void loadEcosystem(true);
+    void loadArchiveStatus(true);
   }
 );
 
 onMounted(() => {
   void loadEcosystem(false);
+  void loadArchiveStatus(false);
 });
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-white text-[#171717]">
+    <!-- Top Mode Tabs: Library vs Creator Archive -->
+    <div class="flex shrink-0 items-center justify-between gap-2 border-b border-black/8 bg-[#FAF9F6] px-4 py-2">
+      <div class="inline-flex items-center gap-1 rounded-lg border border-black/10 bg-white p-0.5">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="activeTab === 'library' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+          @click="activeTab = 'library'; playSound('toggle')"
+        >
+          <Scissors class="size-3.5" aria-hidden="true" />
+          <span>Library</span>
+          <span
+            class="font-mono text-[10.5px] tabular-nums"
+            :class="activeTab === 'library' ? 'text-white/75' : 'text-neutral-400'"
+          >
+            {{ totalClipsCount }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+          :class="activeTab === 'archive' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+          @click="activeTab = 'archive'; playSound('toggle'); loadArchiveStatus(true)"
+        >
+          <Database class="size-3.5" aria-hidden="true" />
+          <span>Archive</span>
+          <span
+            v-if="archiveStatus?.pinecone?.namespaceVectorCount"
+            class="font-mono text-[10.5px] tabular-nums"
+            :class="activeTab === 'archive' ? 'text-white/75' : 'text-neutral-400'"
+          >
+            {{ archiveStatus.pinecone.namespaceVectorCount.toLocaleString() }}
+          </span>
+        </button>
+      </div>
+
+      <div
+        v-if="archiveStatus?.sync?.running"
+        class="flex items-center gap-1.5 font-mono text-[11px] text-amber-700"
+      >
+        <Loader2 class="size-3 animate-spin" aria-hidden="true" />
+        <span class="truncate max-w-[220px]">{{ archiveStatus.sync.stage }}</span>
+      </div>
+    </div>
+
+    <!-- ==================== ARCHIVE SEARCH TAB ==================== -->
+    <template v-if="activeTab === 'archive'">
+      <div class="shrink-0 border-b border-black/8 bg-[#FAF9F6] px-4 py-3">
+        <form
+          class="flex items-center gap-2 rounded-xl border border-black/12 bg-white px-2.5 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] focus-within:border-black/30"
+          @submit.prevent="runArchiveSearch"
+        >
+          <Search class="ml-1 size-4 shrink-0 text-neutral-400" aria-hidden="true" />
+          <input
+            v-model="archiveQuery"
+            type="text"
+            placeholder="Search any topic, quote, or moment across all past streams & videos..."
+            class="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+            :disabled="archiveSearching"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            class="h-7 gap-1.5 rounded-lg bg-[#171717] px-3 text-[11px] font-medium text-white hover:bg-neutral-800"
+            :disabled="archiveSearching || !archiveQuery.trim()"
+          >
+            <Loader2 v-if="archiveSearching" class="size-3.5 animate-spin" aria-hidden="true" />
+            <Sparkles v-else class="size-3.5" aria-hidden="true" />
+            <span>Search</span>
+          </Button>
+        </form>
+
+        <!-- Filter Pills + Pinecone Sync Strip -->
+        <div class="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-1">
+            <button
+              v-for="opt in ([
+                { id: 'all', label: 'All' },
+                { id: 'live', label: 'Livestreams' },
+                { id: 'video', label: 'Videos' },
+                { id: 'short', label: 'Shorts' },
+              ] as const)"
+              :key="opt.id"
+              type="button"
+              class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+              :class="
+                archiveContentType === opt.id
+                  ? 'bg-[#171717] text-white'
+                  : 'bg-black/5 text-neutral-600 hover:bg-black/10 hover:text-[#171717]'
+              "
+              @click="archiveContentType = opt.id; if (archiveQuery.trim()) runArchiveSearch()"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-500">
+              <span
+                class="size-2 rounded-full"
+                :class="archiveStatus?.pinecone?.ready ? 'bg-emerald-500' : 'bg-amber-400'"
+              />
+              <template v-if="archiveStatus?.pinecone?.ready">
+                {{ (archiveStatus.pinecone.namespaceVectorCount || 0).toLocaleString() }} moments indexed
+              </template>
+              <template v-else-if="archiveStatus?.pinecone?.connected">
+                Index initializing
+              </template>
+              <template v-else>
+                Pinecone offline
+              </template>
+            </span>
+
+            <Button
+              v-if="archiveStatus?.sync?.running"
+              size="xs"
+              variant="outline"
+              type="button"
+              class="h-7 gap-1 rounded-lg text-[11px]"
+              @click="stopArchiveSync"
+            >
+              <Square class="size-3" aria-hidden="true" />
+              Stop Sync
+            </Button>
+            <Button
+              v-else
+              size="xs"
+              variant="outline"
+              type="button"
+              class="h-7 gap-1 rounded-lg bg-white text-[11px]"
+              :disabled="archiveSyncStarting"
+              @click="startArchiveSync"
+            >
+              <RefreshCw class="size-3" :class="archiveSyncStarting ? 'animate-spin' : ''" aria-hidden="true" />
+              Sync Channel
+            </Button>
+          </div>
+        </div>
+
+        <!-- Live Sync Progress Bar -->
+        <div
+          v-if="archiveStatus?.sync?.running"
+          class="mt-2.5 rounded-lg border border-black/8 bg-white px-3 py-2"
+        >
+          <div class="flex items-center justify-between gap-2 text-[11px]">
+            <span class="font-medium text-[#171717]">
+              {{ archiveStatus.sync.stage }}
+              <span v-if="archiveStatus.sync.currentTitle" class="font-normal text-neutral-500">
+                — {{ archiveStatus.sync.currentTitle }}
+              </span>
+            </span>
+            <span class="font-mono text-neutral-500 tabular-nums">
+              {{ archiveStatus.sync.processed }}/{{ archiveStatus.sync.totalToIndex || '?' }}
+            </span>
+          </div>
+          <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+            <div
+              class="h-full rounded-full bg-[#171717] transition-all duration-300"
+              :style="{
+                width: `${
+                  archiveStatus.sync.totalToIndex > 0
+                    ? Math.max(6, Math.round((archiveStatus.sync.processed / archiveStatus.sync.totalToIndex) * 100))
+                    : 15
+                }%`,
+              }"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Archive Results Scroll Area -->
+      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <div v-if="archiveSearching" class="flex flex-col items-center justify-center gap-2 py-16 text-xs text-neutral-500">
+          <Loader2 class="size-5 animate-spin text-neutral-400" aria-hidden="true" />
+          <span>Searching &amp; reranking moments across your channel archive...</span>
+        </div>
+
+        <div
+          v-else-if="archiveMatches.length > 0"
+          class="mx-auto flex max-w-4xl flex-col gap-3"
+        >
+          <div
+            v-for="m in archiveMatches"
+            :key="m.id"
+            class="flex flex-col gap-3 rounded-xl border border-black/8 bg-white p-3 transition-colors hover:border-black/20 sm:flex-row"
+          >
+            <a
+              :href="m.youtubeUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="relative block aspect-video w-full shrink-0 overflow-hidden rounded-lg bg-neutral-100 sm:w-44"
+            >
+              <img :src="m.thumbUrl" :alt="m.title" class="size-full object-cover" loading="lazy" />
+              <span class="absolute right-1.5 bottom-1.5 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white">
+                {{ m.startStr }}
+              </span>
+            </a>
+
+            <div class="flex min-w-0 flex-1 flex-col justify-between gap-2">
+              <div>
+                <div class="flex items-start justify-between gap-2">
+                  <h4 class="line-clamp-1 text-[13px] font-semibold text-[#171717]">
+                    {{ m.title || m.videoId }}
+                  </h4>
+                  <span class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-800 tabular-nums">
+                    {{ Math.round(m.score * 100) }}%
+                  </span>
+                </div>
+
+                <div class="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10.5px] text-neutral-500">
+                  <span class="uppercase">{{ m.contentType }}</span>
+                  <span v-if="m.publishedAt">· {{ m.publishedAt }}</span>
+                  <span class="inline-flex items-center gap-1">
+                    · <Clock class="size-3" aria-hidden="true" /> {{ m.startStr }}–{{ m.endStr }}
+                  </span>
+                </div>
+
+                <p class="mt-1.5 line-clamp-3 text-xs leading-relaxed text-neutral-700">
+                  “{{ m.text }}”
+                </p>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <a
+                  :href="m.youtubeUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/12 bg-white px-2.5 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
+                >
+                  <ExternalLink class="size-3" aria-hidden="true" />
+                  Open at {{ m.startStr }}
+                </a>
+                <Button
+                  size="xs"
+                  type="button"
+                  class="h-7 gap-1 rounded-lg bg-[#171717] px-2.5 text-[11px] text-white hover:bg-neutral-800"
+                  @click="handoffMomentToClipper(m)"
+                >
+                  <Scissors class="size-3" aria-hidden="true" />
+                  Clip This Moment
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="archiveHasSearched"
+          class="flex flex-col items-center justify-center gap-1.5 py-16 text-center"
+        >
+          <p class="text-xs font-medium text-[#171717]">No matching moments found</p>
+          <p class="text-[11px] text-neutral-500">Try a broader phrase or switch the filter to All.</p>
+        </div>
+
+        <div
+          v-else
+          class="mx-auto flex max-w-lg flex-col items-center justify-center gap-2 py-16 text-center"
+        >
+          <Database class="size-7 text-neutral-300" aria-hidden="true" />
+          <p class="text-xs font-semibold text-[#171717]">Creator Video Archive</p>
+          <p class="text-[11.5px] leading-relaxed text-neutral-500">
+            Search across every indexed YouTube video, livestream VOD, and short in Indonesian or English — jump to the exact timestamp or send any moment straight into the Clipper.
+          </p>
+        </div>
+      </div>
+    </template>
+
+    <!-- ==================== LIBRARY TAB (EXISTING) ==================== -->
+    <template v-else>
     <!-- Row 1: Stacher-Style Full-Width Command / URL Omnibar -->
     <div class="shrink-0 border-b border-black/8 bg-[#FAF9F6] px-4 py-3">
       <form
@@ -996,5 +1427,6 @@ onMounted(() => {
         </div>
       </DialogContent>
     </Dialog>
+    </template>
   </div>
 </template>

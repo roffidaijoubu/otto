@@ -131,6 +131,26 @@ const connectors = ref<ConnectorInfo[]>([]);
 const zeroLocalKeys = ref(true);
 const aiMediaDisabled = ref(true);
 const loading = ref(false);
+const probingOllama = ref(false);
+
+interface LlmRouterStatus {
+  ollamaConnected: boolean;
+  geminiConnected: boolean;
+  ollamaModel: string;
+  geminiFallbackModel: string;
+  activeProvider: "ollama" | "gemini-fallback" | "gemini";
+  circuitOpen: boolean;
+  cooldownRemainingSec: number;
+  lastFailureStatus: number | null;
+  lastFailureReason: string | null;
+  lastProviderUsed: string | null;
+  stats: {
+    ollamaAttempts: number;
+    ollamaSuccesses: number;
+    fallbackSuccesses: number;
+  };
+}
+const llmRouter = ref<LlmRouterStatus | null>(null);
 
 const dossierHtml = computed(() =>
   dossierContent.value.trim() ? renderMarkdown(dossierContent.value) : ""
@@ -169,9 +189,10 @@ function formatTime(iso: string | null): string {
 async function fetchData() {
   loading.value = true;
   try {
-    const [dRes, cRes] = await Promise.all([
+    const [dRes, cRes, rRes] = await Promise.all([
       fetch("/api/dossier").then((r) => r.json()).catch(() => null),
       fetch("/api/connectors").then((r) => r.json()).catch(() => null),
+      fetch("/api/llm/router-status").then((r) => r.json()).catch(() => null),
     ]);
     if (dRes && typeof dRes === "object") {
       dossierContent.value = String(dRes.content || "");
@@ -182,8 +203,23 @@ async function fetchData() {
       if (typeof cRes.zeroLocalKeys === "boolean") zeroLocalKeys.value = cRes.zeroLocalKeys;
       if (typeof cRes.aiMediaDisabled === "boolean") aiMediaDisabled.value = cRes.aiMediaDisabled;
     }
+    if (rRes && typeof rRes === "object" && rRes.router) {
+      llmRouter.value = rRes.router as LlmRouterStatus;
+    }
   } finally {
     loading.value = false;
+  }
+}
+
+async function probeOllama() {
+  if (probingOllama.value) return;
+  probingOllama.value = true;
+  try {
+    const res = await fetch("/api/llm/router-probe", { method: "POST" });
+    const data = (await res.json().catch(() => null)) as { router?: LlmRouterStatus } | null;
+    if (data?.router) llmRouter.value = data.router;
+  } finally {
+    probingOllama.value = false;
   }
 }
 
@@ -596,6 +632,60 @@ watch(
                 <span class="rounded-lg border border-black/10 bg-white px-2.5 py-1 text-neutral-700">
                   Fly.io Sprite · $0 idle
                 </span>
+              </div>
+            </section>
+
+            <section v-if="llmRouter" class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-semibold text-[#171717]">Hybrid LLM Router (Ollama → Gemini)</h3>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  class="h-7 gap-1 rounded-lg bg-white text-[11px]"
+                  :disabled="probingOllama"
+                  @click="probeOllama"
+                >
+                  <RefreshCwIcon class="size-3" :class="probingOllama ? 'animate-spin' : ''" />
+                  {{ probingOllama ? "Probing..." : "Test Ollama" }}
+                </Button>
+              </div>
+
+              <div class="flex flex-col gap-2 rounded-xl border border-black/8 bg-[#FAF9F6]/60 p-3.5 text-xs">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="font-mono text-[11px] text-[#171717]">
+                    Primary: <span class="font-semibold">{{ llmRouter.ollamaModel }}</span> (Ollama) →
+                    Fallback: <span class="font-semibold">{{ llmRouter.geminiFallbackModel }}</span> (Gemini)
+                  </div>
+                  <span
+                    class="rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium"
+                    :class="
+                      llmRouter.activeProvider === 'ollama'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-amber-200 bg-amber-50 text-amber-800'
+                    "
+                  >
+                    {{
+                      llmRouter.activeProvider === "ollama"
+                        ? "Ollama active"
+                        : llmRouter.activeProvider === "gemini-fallback"
+                          ? `Gemini fallback (${llmRouter.cooldownRemainingSec}s cooldown)`
+                          : "Gemini direct"
+                    }}
+                  </span>
+                </div>
+                <div class="font-mono text-[10.5px] text-neutral-500">
+                  Roles: smol · memory · autorename · tiny · commit · widget ·
+                  Ollama attempts: {{ llmRouter.stats.ollamaAttempts }} ({{ llmRouter.stats.ollamaSuccesses }} ok) ·
+                  Gemini fallbacks: {{ llmRouter.stats.fallbackSuccesses }}
+                </div>
+                <div
+                  v-if="llmRouter.lastFailureReason"
+                  class="rounded-lg border border-amber-200/80 bg-amber-50/70 px-2.5 py-1.5 font-mono text-[10.5px] text-amber-900"
+                >
+                  Last Ollama probe{{ llmRouter.lastFailureStatus ? ` (HTTP ${llmRouter.lastFailureStatus})` : "" }}:
+                  {{ llmRouter.lastFailureReason }}
+                </div>
               </div>
             </section>
 

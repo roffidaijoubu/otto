@@ -1,11 +1,22 @@
 import { fetchGatewayList } from "../lib/gateway.ts";
 import { errorMessage } from "../lib/http.ts";
+import { getLlmRouterStatus, probeOllamaNow } from "../lib/llm-router.ts";
 import { computeGuardrailStatus } from "../lib/qstash.ts";
 
 export async function handleConnectorsRoutes(
   req: Request,
   url: URL
 ): Promise<Response | null> {
+  if (req.method === "GET" && url.pathname === "/api/llm/router-status") {
+    const status = await getLlmRouterStatus(url.searchParams.get("refresh") === "1");
+    return Response.json({ ok: true, router: status });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/llm/router-probe") {
+    const result = await probeOllamaNow();
+    return Response.json({ ok: true, ollamaHealthy: result.ok, router: result.status });
+  }
+
   if (req.method === "GET" && url.pathname === "/api/connectors") {
     const guardrails = computeGuardrailStatus();
     try {

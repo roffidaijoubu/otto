@@ -1,9 +1,18 @@
 import { requireInternalSecret } from "../lib/internal-auth.ts";
+import { handleHybridChatCompletions } from "../lib/llm-router.ts";
 import { startClipJob } from "../lib/clip-service.ts";
+import { startBackgroundArchiveSync } from "../lib/archive-worker.ts";
 import { broadcast } from "../lib/sse.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 
 export async function handleInternalRoutes(req: Request, url: URL): Promise<Response | null> {
+  // Internal OpenAI-compatible Hybrid LLM Router (Ollama primary -> Gemini circuit-breaker fallback)
+  if (req.method === "POST" && url.pathname === "/api/internal/llm/v1/chat/completions") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    return handleHybridChatCompletions(req);
+  }
+
   // Internal-only Studio App & OBS Overlay presentation endpoints for omp subprocess
   if (
     req.method === "POST" &&
@@ -86,6 +95,30 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     } catch (err) {
       return Response.json(
         { error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Internal-only endpoint for Otto chat (`archive_sync_channel`) to trigger background Pinecone sync
+  if (req.method === "POST" && url.pathname === "/api/internal/archive/sync") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    try {
+      const body = (await req.json().catch(() => ({}))) as {
+        channelUrl?: string;
+        includeShorts?: boolean;
+        limit?: number;
+      };
+      const result = startBackgroundArchiveSync({
+        channelUrl: body.channelUrl,
+        includeShorts: body.includeShorts !== false,
+        limit: typeof body.limit === "number" ? body.limit : undefined,
+      });
+      return Response.json(result);
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
         { status: 400 }
       );
     }
