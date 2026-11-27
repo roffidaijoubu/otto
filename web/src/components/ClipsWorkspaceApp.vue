@@ -110,6 +110,20 @@ interface ArchiveSearchMatch {
   thumbUrl: string;
 }
 
+interface ArchiveVideoItem {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  durationSec: number;
+  contentType: "video" | "live" | "short";
+  status: "pending" | "indexing" | "indexed" | "no_captions" | "failed";
+  chunkCount: number;
+  lang: string;
+  error: string;
+  indexedAt: string | null;
+  updatedAt: string;
+}
+
 interface ArchiveStatusPayload {
   ok?: boolean;
   pinecone?: {
@@ -142,6 +156,7 @@ interface ArchiveStatusPayload {
     currentTitle: string;
     error: string;
   };
+  videos?: ArchiveVideoItem[];
 }
 
 const props = defineProps<{
@@ -793,6 +808,48 @@ function handoffMomentToClipper(m: ArchiveSearchMatch) {
   toast.success(`Loaded "${m.title}" at ${m.startStr} into Clipper — press Clip to cut!`);
 }
 
+const archiveVideos = computed<ArchiveVideoItem[]>(() => archiveStatus.value?.videos ?? []);
+
+const archiveTypeCounts = computed(() => {
+  const counts = { all: 0, live: 0, video: 0, short: 0 };
+  for (const v of archiveVideos.value) {
+    counts.all += 1;
+    if (v.contentType === "live") counts.live += 1;
+    else if (v.contentType === "short") counts.short += 1;
+    else counts.video += 1;
+  }
+  return counts;
+});
+
+const filteredArchiveVideos = computed<ArchiveVideoItem[]>(() => {
+  const list = archiveVideos.value;
+  if (archiveContentType.value === "all") return list;
+  return list.filter((v) => v.contentType === archiveContentType.value);
+});
+
+function clearArchiveSearch() {
+  archiveQuery.value = "";
+  archiveHasSearched.value = false;
+  archiveMatches.value = [];
+}
+
+function handoffVideoToClipper(v: ArchiveVideoItem) {
+  vodUrl.value = `https://www.youtube.com/watch?v=${v.videoId}`;
+  vodTitle.value = v.title;
+  maxClipsStr.value = "0";
+  focusNotes.value = "";
+  activeTab.value = "library";
+  playSound("toggle");
+  toast.success(`Loaded "${v.title}" into Clipper — press Clip to cut!`);
+}
+
+watch(archiveQuery, (val) => {
+  if (!val.trim() && archiveHasSearched.value) {
+    archiveHasSearched.value = false;
+    archiveMatches.value = [];
+  }
+});
+
 watch(
   () => props.refreshTick,
   () => {
@@ -869,6 +926,15 @@ onMounted(() => {
             class="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-[#171717] placeholder:text-neutral-400 focus:outline-none"
             :disabled="archiveSearching"
           />
+          <button
+            v-if="archiveQuery.trim() || archiveHasSearched"
+            type="button"
+            class="flex size-6 items-center justify-center rounded-md text-neutral-400 transition-colors hover:bg-black/5 hover:text-[#171717]"
+            aria-label="Clear search"
+            @click="clearArchiveSearch"
+          >
+            <X class="size-3.5" aria-hidden="true" />
+          </button>
           <Button
             type="submit"
             size="sm"
@@ -893,7 +959,7 @@ onMounted(() => {
               ] as const)"
               :key="opt.id"
               type="button"
-              class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+              class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
               :class="
                 archiveContentType === opt.id
                   ? 'bg-[#171717] text-white'
@@ -901,7 +967,14 @@ onMounted(() => {
               "
               @click="archiveContentType = opt.id; if (archiveQuery.trim()) runArchiveSearch()"
             >
-              {{ opt.label }}
+              <span>{{ opt.label }}</span>
+              <span
+                v-if="archiveTypeCounts.all > 0"
+                class="font-mono text-[10px] tabular-nums"
+                :class="archiveContentType === opt.id ? 'text-white/70' : 'text-neutral-400'"
+              >
+                {{ archiveTypeCounts[opt.id] }}
+              </span>
             </button>
           </div>
 
@@ -1061,6 +1134,111 @@ onMounted(() => {
         >
           <p class="text-xs font-medium text-[#171717]">No matching moments found</p>
           <p class="text-[11px] text-neutral-500">Try a broader phrase or switch the filter to All.</p>
+        </div>
+
+        <div
+          v-else-if="archiveLoading && archiveVideos.length === 0"
+          class="flex flex-col items-center justify-center gap-2 py-16 text-xs text-neutral-500"
+        >
+          <Loader2 class="size-5 animate-spin text-neutral-400" aria-hidden="true" />
+          <span>Loading indexed channel archive...</span>
+        </div>
+
+        <div
+          v-else-if="filteredArchiveVideos.length > 0"
+          class="mx-auto flex max-w-5xl flex-col gap-3"
+        >
+          <div class="flex items-center justify-between text-[11px] text-neutral-500">
+            <span>
+              Showing <strong class="font-semibold text-[#171717]">{{ filteredArchiveVideos.length }}</strong>
+              indexed {{ archiveContentType === 'all' ? 'videos & streams' : archiveContentType === 'live' ? 'livestreams' : archiveContentType === 'short' ? 'shorts' : 'videos' }}
+            </span>
+            <span class="hidden sm:inline">Type a topic above to search exact transcript timestamps</span>
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div
+              v-for="v in filteredArchiveVideos"
+              :key="v.videoId"
+              class="group flex flex-col overflow-hidden rounded-xl border border-black/8 bg-white transition-colors hover:border-black/20"
+            >
+              <a
+                :href="`https://www.youtube.com/watch?v=${v.videoId}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="relative block aspect-video w-full overflow-hidden bg-neutral-100"
+              >
+                <img
+                  :src="`https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`"
+                  :alt="v.title || v.videoId"
+                  class="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  loading="lazy"
+                />
+                <span
+                  v-if="v.durationSec > 0"
+                  class="absolute right-1.5 bottom-1.5 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white tabular-nums"
+                >
+                  {{ formatSec(v.durationSec) }}
+                </span>
+                <span
+                  class="absolute top-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9.5px] font-medium text-white uppercase"
+                >
+                  {{ v.contentType === 'live' ? 'Live' : v.contentType === 'short' ? 'Short' : 'Video' }}
+                </span>
+              </a>
+
+              <div class="flex flex-1 flex-col justify-between gap-2.5 p-3">
+                <div>
+                  <h4
+                    class="line-clamp-2 text-[12.5px] leading-snug font-semibold text-[#171717]"
+                    :title="v.title || v.videoId"
+                  >
+                    {{ v.title || v.videoId }}
+                  </h4>
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10.5px] text-neutral-500">
+                    <span v-if="v.publishedAt">{{ v.publishedAt }}</span>
+                    <span v-if="v.status === 'indexed' && v.chunkCount > 0">
+                      · {{ v.chunkCount }} {{ v.chunkCount === 1 ? 'moment' : 'moments' }}
+                    </span>
+                    <span v-else-if="v.status === 'no_captions'" class="text-amber-700">· No captions</span>
+                    <span v-else-if="v.status === 'failed'" class="text-red-600">· Failed</span>
+                    <span v-else-if="v.status === 'pending' || v.status === 'indexing'" class="text-neutral-400">
+                      · {{ v.status }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                  <a
+                    :href="`https://www.youtube.com/watch?v=${v.videoId}`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-lg border border-black/12 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
+                  >
+                    <ExternalLink class="size-3" aria-hidden="true" />
+                    Watch
+                  </a>
+                  <Button
+                    size="xs"
+                    type="button"
+                    class="h-7 flex-1 gap-1 rounded-lg bg-[#171717] px-2 text-[11px] text-white hover:bg-neutral-800"
+                    @click="handoffVideoToClipper(v)"
+                  >
+                    <Scissors class="size-3" aria-hidden="true" />
+                    Clip
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="archiveVideos.length > 0"
+          class="flex flex-col items-center justify-center gap-1.5 py-16 text-center"
+        >
+          <p class="text-xs font-medium text-[#171717]">No items in this category yet</p>
+          <p class="text-[11px] text-neutral-500">Switch back to All or run Sync Channel to discover more.</p>
         </div>
 
         <div
