@@ -30,9 +30,10 @@ export async function handleObsOverlaysRoutes(req: Request, url: URL): Promise<R
         `Creator request: ${userPrompt}`,
         ``,
         `Instructions:`,
-        `1. Follow obs-overlay-craft best practices: build a crisp, transparent 1920x1080 OBS Browser Source HTML (strictly zero controls inside the OBS HTML, zero AI-generated images) + a matching Live Remote Control Deck HTML.`,
-        `2. Call obs_overlay_deploy with a clean lowercase kebab-case slug, title, description, overlayHtml, controlHtml, and initialState.`,
-        `3. Reply concisely (1-2 plain sentences) summarizing the deployed overlay and its slug.`,
+        `1. If the creator mentions their logo, character, brand colors, or matching visual style, call box_list_assets (e.g. subpath "Logos" or "Characters"), download the relevant PNG with box_download_file into "assets/..." inside /home/sprite/workspace/, and call read on that PNG so you can visually inspect its exact colors, motif, and outline style.`,
+        `2. Follow obs-overlay-craft best practices: build a crisp, transparent 1920x1080 OBS Browser Source HTML (strictly zero controls inside the OBS HTML, zero AI-generated images). Reference any downloaded brand PNG via <img src="/assets/<basename>" /> and derive your CSS palette & typography directly from the inspected asset.`,
+        `3. Call obs_overlay_deploy with a clean lowercase kebab-case slug, title, description, html, controls, initialState, and assets (array of workspace-relative paths like ["assets/logos/<file>.png"] whenever using local/Box images).`,
+        `4. Reply concisely (1-2 plain sentences) summarizing the deployed overlay and its slug.`,
       ].join("\n");
 
       const refineRes = await runOverlayRefine("new", prompt);
@@ -98,8 +99,9 @@ export async function handleObsOverlaysRoutes(req: Request, url: URL): Promise<R
           `Instructions:`,
           `1. Call obs_overlay_list first to inspect the current overlay metadata and live state for slug "${slug}".`,
           `2. If the creator only wants a live state change (text, timer, visibility, counter), call obs_overlay_control(slug="${slug}", patch=...).`,
-          `3. If the creator wants a layout, styling, animation, or controller change, call obs_overlay_deploy with the EXACT same slug "${slug}" (transparent 1920x1080 OBS Browser Source HTML + matching Live Remote Control Deck HTML, strictly no controls inside the OBS HTML and zero AI-generated images).`,
-          `4. Reply concisely (1-2 plain sentences) summarizing what you changed on "${slug}".`,
+          `3. If the creator asks to add/swap their logo, character, or match brand style, call box_list_assets + box_download_file into "assets/..." and visually inspect the PNG with read before styling.`,
+          `4. If the creator wants a layout, styling, animation, asset, or controller change, call obs_overlay_deploy with the EXACT same slug "${slug}" (transparent 1920x1080 OBS Browser Source HTML + declarative controls, strictly no controls inside the OBS HTML, zero AI-generated images, and pass assets: ["assets/..."] for any images referenced as /assets/<basename>).`,
+          `5. Reply concisely (1-2 plain sentences) summarizing what you changed on "${slug}".`,
         ]
           .filter(Boolean)
           .join("\n");

@@ -14,6 +14,7 @@ import path from "node:path";
 
 export const BOX_MAX_UPLOAD_BYTES = 48 * 1024 * 1024; // Leave headroom under 50 MiB gateway limit
 export const BOX_HANDOFF_ROOT_NAME = "Otto Handoffs";
+export const BOX_ASSETS_ROOT_NAME = "Otto Assets";
 
 let cachedBoxBaseUrl: string | null = null;
 
@@ -173,6 +174,13 @@ export async function ensureBoxPath(segments: string[], rootId = "0"): Promise<{
     currentName = next.name;
   }
   return { id: currentId, name: currentName, url: boxItemUrl("folder", currentId) };
+}
+
+export async function ensureBoxAssetsFolder(
+  subpath: string[] = []
+): Promise<{ id: string; name: string; url: string }> {
+  const cleanSub = subpath.map((s) => s.trim()).filter(Boolean);
+  return ensureBoxPath([BOX_ASSETS_ROOT_NAME, ...cleanSub]);
 }
 
 export async function uploadLocalFileToBox(

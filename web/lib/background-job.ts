@@ -66,7 +66,7 @@ export async function runOverlayRefine(slug: string, prompt: string): Promise<Re
         OMP_BIN,
         "--no-session",
         "--tools",
-        "obs_overlay_list,obs_overlay_deploy,obs_overlay_control,read",
+        "obs_overlay_list,obs_overlay_deploy,obs_overlay_control,box_list_assets,box_download_file,read",
         "-p",
         prompt,
       ],

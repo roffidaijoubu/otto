@@ -70,3 +70,14 @@ Available declarative `controls` field types:
   - No emoji icons, no em dashes (`—`), no stock AI copy.
 - **Safe margins:** Keep broadcast elements inside OBS title-safe margins (`padding: 48px–64px`) and readable at 720p mobile stream resolution.
 - **Strictly NO AI-generated images or video.**
+
+---
+
+## 4. Brand Assets & Multimodal Style Matching (`Otto Assets/`)
+
+Whenever the creator asks to include their **logo**, **character PNG**, or wants an overlay whose **visual style matches their brand**:
+
+1. **Discover assets in Box:** Call `box_list_assets(subpath="Logos")` (or `"Characters"` / `"Backgrounds"`) to find their real uploaded PNGs in `Otto Assets/`.
+2. **Download to local workspace:** Call `box_download_file(fileId=..., destWorkspacePath="assets/logos/<filename>.png")`.
+3. **Visually inspect before designing:** Call `read` on `/home/sprite/workspace/assets/logos/<filename>.png` so you actually **see** the logo/character's colors, contrast, motif, and line weight. Extract 2–4 real brand hex tokens (`--brand-bg`, `--brand-primary`, `--brand-accent`, `--brand-ink`) directly from the image instead of guessing generic colors.
+4. **Host cleanly on the Fly Machine:** Pass `assets: ["assets/logos/<filename>.png"]` to `obs_overlay_deploy`. Never inline megabyte base64 data URIs into HTML — reference the hosted file directly via `<img src="/assets/<filename>.png" alt="" />` so OBS caches it cleanly and refinements stay fast.

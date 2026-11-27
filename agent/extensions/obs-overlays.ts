@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
@@ -7,6 +9,30 @@ import {
   updateObsOverlayState,
   type OverlayControlField,
 } from "../lib/obs-overlays.ts";
+
+const HOME_DIR = process.env.HOME || "/home/sprite";
+const WORKSPACE_ROOT = path.resolve(HOME_DIR, "workspace");
+
+function resolveJailedWorkspaceFile(relPath: string): { absPath: string; relPath: string } {
+  const cleaned = relPath.trim().replace(/^\/+/, "");
+  if (!cleaned || cleaned.includes("\0")) {
+    throw new Error("Asset workspace path is required.");
+  }
+  fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
+  const rootReal = fs.realpathSync(WORKSPACE_ROOT);
+  const candidate = path.resolve(rootReal, cleaned);
+  if (candidate !== rootReal && !candidate.startsWith(rootReal + path.sep)) {
+    throw new Error(`Asset path escapes /home/sprite/workspace: ${relPath}`);
+  }
+  if (!fs.existsSync(candidate)) {
+    throw new Error(`Asset file not found in workspace: ${relPath}`);
+  }
+  const real = fs.realpathSync(candidate);
+  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) {
+    throw new Error(`Asset symlink escapes /home/sprite/workspace: ${relPath}`);
+  }
+  return { absPath: real, relPath: path.relative(rootReal, real).replace(/\\/g, "/") };
+}
 
 function getInternalBaseUrl(): string {
   const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
@@ -98,12 +124,22 @@ export default function (pi: ExtensionAPI) {
       resetState: Type.Optional(
         Type.Boolean({ description: "Reset existing live state to initialState on redeploy (default false)." })
       ),
+      assets: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            "Optional workspace-relative image paths under /home/sprite/workspace/ (e.g. ['assets/logos/logo-full.png']) to upload to the Fly Machine so the overlay HTML can render them cleanly via <img src=\"/assets/<basename>\" />.",
+        })
+      ),
       autoOpen: Type.Optional(
         Type.Boolean({ description: "Open the OBS Overlays OS window automatically (default true)." })
       ),
     }),
     async execute(_id, params) {
-      const { machine, overlay } = await deployObsOverlay({
+      const resolvedAssets = (params.assets || []).map((rel) => {
+        const { absPath } = resolveJailedWorkspaceFile(rel);
+        return { absPath, name: path.basename(absPath) };
+      });
+      const { machine, overlay, uploadedAssets } = await deployObsOverlay({
         slug: params.slug,
         title: params.title,
         description: params.description,
@@ -111,6 +147,7 @@ export default function (pi: ExtensionAPI) {
         controls: (params.controls || []) as OverlayControlField[],
         initialState: (params.initialState || {}) as Record<string, unknown>,
         resetState: params.resetState === true,
+        assets: resolvedAssets,
       });
 
       const notify =
@@ -135,6 +172,7 @@ export default function (pi: ExtensionAPI) {
                 title: overlay.title,
                 obsBrowserSourceUrl: overlay.overlayUrl,
                 remoteControlUrl: overlay.controlUrl,
+                hostedAssets: uploadedAssets,
                 openedInStudio: notify.notified,
                 chatCardMarkdown: `[${overlay.title}](obs-overlay:${overlay.slug})`,
               },

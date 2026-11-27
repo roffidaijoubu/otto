@@ -132,7 +132,7 @@ export function sanitizeOverlaySlug(raw: string): string {
   return cleaned;
 }
 
-const SERVER_VERSION = 1;
+const SERVER_VERSION = 2;
 
 // Self-contained Bun HTTP + SSE overlay server injected directly into oven/bun:1-alpine via Fly Machines config.files
 const FLY_OVERLAY_SERVER_TS = `
@@ -143,10 +143,30 @@ import path from "node:path";
 const PORT = Number(process.env.PORT || 8080);
 const DATA_DIR = process.env.DATA_DIR || "/data";
 const OVERLAYS_DIR = path.join(DATA_DIR, "overlays");
+const ASSETS_DIR = path.join(DATA_DIR, "assets");
+const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const SERVER_VERSION = ${SERVER_VERSION};
 
 fs.mkdirSync(OVERLAYS_DIR, { recursive: true });
+fs.mkdirSync(ASSETS_DIR, { recursive: true });
+
+function safeAssetName(raw: string): string | null {
+  const s = raw.trim();
+  if (!s || s.length > 120 || s.includes("..") || s.startsWith(".")) return null;
+  if (!/^[a-zA-Z0-9._-]+\\.(png|jpg|jpeg|webp|gif|svg)$/i.test(s)) return null;
+  return s;
+}
+
+function assetMimeType(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  return "application/octet-stream";
+}
 
 const sseClients = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
 const encoder = new TextEncoder();
@@ -516,6 +536,72 @@ Bun.serve({
       return Response.json({ ok: true, overlays: listAllOverlays(origin) });
     }
 
+    if (url.pathname === "/admin/assets" && req.method === "GET") {
+      if (!isAdmin(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+      const items: Array<{ name: string; size: number; path: string; url: string }> = [];
+      if (fs.existsSync(ASSETS_DIR)) {
+        for (const entry of fs.readdirSync(ASSETS_DIR, { withFileTypes: true })) {
+          if (!entry.isFile()) continue;
+          const valid = safeAssetName(entry.name);
+          if (!valid) continue;
+          const st = fs.statSync(path.join(ASSETS_DIR, valid));
+          items.push({
+            name: valid,
+            size: st.size,
+            path: "/assets/" + encodeURIComponent(valid),
+            url: origin + "/assets/" + encodeURIComponent(valid),
+          });
+        }
+      }
+      return Response.json({ ok: true, assets: items });
+    }
+
+    const adminAssetMatch = url.pathname.match(/^\\/admin\\/assets\\/([^/]+)$/);
+    if (adminAssetMatch) {
+      if (!isAdmin(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+      const name = safeAssetName(decodeURIComponent(adminAssetMatch[1]));
+      if (!name) return Response.json({ error: "Invalid asset filename" }, { status: 400 });
+      const dest = path.join(ASSETS_DIR, name);
+      if (req.method === "PUT") {
+        const buf = Buffer.from(await req.arrayBuffer());
+        if (buf.length === 0) return Response.json({ error: "Empty asset body" }, { status: 400 });
+        if (buf.length > MAX_ASSET_BYTES) {
+          return Response.json({ error: "Asset exceeds 10 MiB limit" }, { status: 413 });
+        }
+        const tmp = dest + "." + Date.now() + ".tmp";
+        fs.writeFileSync(tmp, buf);
+        fs.renameSync(tmp, dest);
+        return Response.json({
+          ok: true,
+          name,
+          size: buf.length,
+          path: "/assets/" + encodeURIComponent(name),
+          url: origin + "/assets/" + encodeURIComponent(name),
+        });
+      }
+      if (req.method === "DELETE") {
+        if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
+        return Response.json({ ok: true, deleted: name });
+      }
+    }
+
+    // Public Static Assets (/assets/<name>) for OBS Browser Sources
+    const pubAssetMatch = url.pathname.match(/^\\/assets\\/([^/]+)$/);
+    if (pubAssetMatch && req.method === "GET") {
+      const name = safeAssetName(decodeURIComponent(pubAssetMatch[1]));
+      if (!name) return new Response("Invalid asset name", { status: 400 });
+      const filePath = path.join(ASSETS_DIR, name);
+      if (!fs.existsSync(filePath)) return new Response("Asset not found", { status: 404 });
+      return new Response(Bun.file(filePath), {
+        headers: {
+          "Content-Type": assetMimeType(name),
+          "Cache-Control": "public, max-age=31536000, immutable",
+          "Access-Control-Allow-Origin": "*",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
     const adminMatch = url.pathname.match(/^\\/admin\\/overlays\\/([a-z0-9-]+)$/);
     if (adminMatch) {
       if (!isAdmin(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -769,13 +855,62 @@ export async function ensureOverlayMachine(): Promise<ObsOverlayMachineConfig> {
 
   const saved = readSavedMachineConfig();
   if (saved) {
-    // Verify machine still exists; if stopped, Fly Proxy auto-starts it on /health
+    // Verify machine still exists; upgrade server.ts in-place if SERVER_VERSION bumped
     const check = await flyApiFetch(
       connector,
       `/v1/apps/${encodeURIComponent(saved.appName)}/machines/${encodeURIComponent(saved.machineId)}`
     );
     if (check.ok) {
-      const m = (await check.json()) as { state?: string };
+      const m = (await check.json()) as { state?: string; config?: Record<string, unknown> };
+      const needsUpgrade = (saved.serverVersion || 1) < SERVER_VERSION;
+      if (needsUpgrade) {
+        const serverBase64 = Buffer.from(FLY_OVERLAY_SERVER_TS, "utf8").toString("base64");
+        const upgradeConfig = {
+          image: "oven/bun:1-alpine",
+          guest: { cpu_kind: "shared", cpus: 1, memory_mb: 256 },
+          mounts: [{ volume: saved.volumeId, path: "/data" }],
+          files: [{ guest_path: "/app/server.ts", raw_value: serverBase64 }],
+          init: { cmd: ["bun", "run", "/app/server.ts"] },
+          env: {
+            PORT: "8080",
+            DATA_DIR: "/data",
+            ADMIN_TOKEN: saved.adminToken,
+          },
+          services: [
+            {
+              protocol: "tcp",
+              internal_port: 8080,
+              autostart: true,
+              autostop: "stop",
+              min_machines_running: 0,
+              ports: [
+                { port: 80, handlers: ["http"], force_https: true },
+                { port: 443, handlers: ["tls", "http"] },
+              ],
+            },
+          ],
+        };
+        const updRes = await flyApiFetch(
+          connector,
+          `/v1/apps/${encodeURIComponent(saved.appName)}/machines/${encodeURIComponent(saved.machineId)}`,
+          {
+            method: "POST",
+            body: JSON.stringify({ region: saved.region, config: upgradeConfig }),
+          }
+        );
+        if (!updRes.ok) {
+          const errText = await updRes.text().catch(() => "");
+          throw new Error(`Failed to upgrade OBS Overlay Fly Machine to v${SERVER_VERSION}: ${errText.slice(0, 200)}`);
+        }
+        await flyApiFetch(
+          connector,
+          `/v1/apps/${encodeURIComponent(saved.appName)}/machines/${encodeURIComponent(saved.machineId)}/wait?state=started&timeout=60`
+        ).catch(() => {});
+        const upgraded: ObsOverlayMachineConfig = { ...saved, serverVersion: SERVER_VERSION };
+        saveMachineConfig(upgraded);
+        const healthyAfterUpgrade = await waitForHealth(upgraded.baseUrl, 30_000);
+        if (healthyAfterUpgrade) return upgraded;
+      }
       if (m.state !== "started") {
         await flyApiFetch(
           connector,
@@ -921,6 +1056,66 @@ export async function listHostedObsOverlays(): Promise<{
   }
 }
 
+export interface HostedObsAsset {
+  name: string;
+  size: number;
+  path: string;
+  url: string;
+}
+
+export function sanitizeOverlayAssetName(raw: string): string {
+  const base = path.basename(raw.trim()).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+/, "");
+  if (!base || base.length > 120 || !/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(base)) {
+    throw new Error(
+      `Invalid overlay asset filename "${raw}". Supported formats: .png, .jpg, .jpeg, .webp, .gif, .svg.`
+    );
+  }
+  return base;
+}
+
+export async function uploadObsOverlayAsset(
+  absFilePath: string,
+  customName?: string,
+  existingMachine?: ObsOverlayMachineConfig
+): Promise<HostedObsAsset> {
+  const stat = fs.statSync(absFilePath);
+  if (!stat.isFile()) {
+    throw new Error(`Asset path is not a file: ${absFilePath}`);
+  }
+  if (stat.size > 10 * 1024 * 1024) {
+    throw new Error(`Asset "${path.basename(absFilePath)}" exceeds 10 MiB limit.`);
+  }
+  const name = sanitizeOverlayAssetName(customName || path.basename(absFilePath));
+  const machine = existingMachine || (await ensureOverlayMachine());
+  const bytes = fs.readFileSync(absFilePath);
+  const res = await fetch(`${machine.baseUrl}/admin/assets/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${machine.adminToken}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: bytes,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    name?: string;
+    size?: number;
+    path?: string;
+    url?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.ok || !data.path || !data.url) {
+    throw new Error(data.error || `Failed to upload overlay asset "${name}" (HTTP ${res.status})`);
+  }
+  return {
+    name: data.name || name,
+    size: data.size ?? stat.size,
+    path: data.path,
+    url: data.url,
+  };
+}
+
 export async function deployObsOverlay(input: {
   slug: string;
   title: string;
@@ -930,9 +1125,17 @@ export async function deployObsOverlay(input: {
   controls?: OverlayControlField[];
   initialState?: Record<string, unknown>;
   resetState?: boolean;
-}): Promise<{ machine: ObsOverlayMachineConfig; overlay: ObsOverlaySummary }> {
+  assets?: Array<{ absPath: string; name?: string }>;
+}): Promise<{ machine: ObsOverlayMachineConfig; overlay: ObsOverlaySummary; uploadedAssets: HostedObsAsset[] }> {
   const safeSlug = sanitizeOverlaySlug(input.slug);
   const machine = await ensureOverlayMachine();
+  const uploadedAssets: HostedObsAsset[] = [];
+  if (Array.isArray(input.assets) && input.assets.length > 0) {
+    for (const item of input.assets) {
+      const uploaded = await uploadObsOverlayAsset(item.absPath, item.name, machine);
+      uploadedAssets.push(uploaded);
+    }
+  }
   const res = await fetch(`${machine.baseUrl}/admin/overlays/${encodeURIComponent(safeSlug)}`, {
     method: "PUT",
     headers: {
@@ -958,7 +1161,7 @@ export async function deployObsOverlay(input: {
   if (!res.ok || !data.ok || !data.overlay) {
     throw new Error(data.error || `Failed to deploy overlay '${safeSlug}' (HTTP ${res.status})`);
   }
-  return { machine, overlay: data.overlay };
+  return { machine, overlay: data.overlay, uploadedAssets };
 }
 
 export async function updateObsOverlayState(

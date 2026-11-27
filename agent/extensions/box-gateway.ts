@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
   downloadBoxFileToLocal,
+  ensureBoxAssetsFolder,
   exportWorkspaceEntryToBox,
   listBoxFolder,
 } from "../lib/box.ts";
@@ -47,6 +48,38 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: JSON.stringify({ count: entries.length, entries }, null, 2) }],
         details: { count: entries.length },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "box_list_assets",
+    label: "List Otto Assets in Box",
+    description:
+      "Ensure and list the creator's 'Otto Assets/' folder (and optional subfolder like 'Characters', 'Characters/Black_Dark', 'Logos', or 'Backgrounds') in Box for reusable non-AI creator assets (VTuber PNG cutouts, logos, backgrounds). Returns the folder URL and entries.",
+    parameters: Type.Object({
+      subpath: Type.Optional(
+        Type.String({
+          description: "Optional subfolder path inside 'Otto Assets/' (e.g. 'Characters' or 'Characters/White_Light').",
+        })
+      ),
+      limit: Type.Optional(Type.Number({ description: "Max items to return (default 100, max 200)." })),
+    }),
+    async execute(_id, params) {
+      const segments = (params.subpath || "")
+        .split("/")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const folder = await ensureBoxAssetsFolder(segments);
+      const entries = await listBoxFolder(folder.id, params.limit ?? 100);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ folder, count: entries.length, entries }, null, 2),
+          },
+        ],
+        details: { folderId: folder.id, count: entries.length },
       };
     },
   });
