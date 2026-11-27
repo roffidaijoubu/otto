@@ -14,7 +14,6 @@ export default defineConfig({
     esbuildOptions: {
       target: "esnext",
     },
-    exclude: ["@novnc/novnc"],
   },
   server: {
     port: 5173,

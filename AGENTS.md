@@ -14,7 +14,7 @@
 ## Non-Negotiable Engineering & Product Rules
 1. **Strictly NO AI-generated images or video.** Never generate or recommend AI thumbnails, AI art, AI rigging, or AI video edits — enforced at both prompt level (`agent/APPEND_SYSTEM.md`) and tool-permission level (`generate_image: deny` in `agent/config.yml`).
 2. **Zero Raw API Keys in Repo or Sprite VM.** Every key-bearing external API (Gemini, Exa, Firecrawl, Composio v3 YouTube, Buffer X/TikTok/IG, Upstash QStash) routes through `https://api.sprites.dev/v1/gateway/...` and auto-discovers its `gateway_base_url` via `GET /v1/gateway/list` at runtime. Never hardcode connector IDs or secrets. (Anonymous public-VOD fetching via `yt-dlp`/InnerTube is keyless and goes direct.)
-3. **Draft-First & Human-Approval Guardrails.** Social posts (`buffer_create_post`) default to `saveToDraft: true`; YouTube mutations (`YOUTUBE_UPDATE_VIDEO`, `YOUTUBE_UPDATE_THUMBNAIL`) require explicit human confirmation; `opencli_run` is **read-only** — mutating browser adapters are rejected in code (`agent/extensions/browser-auth.ts`), and cookie capture is domain-scoped (`web/lib/browser-manager.ts`).
+3. **Draft-First & Human-Approval Guardrails.** Social posts (`buffer_create_post`) default to `saveToDraft: true`; YouTube mutations (`YOUTUBE_UPDATE_VIDEO`, `YOUTUBE_UPDATE_THUMBNAIL`) require explicit human confirmation.
 4. **Zero Fourth-Wall Breaks.** Otto speaks like a real, practical studio manager — never expose raw tool slugs, file paths, or VM internals to the creator unless explicitly asked.
 5. **Proactive Kanban Tracking for Ad-Hoc Features:** The author frequently comes up with spur-of-the-moment feature ideas directly in chat without creating a `.kanban/` card first. Whenever you finish implementing a new ad-hoc feature or notable capability that isn't tracked in `.kanban/`, **proactively nudge the author** to create a `.kanban/` card with `status: done` (capturing what was built and key file paths) so shipped features stay tracked and can be used later to bulk-update `README.md` and submission docs.
 
@@ -36,10 +36,10 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # 13 extensions: connectors + browser-auth + vod-clipper + media-reviewer + studio-db + skill-learner + new-session + studio-apps + obs-overlays (51 tools)
+│   ├── extensions/             # 12 extensions: connectors + vod-clipper + media-reviewer + studio-db + skill-learner + new-session + studio-apps + obs-overlays (46 tools)
 │   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), learned skills (learned-skills.ts)
 │   └── skills/                 # 8 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft + opt-in streaming-coaching)
-├── web/                        # Bun RPC supervisor & noVNC RFB proxy (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (10 apps + Spotlight)
+├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (9 apps + Spotlight)
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
     ├── verify-all.sh                   # Deterministic 27-check verification suite (28 with --live)
@@ -62,7 +62,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~10 seconds — 27 deterministic checks (28 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 13 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
+Runs in ~10 seconds — 27 deterministic checks (28 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 12 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD/gating, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip

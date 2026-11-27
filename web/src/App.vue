@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   Columns2Icon,
-  GlobeIcon,
   LayersIcon,
   LayoutGridIcon,
   Maximize2Icon,
@@ -12,7 +11,6 @@ import {
   RotateCcwIcon,
   SparklesIcon,
 } from "@lucide/vue";
-import { toast } from "vue-sonner";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -20,8 +18,6 @@ import { DesktopShell, type DesktopShellExposed } from "@/components/os";
 import type { CustomAppId, DesktopShortcut } from "@/composables/useWindowManager";
 import CustomStudioAppWindow from "./components/CustomStudioAppWindow.vue";
 import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
-import BrowserLoginModal, { type BrowserLoginRequest } from "./components/BrowserLoginModal.vue";
-import BrowserWorkspaceTab from "./components/BrowserWorkspaceTab.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
@@ -50,7 +46,6 @@ const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
 const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
-const browserTabRef = ref<InstanceType<typeof BrowserWorkspaceTab> | null>(null);
 const activeObsOverlaySlug = ref("");
 const studioAppsRefreshTick = ref(0);
 const obsOverlaysRefreshTick = ref(0);
@@ -67,7 +62,6 @@ const installedCustomApps = ref<InstalledCustomApp[]>([]);
 const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
   { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
   { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
-  { id: "chrome", label: "Chrome", sublabel: "noVNC", icon: "globe", appId: "chrome" },
   { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
   { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
   { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
@@ -96,9 +90,6 @@ const error = ref("");
 const sidebarOpen = ref(false);
 const missionTab = ref<MissionSubTab>("overview");
 const filesTargetPath = ref("");
-const pendingChromeUrl = ref("");
-const chromeRunning = ref(false);
-const chromeSessionCount = ref(0);
 const navCounts = ref({ schedule: 0, files: 0, database: 0, playbooks: 0, connectors: 0 });
 const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
@@ -106,8 +97,6 @@ const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
 const setupChecked = ref(false);
 const showSetupWizard = ref(false);
-const activeLoginRequest = ref<BrowserLoginRequest | null>(null);
-const browserRefreshTick = ref(0);
 const setupInitialName = ref("");
 const setupInitialTimezone = ref("");
 
@@ -266,27 +255,6 @@ async function loadSessions() {
   }
 }
 
-async function loadInitialBrowserStatus() {
-  try {
-    const res = await fetch("/api/browser/status");
-    if (!res.ok) return;
-    const data = (await res.json()) as {
-      running?: boolean;
-      sessions?: unknown[];
-      activeLogin?: BrowserLoginRequest | null;
-    };
-    chromeRunning.value = Boolean(data.running);
-    chromeSessionCount.value = Array.isArray(data.sessions) ? data.sessions.length : 0;
-    if (data.activeLogin && data.activeLogin.status === "pending") {
-      activeLoginRequest.value = data.activeLogin;
-    } else if (activeLoginRequest.value && !data.activeLogin) {
-      activeLoginRequest.value = null;
-    }
-  } catch {
-    // ignore
-  }
-}
-
 async function loadMessages() {
   try {
     const res = await fetch("/api/messages");
@@ -436,29 +404,6 @@ function connectEvents() {
     } else if (type === "error") {
       error.value = typeof msg.message === "string" ? msg.message : "Unexpected error";
       busy.value = false;
-    } else if (type === "browser_login_required" && msg.request && typeof msg.request === "object") {
-      const req = msg.request as BrowserLoginRequest;
-      activeLoginRequest.value = req;
-      chromeRunning.value = true;
-      wm?.openWindow("chrome", {
-        focus: true,
-        attention: true,
-        badgeText: "Login",
-        subtitle: req.label || req.site,
-      });
-    } else if (type === "browser_login_done" && msg.request && typeof msg.request === "object") {
-      const req = msg.request as BrowserLoginRequest;
-      activeLoginRequest.value = null;
-      browserRefreshTick.value += 1;
-      wm?.setWindowMeta("chrome", { attention: false, badgeText: "" });
-      toast.success(`Signed in to ${req.label || req.site}. Cookies saved.`);
-    } else if (type === "browser_login_cancelled") {
-      activeLoginRequest.value = null;
-      browserRefreshTick.value += 1;
-      wm?.setWindowMeta("chrome", { attention: false, badgeText: "" });
-    } else if (type === "browser_status") {
-      browserRefreshTick.value += 1;
-      void loadInitialBrowserStatus();
     }
   };
 }
@@ -526,10 +471,6 @@ function handleMissionTabRequest(tab: StudioTab) {
     wm?.openWindow("playbooks", { focus: true });
     return;
   }
-  if (tab === "browser") {
-    wm?.openWindow("chrome", { focus: true });
-    return;
-  }
   missionTab.value = tab;
   wm?.openWindow("mission-control", { focus: true });
 }
@@ -561,41 +502,6 @@ function handleDesktopAction(action: "new-note" | "new-folder") {
       fileManagerRef.value?.openNewFolderDialog();
     }
   });
-}
-
-function openChromeAtUrl(url: string) {
-  pendingChromeUrl.value = url;
-  shellRef.value?.wm.openWindow("chrome", {
-    focus: true,
-    subtitle: url.replace(/^https?:\/\//, ""),
-  });
-  nextTick(() => {
-    if (browserTabRef.value && pendingChromeUrl.value) {
-      const target = pendingChromeUrl.value;
-      pendingChromeUrl.value = "";
-      void browserTabRef.value.openUrl(target);
-    }
-  });
-}
-
-function handleBrowserStatusChanged(payload: {
-  running: boolean;
-  sessionCount: number;
-  currentUrl?: string;
-}) {
-  chromeRunning.value = payload.running;
-  chromeSessionCount.value = payload.sessionCount;
-}
-
-function handleLoginModalCompleted() {
-  activeLoginRequest.value = null;
-  browserRefreshTick.value += 1;
-  shellRef.value?.wm.setWindowMeta("chrome", { attention: false, badgeText: "" });
-}
-
-function handleLoginModalCancelled() {
-  activeLoginRequest.value = null;
-  shellRef.value?.wm.setWindowMeta("chrome", { attention: false, badgeText: "" });
 }
 
 async function stopReply() {
@@ -688,7 +594,6 @@ onMounted(async () => {
     loadSetupStatus(),
     loadMessages(),
     loadSessions(),
-    loadInitialBrowserStatus(),
   ]);
   nextTick(() => {
     void loadInstalledCustomApps();
@@ -718,14 +623,11 @@ watch(shellRef, (val) => {
       v-else-if="setupChecked"
       ref="shellRef"
       :timezone="setupInitialTimezone"
-      :chrome-running="chromeRunning"
-      :chrome-login-pending="Boolean(activeLoginRequest)"
       :mascot-state="statusState"
       :mascot-color="mascotColor"
       :status-subtitle="desktopStatusSubtitle"
       :shortcuts="desktopShortcuts"
       @open-files-path="openFilesAtPath"
-      @open-chrome-url="openChromeAtUrl"
       @desktop-action="handleDesktopAction"
     >
       <!-- WINDOW 1: OTTO CHAT -->
@@ -885,18 +787,6 @@ watch(shellRef, (val) => {
           :refresh-tick="studioAppsRefreshTick"
           @uninstalled="handleCustomAppUninstalled"
         />
-      </template>
-
-      <!-- WINDOW 4: EMBEDDED CHROME (noVNC) -->
-      <template #app-chrome>
-        <div class="flex h-full min-h-0 flex-col bg-white">
-          <BrowserWorkspaceTab
-            ref="browserTabRef"
-            :modal-active="Boolean(activeLoginRequest)"
-            :refresh-tick="browserRefreshTick"
-            @status-changed="handleBrowserStatusChanged"
-          />
-        </div>
       </template>
 
       <!-- WINDOW 5: STUDIO DATABASE -->
@@ -1078,7 +968,7 @@ watch(shellRef, (val) => {
               </div>
               <div>
                 <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–7
+                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–9
                 </kbd>
                 Toggle Apps
               </div>
@@ -1107,15 +997,6 @@ watch(shellRef, (val) => {
                 size="xs"
                 variant="secondary"
                 type="button"
-                @click="shellRef?.wm.openWindow('chrome')"
-              >
-                <GlobeIcon data-icon="inline-start" />
-                Chrome Sessions ({{ chromeSessionCount }})
-              </Button>
-              <Button
-                size="xs"
-                variant="secondary"
-                type="button"
                 @click="handleMissionTabRequest('connectors')"
               >
                 <PlugIcon data-icon="inline-start" />
@@ -1134,12 +1015,6 @@ watch(shellRef, (val) => {
       @close="sidebarOpen = false"
       @new-chat="newChat"
       @select="switchChat"
-    />
-
-    <BrowserLoginModal
-      :request="activeLoginRequest"
-      @completed="handleLoginModalCompleted"
-      @cancelled="handleLoginModalCancelled"
     />
 
     <Toaster position="bottom-right" />

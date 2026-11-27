@@ -25,17 +25,7 @@ if ! command -v omp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/omp" ]; then
   ln -sf "$(npm prefix -g)/bin/omp" "${HOME}/.local/bin/omp"
 fi
 
-# 1a. Install @jackwener/opencli for CDP-backed social/creator CLI automation
-if ! command -v opencli >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/opencli" ]; then
-  if command -v npm >/dev/null 2>&1; then
-    echo "==> Installing @jackwener/opencli..."
-    npm install -g --allow-scripts=@jackwener/opencli @jackwener/opencli
-    mkdir -p "${HOME}/.local/bin"
-    ln -sf "$(npm prefix -g)/bin/opencli" "${HOME}/.local/bin/opencli"
-  fi
-fi
-
-# 1b. Install jq, ffmpeg, and yt-dlp for gateway discovery & VOD/clip workflows
+# 1a. Install jq, ffmpeg, and yt-dlp for gateway discovery & VOD/clip workflows
 if ! command -v jq >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "ERROR: jq and ffmpeg are required, and apt-get is unavailable. Install jq and ffmpeg manually and re-run." >&2
@@ -51,28 +41,6 @@ if ! command -v yt-dlp >/dev/null 2>&1 && [ ! -x "${HOME}/.local/bin/yt-dlp" ]; 
   mkdir -p "${HOME}/.local/bin"
   curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "${HOME}/.local/bin/yt-dlp"
   chmod +x "${HOME}/.local/bin/yt-dlp"
-fi
-
-# 1c. Install Xvfb, x11vnc, openbox, xdotool, fonts, and Google Chrome for embedded Browser / Cookie Auth
-if command -v apt-get >/dev/null 2>&1; then
-  if ! command -v Xvfb >/dev/null 2>&1 || ! command -v x11vnc >/dev/null 2>&1 || ! command -v openbox >/dev/null 2>&1; then
-    echo "==> Installing Xvfb, x11vnc, openbox, xdotool, and fonts..."
-    SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
-    ${SUDO} apt-get update -qq && ${SUDO} apt-get install -y -qq --no-install-recommends \
-      xvfb x11vnc openbox xdotool fonts-liberation fonts-noto-color-emoji
-  fi
-  if ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-    echo "==> Installing Google Chrome Stable..."
-    SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
-    CHROME_DEB="/tmp/google-chrome-stable_current_amd64.deb"
-    if curl -fsSL "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" -o "${CHROME_DEB}"; then
-      ${SUDO} apt-get install -y -qq "${CHROME_DEB}" || ${SUDO} apt-get -f install -y -qq
-      rm -f "${CHROME_DEB}"
-    else
-      echo "WARNING: Failed to download google-chrome-stable; falling back to chromium..." >&2
-      ${SUDO} apt-get install -y -qq --no-install-recommends chromium || true
-    fi
-  fi
 fi
 
 # 2. Symlink agent persona, config, extensions, and skills

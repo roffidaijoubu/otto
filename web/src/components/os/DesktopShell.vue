@@ -20,8 +20,6 @@ const props = withDefaults(
   defineProps<{
     timezone?: string;
     studioLabel?: string;
-    chromeRunning?: boolean;
-    chromeLoginPending?: boolean;
     mascotState?: "ready" | "busy" | "error";
     mascotColor?: string;
     statusSubtitle?: string;
@@ -32,8 +30,6 @@ const props = withDefaults(
   {
     timezone: "",
     studioLabel: "Otto OS",
-    chromeRunning: false,
-    chromeLoginPending: false,
     mascotState: "ready",
     mascotColor: "#303030",
     statusSubtitle: "Sprite workstation ready",
@@ -43,7 +39,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "open-files-path", path: string): void;
-  (e: "open-chrome-url", url: string): void;
   (e: "desktop-action", action: "new-note" | "new-folder"): void;
 }>();
 
@@ -89,8 +84,8 @@ const mobileStageStyle = computed(() => ({
 
 const SHORTCUT_APP_IDS: StudioAppId[] = [
   "otto-chat",
-  "chrome",
   "files",
+  "obs-overlays",
   "mission-control",
   "studio-db",
   "playbooks",
@@ -158,8 +153,6 @@ defineExpose<DesktopShellExposed>({
         :wm="wm"
         :timezone="timezone"
         :studio-label="studioLabel"
-        :chrome-running="chromeRunning"
-        :chrome-login-pending="chromeLoginPending"
         @open-spotlight="openSpotlight"
       />
 
@@ -231,7 +224,6 @@ defineExpose<DesktopShellExposed>({
         v-model:open="spotlightOpen"
         :wm="wm"
         @open-files-path="emit('open-files-path', $event)"
-        @open-chrome-url="emit('open-chrome-url', $event)"
       />
     </div>
   </TooltipProvider>

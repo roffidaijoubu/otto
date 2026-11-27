@@ -4,7 +4,6 @@ import {
   Database,
   FilePlus2,
   FolderPlus,
-  Globe,
   Layers,
   LayoutGrid,
   MessageSquare,
@@ -40,7 +39,6 @@ const props = withDefaults(
       { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
       { id: "brand", label: "Brand Kit", sublabel: "/brand", icon: "folder", appId: "files", filesPath: "brand" },
       { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
-      { id: "chrome", label: "Chrome", sublabel: "noVNC", icon: "globe", appId: "chrome" },
       { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
       { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
       { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
@@ -145,10 +143,6 @@ function launchShortcut(item: DesktopShortcut) {
         <ContextMenuItem @select="wm.openWindow('otto-chat')">
           <MessageSquare class="size-4" aria-hidden="true" />
           <span>Open Otto Chat</span>
-        </ContextMenuItem>
-        <ContextMenuItem @select="wm.openWindow('chrome')">
-          <Globe class="size-4" aria-hidden="true" />
-          <span>Open Chrome (noVNC)</span>
         </ContextMenuItem>
         <ContextMenuItem @select="wm.openWindow('studio-db')">
           <Database class="size-4" aria-hidden="true" />

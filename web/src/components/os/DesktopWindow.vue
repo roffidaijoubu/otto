@@ -419,7 +419,7 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
     <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
       <slot />
 
-      <!-- Pointer guard over embedded canvases/iframes (noVNC Chrome, videos) during drag/resize -->
+      <!-- Pointer guard over embedded iframes/videos during drag/resize -->
       <div
         v-if="showPointerShield"
         class="absolute inset-0 z-10 cursor-grabbing bg-transparent"

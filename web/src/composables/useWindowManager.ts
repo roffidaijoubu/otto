@@ -15,7 +15,6 @@ export type BuiltinAppId =
   | "mission-control"
   | "files"
   | "obs-overlays"
-  | "chrome"
   | "studio-db"
   | "playbooks"
   | "calendar"
@@ -199,18 +198,6 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "1",
   },
   {
-    id: "chrome",
-    title: "Chrome",
-    shortLabel: "Chrome",
-    icon: "globe",
-    minWidth: 460,
-    minHeight: 360,
-    defaultWidth: 960,
-    defaultHeight: 620,
-    dockSection: "primary",
-    shortcutDigit: "2",
-  },
-  {
     id: "files",
     title: "Studio Files",
     shortLabel: "Files",
@@ -220,7 +207,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 780,
     defaultHeight: 600,
     dockSection: "primary",
-    shortcutDigit: "3",
+    shortcutDigit: "2",
   },
   {
     id: "obs-overlays",
@@ -232,6 +219,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 900,
     defaultHeight: 660,
     dockSection: "primary",
+    shortcutDigit: "3",
   },
   {
     id: "mission-control",

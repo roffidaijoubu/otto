@@ -4,7 +4,6 @@ import {
   Columns2,
   CornerDownLeft,
   FolderOpen,
-  Globe,
   Layers,
   LayoutGrid,
   Maximize2,
@@ -32,7 +31,7 @@ import type {
 
 interface SpotlightItem {
   id: string;
-  group: "Chrome" | "Apps" | "Folders" | "Layouts";
+  group: "Apps" | "Folders" | "Layouts";
   title: string;
   subtitle: string;
   keywords: string;
@@ -49,22 +48,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void;
   (e: "open-files-path", path: string): void;
-  (e: "open-chrome-url", url: string): void;
 }>();
 
 const query = ref("");
 const activeIndex = ref(0);
 const inputWrapRef = ref<HTMLElement | null>(null);
-
-function normalizeCandidateUrl(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed || /\s/.test(trimmed)) return null;
-  if (/^https?:\/\/\S+/i.test(trimmed)) return trimmed;
-  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(trimmed)) {
-    return `https://${trimmed}`;
-  }
-  return null;
-}
 
 const QUICK_FOLDERS = [
   { path: "clips", title: "Clips Folder", subtitle: "/clips · Hype clips & exports" },
@@ -100,22 +88,6 @@ const layoutActions = computed<
 
 const allItems = computed<SpotlightItem[]>(() => {
   const items: SpotlightItem[] = [];
-
-  const candidateUrl = normalizeCandidateUrl(query.value);
-  if (candidateUrl) {
-    items.push({
-      id: `url:${candidateUrl}`,
-      group: "Chrome",
-      title: `Open ${candidateUrl}`,
-      subtitle: "Launch directly inside embedded Chrome (noVNC)",
-      keywords: candidateUrl,
-      badge: "URL",
-      run: () => {
-        props.wm.openWindow("chrome", { subtitle: candidateUrl.replace(/^https?:\/\//, "") });
-        emit("open-chrome-url", candidateUrl);
-      },
-    });
-  }
 
   for (const app of props.wm.apps) {
     const win = props.wm.windows[app.id];
@@ -168,7 +140,6 @@ const filteredItems = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) return allItems.value;
   return allItems.value.filter((item) => {
-    if (item.group === "Chrome") return true;
     const hay = `${item.title} ${item.subtitle} ${item.keywords}`.toLowerCase();
     return hay.includes(q);
   });
@@ -229,7 +200,7 @@ function handleKeyDown(event: KeyboardEvent) {
       <DialogHeader class="sr-only">
         <DialogTitle>Otto OS Spotlight</DialogTitle>
         <DialogDescription>
-          Quickly launch Studio apps, open workspace folders, apply window layouts, or open a URL in Chrome.
+          Quickly launch Studio apps, open workspace folders, or apply window layouts.
         </DialogDescription>
       </DialogHeader>
 
@@ -240,7 +211,7 @@ function handleKeyDown(event: KeyboardEvent) {
           </InputGroupAddon>
           <InputGroupInput
             v-model="query"
-            placeholder="Open app, jump to /clips, run layout, or type a URL..."
+            placeholder="Open app, jump to /clips, or run layout..."
             class="font-mono text-[13px]"
           />
           <InputGroupAddon align="inline-end">
@@ -280,7 +251,6 @@ function handleKeyDown(event: KeyboardEvent) {
               "
             >
               <StudioAppIcon v-if="item.appIcon" :icon="item.appIcon" class="size-4" />
-              <Globe v-else-if="item.group === 'Chrome'" class="size-4" aria-hidden="true" />
               <FolderOpen v-else-if="item.group === 'Folders'" class="size-4" aria-hidden="true" />
               <Columns2 v-else-if="item.id === 'layout:tile-2up'" class="size-4" aria-hidden="true" />
               <Maximize2 v-else-if="item.id === 'layout:focus-chat'" class="size-4" aria-hidden="true" />

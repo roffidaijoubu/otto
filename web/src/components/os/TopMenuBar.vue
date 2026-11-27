@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   Columns2,
-  Globe,
   Layers,
   LayoutGrid,
   Maximize2,
@@ -22,7 +21,6 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 import StudioAppIcon from "./StudioAppIcon.vue";
 import type { WindowManagerInstance } from "@/composables/useWindowManager";
 
@@ -31,14 +29,10 @@ const props = withDefaults(
     wm: WindowManagerInstance;
     timezone?: string;
     studioLabel?: string;
-    chromeRunning?: boolean;
-    chromeLoginPending?: boolean;
   }>(),
   {
     timezone: "",
     studioLabel: "Otto OS",
-    chromeRunning: false,
-    chromeLoginPending: false,
   }
 );
 
@@ -222,7 +216,7 @@ const focusedWin = computed(() => {
       </DropdownMenu>
     </div>
 
-    <!-- Right: Spotlight pill + Chrome status + Clock + Settings -->
+    <!-- Right: Spotlight pill + Clock + Settings -->
     <div class="flex shrink-0 items-center gap-1.5">
       <button
         type="button"
@@ -235,24 +229,6 @@ const focusedWin = computed(() => {
         <kbd class="rounded bg-[#f2f2f2] px-1 py-px text-[10px] font-semibold text-[#303030]">
           {{ wm.shortcutLabels.value.spotlight }}
         </kbd>
-      </button>
-
-      <button
-        v-if="chromeRunning || chromeLoginPending"
-        type="button"
-        data-os-chrome-indicator
-        :class="
-          cn(
-            'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold transition-colors',
-            chromeLoginPending
-              ? 'bg-[#f9f5a2] text-[#303030] animate-pulse'
-              : 'bg-[#f2f2f2] text-[#303030] hover:bg-[#e8e8e8]'
-          )
-        "
-        @click="wm.openWindow('chrome')"
-      >
-        <Globe class="size-3" aria-hidden="true" />
-        <span>{{ chromeLoginPending ? "Login Needed" : "Chrome Live" }}</span>
       </button>
 
       <span class="px-1.5 font-mono text-[11.5px] font-medium tabular-nums text-[#4a4a4a]">

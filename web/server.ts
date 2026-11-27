@@ -71,15 +71,8 @@ import {
   WORKSPACE_CLIPS_DIR,
   WORKSPACE_ROOT,
 } from "./lib/workspace.ts";
-import { BrowserManager } from "./lib/browser-manager.ts";
 
 const LMA_INTERNAL_SECRET = crypto.randomBytes(24).toString("hex");
-const browserManager = new BrowserManager({
-  onLoginRequired: (req) => broadcast({ type: "browser_login_required", request: req }),
-  onLoginDone: (req) => broadcast({ type: "browser_login_done", request: req }),
-  onLoginCancelled: (req) => broadcast({ type: "browser_login_cancelled", request: req }),
-  onStatusChanged: (status) => broadcast({ type: "browser_status", status }),
-});
 
 const PORT = Number(process.env.PORT || 8080);
 const DIST_DIR = path.join(import.meta.dir, "dist");
@@ -612,9 +605,6 @@ function friendlyToolLabel(toolName: string): string {
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
   if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
   if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail...";
-  if (/browser_login/i.test(toolName)) return "Waiting for browser login...";
-  if (/browser_/i.test(toolName)) return "Checking saved browser sessions...";
-  if (/opencli/i.test(toolName)) return "Running OpenCLI on browser session...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating workspace files...";
   if (/read/i.test(toolName)) return "Reviewing dossier & files...";
@@ -1346,13 +1336,7 @@ function startSilentBackgroundJob(opts: {
 }
 
 
-interface VncWsData {
-  kind: "vnc";
-  tcpSocket: Bun.Socket<undefined> | null;
-  pendingChunks?: Uint8Array[];
-}
-
-Bun.serve<VncWsData>({
+Bun.serve({
   port: PORT,
   idleTimeout: 255,
   async fetch(req, server) {
@@ -1455,83 +1439,6 @@ Bun.serve<VncWsData>({
     }
 
     // Internal-only endpoints for omp subprocess (authenticated via ephemeral LMA_INTERNAL_SECRET)
-    if (url.pathname.startsWith("/api/internal/browser")) {
-      const auth = req.headers.get("authorization") || "";
-      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (!token || !timingSafeStrEqual(token, LMA_INTERNAL_SECRET)) {
-        return Response.json({ error: "Forbidden" }, { status: 403 });
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/internal/browser-login/request") {
-        if (sseClients.size === 0) {
-          return Response.json(
-            {
-              ok: false,
-              reason: "no_dashboard_connected",
-              error: "No active dashboard browser session is open to display the login modal.",
-            },
-            { status: 409 }
-          );
-        }
-        const body = (await req.json().catch(() => ({}))) as {
-          site?: string;
-          url?: string;
-          reason?: string;
-          expectedCookies?: string[];
-          successUrlRegex?: string;
-          timeoutSec?: number;
-        };
-        if (!body.site || typeof body.site !== "string") {
-          return Response.json({ ok: false, error: "Missing site" }, { status: 400 });
-        }
-        try {
-          const state = await browserManager.startLoginRequest({
-            site: body.site,
-            url: body.url,
-            reason: body.reason,
-            expectedCookies: Array.isArray(body.expectedCookies) ? body.expectedCookies : undefined,
-            successUrlRegex: body.successUrlRegex,
-            timeoutSec: body.timeoutSec,
-          });
-          return Response.json({ ok: true, request: state });
-        } catch (err) {
-          return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
-        }
-      }
-
-      if (req.method === "GET" && url.pathname === "/api/internal/browser-login/status") {
-        const id = url.searchParams.get("id") || "";
-        const waitMs = Number(url.searchParams.get("wait") || "0");
-        if (!id) return Response.json({ ok: false, error: "Missing id" }, { status: 400 });
-        const state =
-          waitMs > 0
-            ? await browserManager.waitForLoginUpdate(id, waitMs)
-            : browserManager.getLoginRequest(id);
-        if (!state) return Response.json({ ok: false, error: "Unknown requestId" }, { status: 404 });
-        return Response.json({ ok: true, request: state });
-      }
-      if (req.method === "POST" && url.pathname === "/api/internal/browser/ensure") {
-        const body = (await req.json().catch(() => ({}))) as { url?: string };
-        try {
-          await browserManager.ensureStarted(body.url);
-          return Response.json({
-            ok: true,
-            cdpEndpoint: `http://127.0.0.1:${browserManager.getCdpPort()}`,
-            status: browserManager.getStatus(),
-          });
-        } catch (err) {
-          return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
-        }
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/internal/browser/stop") {
-        await browserManager.stop();
-        return Response.json({ ok: true });
-      }
-
-
-      return Response.json({ error: "Not Found" }, { status: 404 });
-    }
 
     // Internal-only Studio App & OBS Overlay presentation endpoints for omp subprocess
     if (
@@ -1605,88 +1512,6 @@ Bun.serve<VncWsData>({
       });
     }
 
-    // Native WebSocket bridge for noVNC (/api/browser/ws <-> 127.0.0.1:5900)
-    if (url.pathname === "/api/browser/ws") {
-      const upgraded = server.upgrade(req, {
-        data: { kind: "vnc", tcpSocket: null },
-      });
-      if (upgraded) return undefined;
-      return Response.json({ error: "WebSocket upgrade failed" }, { status: 400 });
-    }
-
-    // Public authenticated Embedded Browser & Cookie Auth endpoints
-    if (req.method === "GET" && url.pathname === "/api/browser/status") {
-      return Response.json(await browserManager.getStatusAsync());
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/start") {
-      const body = (await req.json().catch(() => ({}))) as { url?: string };
-      try {
-        await browserManager.ensureStarted(body.url);
-        return Response.json({ ok: true, status: await browserManager.getStatusAsync() });
-      } catch (err) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
-      }
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/stop") {
-      await browserManager.stop();
-      return Response.json({ ok: true, status: browserManager.getStatus() });
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/capture") {
-      if (!browserManager.isRunning()) {
-        return Response.json({ ok: false, error: "Chrome is not running." }, { status: 400 });
-      }
-      const body = (await req.json().catch(() => ({}))) as { site?: string };
-      try {
-        const session = await browserManager.captureActiveTab(body.site);
-        return Response.json({ ok: true, session, sessions: browserManager.listSavedSessions() });
-      } catch (err) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
-      }
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/navigate") {
-      const body = (await req.json().catch(() => ({}))) as { url?: string };
-      if (!body.url) return Response.json({ ok: false, error: "Missing url" }, { status: 400 });
-      await browserManager.ensureStarted(body.url);
-      return Response.json({ ok: true, status: await browserManager.getStatusAsync() });
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/action") {
-      if (!browserManager.isRunning()) {
-        return Response.json({ ok: false, error: "Chrome is not running." }, { status: 400 });
-      }
-      const body = (await req.json().catch(() => ({}))) as { action?: string };
-      if (body.action !== "back" && body.action !== "forward" && body.action !== "reload") {
-        return Response.json({ ok: false, error: "Invalid browser action" }, { status: 400 });
-      }
-      try {
-        const ok = await browserManager.performAction(body.action);
-        return Response.json({ ok, status: await browserManager.getStatusAsync() });
-      } catch (err) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 500 });
-      }
-    }
-    if (req.method === "GET" && url.pathname === "/api/browser/sessions") {
-      return Response.json({ sessions: browserManager.listSavedSessions() });
-    }
-    if (req.method === "DELETE" && url.pathname.startsWith("/api/browser/sessions/")) {
-      const site = decodeURIComponent(url.pathname.slice("/api/browser/sessions/".length));
-      const removed = browserManager.deleteSavedSession(site);
-      return Response.json({ ok: removed, sessions: browserManager.listSavedSessions() });
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/login/complete") {
-      const body = (await req.json().catch(() => ({}))) as { requestId?: string };
-      try {
-        const completed = await browserManager.completeLoginRequest(body.requestId);
-        return Response.json({ ok: Boolean(completed), request: completed });
-      } catch (err) {
-        return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
-      }
-    }
-    if (req.method === "POST" && url.pathname === "/api/browser/login/cancel") {
-      const body = (await req.json().catch(() => ({}))) as { requestId?: string; reason?: string };
-      const cancelled = browserManager.cancelLoginRequest(body.requestId, body.reason);
-      return Response.json({ ok: Boolean(cancelled), request: cancelled });
-    }
-
     if (req.method === "GET" && url.pathname === "/api/events") {
       let ctrlRef: SSEClient | null = null;
       let pingTimer: NodeJS.Timeout | null = null;
@@ -1699,14 +1524,6 @@ Bun.serve<VncWsData>({
               `data: ${JSON.stringify({ type: "status", busy: rpc.busy, activity: rpc.activity, todos: rpc.todos })}\n\n`
             )
           );
-          const pendingLogin = browserManager.getStatus().activeLogin;
-          if (pendingLogin && pendingLogin.status === "pending") {
-            ctrl.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "browser_login_required", request: pendingLogin })}\n\n`
-              )
-            );
-          }
           // Keep SSE alive during long (>4m) VOD hype-scan / ffmpeg turns
           pingTimer = setInterval(() => {
             try {
@@ -2984,79 +2801,6 @@ Bun.serve<VncWsData>({
     }
 
     return new Response("Not Found", { status: 404 });
-  },
-  websocket: {
-    async open(ws) {
-      browserManager.registerVncClient();
-      const data = ws.data;
-      data.pendingChunks = [];
-      try {
-        const tcp = await Bun.connect({
-          hostname: "127.0.0.1",
-          port: browserManager.getVncPort(),
-          socket: {
-            data(_sock, chunk) {
-              try {
-                ws.send(chunk);
-              } catch {
-                // ignore closed ws
-              }
-            },
-            close() {
-              try {
-                ws.close();
-              } catch {
-                // ignore
-              }
-            },
-            error() {
-              try {
-                ws.close();
-              } catch {
-                // ignore
-              }
-            },
-          },
-        });
-        data.tcpSocket = tcp;
-        if (data.pendingChunks.length > 0) {
-          for (const chunk of data.pendingChunks) {
-            tcp.write(chunk);
-          }
-          data.pendingChunks = [];
-        }
-      } catch {
-        try {
-          ws.close(1011, "VNC backend unavailable");
-        } catch {
-          // ignore
-        }
-      }
-    },
-    message(ws, message) {
-      const data = ws.data;
-      const buf =
-        typeof message === "string"
-          ? Buffer.from(message)
-          : message instanceof Uint8Array
-            ? message
-            : new Uint8Array(message);
-      if (data.tcpSocket) {
-        data.tcpSocket.write(buf);
-      } else {
-        data.pendingChunks?.push(buf);
-      }
-    },
-    close(ws) {
-      browserManager.unregisterVncClient();
-      const data = ws.data;
-      try {
-        data.tcpSocket?.end();
-      } catch {
-        // ignore
-      }
-      data.tcpSocket = null;
-    },
   },
 });
 
