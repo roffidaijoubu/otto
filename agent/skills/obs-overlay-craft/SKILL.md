@@ -80,3 +80,36 @@ Whenever the creator asks to include their **logo**, **character PNG**, or wants
 1. **Check local synced assets FIRST (`/home/sprite/workspace/assets/`):** Box `Otto Assets/` (`Logos/`, `Characters/`, `Backgrounds/`) is incrementally synced into `/home/sprite/workspace/assets/`. Read directly from there if present; only fall back to `box_list_assets` + `box_download_file` if an asset is missing locally.
 2. **Visually inspect before designing:** Call `read` on `/home/sprite/workspace/assets/Logos/<filename>.png` (or `Characters/...`) so you actually **see** the logo/character's colors, contrast, motif, and line weight. Extract 2–4 real brand hex tokens (`--brand-bg`, `--brand-primary`, `--brand-accent`, `--brand-ink`) directly from the image instead of guessing generic colors.
 3. **Host cleanly on the Fly Machine:** Pass `assets: ["assets/Logos/<filename>.png"]` to `obs_overlay_deploy`. Never inline megabyte base64 data URIs into HTML — reference the hosted file directly via `<img src="/assets/<filename>.png" alt="" />` so OBS caches it cleanly and refinements stay fast.
+
+---
+
+## 5. Native Full-Bleed Live Controller UI (`controlHtml` & `controls`)
+
+The Live Controller (`/c/<slug>`) is embedded directly inside the **OBS Overlays** desktop window (and opened on mobile during live streams).
+
+- **When to pass custom `controlHtml` to `obs_overlay_deploy`:**
+  - Use declarative `controls` ONLY for ultra-simple 2–4 field overlays.
+  - **ALWAYS craft a custom `controlHtml`** whenever the creator asks for **tabs** (e.g. `Control` + `Data`), **big prev/next looping arrows**, **repeatable add/remove rows** (e.g. dynamic speaker/person list, queue, polls, checklists), **preset scene buttons**, or any tailored live deck!
+  - The Fly Machine automatically injects **`window.OBS_CONTROL`** into custom `controlHtml`:
+    ```html
+    <script>
+      // Subscribe to live state (initial + realtime SSE from OBS/Otto/other tabs):
+      window.OBS_CONTROL.subscribe((state) => {
+        render(state);
+      });
+      // Push partial or nested array updates (e.g. { activeIndex: 2 } or { people: [...] }):
+      await window.OBS_CONTROL.patch({ visible: true, activeIndex: 0 });
+      // Read current state or overlay metadata:
+      const current = window.OBS_CONTROL.getState(); // { ... }
+      const { slug, title } = window.OBS_CONTROL.meta;
+    </script>
+    ```
+  - Never say "the built-in controller doesn't support tabs / arrows / repeatable fields" — you HAVE full `controlHtml` power via `obs_overlay_deploy`!
+
+- **Full-Bleed Native Desktop Style (Otto Studio OS):**
+  - Use `html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #FFFFFF; color: #171717; }` with a full-height flex column (`min-height: 100vh`). **NEVER** wrap the controller in a centered `max-width` box, floating `.card`, drop shadow, or outer grey page margin.
+  - Top toolbar / tab bar: `#FAF9F6` surface with `border-bottom: 1px solid rgba(0, 0, 0, 0.08)` containing the compact title or segmented tabs (`Control` | `Data`) and live connection badge.
+  - Main control surface: pure `#FFFFFF` with full-width hairline dividers (`1px solid rgba(0, 0, 0, 0.08)`) separating logical groups instead of nested rounded cards.
+  - Primary actions: solid `#171717` fill with `#FFFFFF` text (`border-radius: 8px`); secondary actions: `#FFFFFF` with `1px solid rgba(0, 0, 0, 0.12)` border.
+  - Use `IBM Plex Mono` with `font-variant-numeric: tabular-nums` for live timers, speaker indices (`2 / 5`), and counters so values never jitter.
+  - Keep primary live triggers (big Prev/Next looping arrows, Show/Hide, Start/Pause/Reset) immediately reachable at the top with zero scrolling, and zero decorative AI chrome.

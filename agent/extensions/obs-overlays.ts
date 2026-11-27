@@ -176,6 +176,12 @@ export default function (pi: ExtensionAPI) {
         description:
           "Complete transparent 1920x1080 OBS Browser Source HTML (NO control buttons inside the overlay!). Subscribe to live state via `window.OBS_OVERLAY.subscribe((state) => { ... })`. Follow the obs-overlay-craft skill.",
       }),
+      controlHtml: Type.Optional(
+        Type.String({
+          description:
+            "Optional custom full-bleed Live Remote Controller HTML served at /c/<slug> (use whenever the creator wants tabs, looping prev/next arrows, repeatable add/remove lists, scene buttons, or custom deck layouts). Automatically receives `window.OBS_CONTROL` (`subscribe(fn)`, `patch(obj)`, `getState()`, `meta`). Follow Section 5 of obs-overlay-craft (full-bleed native UI, no outer cards/margins).",
+        })
+      ),
       controls: Type.Optional(
         Type.Array(ControlFieldSchema, {
           description:
@@ -210,6 +216,7 @@ export default function (pi: ExtensionAPI) {
         title: params.title,
         description: params.description,
         html: params.html,
+        controlHtml: params.controlHtml,
         controls: (params.controls || []) as OverlayControlField[],
         initialState: (params.initialState || {}) as Record<string, unknown>,
         resetState: params.resetState === true,

@@ -132,7 +132,7 @@ export function sanitizeOverlaySlug(raw: string): string {
   return cleaned;
 }
 
-const SERVER_VERSION = 2;
+const SERVER_VERSION = 3;
 
 // Self-contained Bun HTTP + SSE overlay server injected directly into oven/bun:1-alpine via Fly Machines config.files
 const FLY_OVERLAY_SERVER_TS = `
@@ -286,40 +286,43 @@ function buildRemoteDeckHtml(meta: any, state: Record<string, unknown>, token: s
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  body { margin: 0; padding: 14px; background: #FAFAFA; color: #303030; font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; }
-  .deck { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-  .card { background: #FFFFFF; border: 1px solid #EDEDED; border-radius: 14px; padding: 14px; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .title { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; }
-  .status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #E6F7EE; color: #166534; }
-  .status.off { background: #F2F2F2; color: #808080; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
-  label { display: flex; flex-direction: column; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #666; }
+  html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; background: #FFFFFF; color: #171717; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
+  .deck { min-height: 100vh; width: 100%; display: flex; flex-direction: column; background: #FFFFFF; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: #FAF9F6; border-bottom: 1px solid rgba(0, 0, 0, 0.08); position: sticky; top: 0; z-index: 10; }
+  .title { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 600; color: #171717; }
+  .desc { font-size: 11px; color: #737373; margin-top: 1px; }
+  .status { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; white-space: nowrap; }
+  .status.off { background: #F5F5F5; color: #737373; border-color: rgba(0, 0, 0, 0.08); }
+  .surface { flex: 1; width: 100%; padding: 14px; background: #FFFFFF; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 500; color: #525252; }
   input[type=text], input[type=number], textarea, select {
-    width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid #D9D9D9; background: #FFFFFF;
-    color: #303030; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; outline: none;
+    width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.14); background: #FFFFFF;
+    color: #171717; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-variant-numeric: tabular-nums; outline: none; transition: border-color 0.12s ease;
   }
-  input:focus, textarea:focus, select:focus { border-color: #303030; }
-  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  input:focus, textarea:focus, select:focus { border-color: #171717; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
   button {
-    padding: 7px 14px; border-radius: 999px; border: 1px solid #D9D9D9; background: #F2F2F2; color: #303030;
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; cursor: pointer;
+    padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.14); background: #FFFFFF; color: #171717;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 500; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease;
   }
-  button.primary { background: #303030; color: #FFFFFF; border-color: #303030; }
+  button:hover { background: #F5F5F5; border-color: rgba(0, 0, 0, 0.24); }
+  button.primary { background: #171717; color: #FFFFFF; border-color: #171717; }
+  button.primary:hover { background: #262626; }
   button:active { transform: scale(0.98); }
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid #EDEDED; border-radius: 10px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 8px; background: #FAF9F6; }
 </style>
 </head>
 <body>
 <div class="deck">
-  <div class="card row">
-    <div>
+  <div class="topbar">
+    <div style="min-width:0">
       <div class="title" id="deck-title"></div>
-      <div style="font-size:11.5px;color:#808080;margin-top:2px" id="deck-desc"></div>
+      <div class="desc" id="deck-desc"></div>
     </div>
     <span class="status" id="conn">Connected</span>
   </div>
-  <div class="card" id="controls-wrap"></div>
+  <div class="surface" id="controls-wrap"></div>
 </div>
 <script>
 const META = \${metaJson};
@@ -750,9 +753,67 @@ Bun.serve({
       }
       const state = readJson(path.join(dir, "state.json"), {});
       const token = url.searchParams.get("token") || meta.controlToken;
+function injectControlSdk(html: string, meta: Record<string, unknown>, state: Record<string, unknown>, token: string): string {
+  const metaJson = JSON.stringify({
+    slug: meta.slug,
+    title: meta.title || meta.slug,
+    description: meta.description || "",
+  }).replace(/</g, "\\\\u003c");
+  const stateJson = JSON.stringify(state ?? {}).replace(/</g, "\\\\u003c");
+  const tokenJson = JSON.stringify(token);
+  const sdk = \`<script>
+(function() {
+  var META = \${metaJson};
+  var TOKEN = \${tokenJson};
+  var current = \${stateJson};
+  var listeners = [];
+  function notify() {
+    for (var i = 0; i < listeners.length; i++) {
+      try { listeners[i](current); } catch (e) { console.error(e); }
+    }
+  }
+  window.OBS_CONTROL = {
+    meta: META,
+    slug: META.slug,
+    token: TOKEN,
+    getState: function() { return current; },
+    subscribe: function(fn) {
+      listeners.push(fn);
+      try { fn(current); } catch (e) { console.error(e); }
+      return function() { listeners = listeners.filter(function(x) { return x !== fn; }); };
+    },
+    patch: async function(patch) {
+      current = Object.assign({}, current, patch);
+      notify();
+      var res = await fetch("/o/" + encodeURIComponent(META.slug) + "/state?token=" + encodeURIComponent(TOKEN), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patch: patch })
+      });
+      if (res.ok) {
+        try {
+          var data = await res.json();
+          if (data && data.state) { current = data.state; notify(); }
+        } catch (_) {}
+      }
+      return current;
+    }
+  };
+  var es = new EventSource("/o/" + encodeURIComponent(META.slug) + "/events");
+  es.addEventListener("state", function(ev) {
+    try { current = JSON.parse(ev.data); notify(); } catch (_) {}
+  });
+})();
+</script>\`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (m) => m + "\\n" + sdk);
+  }
+  return sdk + "\\n" + html;
+}
+
       const customControlPath = path.join(dir, "control.html");
       const html = fs.existsSync(customControlPath)
-        ? fs.readFileSync(customControlPath, "utf8")
+        ? injectControlSdk(fs.readFileSync(customControlPath, "utf8"), meta, state, token)
         : buildRemoteDeckHtml(meta, state, token);
       return new Response(html, {
         headers: {
