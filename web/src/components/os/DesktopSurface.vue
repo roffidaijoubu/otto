@@ -9,7 +9,6 @@ import {
   MessageSquare,
   RotateCcw,
   Search,
-  Sparkles,
 } from "@lucide/vue";
 import {
   ContextMenu,
@@ -40,7 +39,6 @@ const props = withDefaults(
       { id: "brand", label: "Brand Kit", sublabel: "/brand", icon: "folder", appId: "files", filesPath: "brand" },
       { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
       { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
-      { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
       { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
       { id: "contacts", label: "Contacts", sublabel: "Rolodex", icon: "contacts", appId: "contacts" },
     ],
@@ -147,10 +145,6 @@ function launchShortcut(item: DesktopShortcut) {
         <ContextMenuItem @select="wm.openWindow('studio-db')">
           <Database class="size-4" aria-hidden="true" />
           <span>Open Studio DB</span>
-        </ContextMenuItem>
-        <ContextMenuItem @select="wm.openWindow('playbooks')">
-          <Sparkles class="size-4" aria-hidden="true" />
-          <span>Open Playbooks</span>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />

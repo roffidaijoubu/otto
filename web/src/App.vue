@@ -21,10 +21,8 @@ import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
-import type { StudioTab } from "./components/ChatHeader.vue";
-import LearnedPlaybooksCard from "./components/LearnedPlaybooksCard.vue";
 import MessageBubble from "./components/MessageBubble.vue";
-import MissionControlWorkspace from "./components/MissionControlWorkspace.vue";
+import MissionControlWorkspace, { type StudioTab } from "./components/MissionControlWorkspace.vue";
 import OttoMascot from "./components/OttoMascot.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
 import StudioDatabaseView from "./components/StudioDatabaseView.vue";
@@ -63,7 +61,6 @@ const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
   { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
   { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
   { id: "studio-db", label: "Studio DB", sublabel: "SQLite", icon: "database", appId: "studio-db" },
-  { id: "playbooks", label: "Playbooks", sublabel: "Nightly", icon: "sparkles", appId: "playbooks" },
   { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
   { id: "contacts", label: "Contacts", sublabel: "Rolodex", icon: "contacts", appId: "contacts" },
 ];
@@ -90,7 +87,7 @@ const error = ref("");
 const sidebarOpen = ref(false);
 const missionTab = ref<MissionSubTab>("overview");
 const filesTargetPath = ref("");
-const navCounts = ref({ schedule: 0, files: 0, database: 0, playbooks: 0, connectors: 0 });
+const navCounts = ref({ schedule: 0, files: 0, database: 0, connectors: 0 });
 const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
 const dbRefreshTick = ref(0);
@@ -467,10 +464,6 @@ function handleMissionTabRequest(tab: StudioTab) {
     wm?.openWindow("studio-db", { focus: true });
     return;
   }
-  if (tab === "playbooks") {
-    wm?.openWindow("playbooks", { focus: true });
-    return;
-  }
   missionTab.value = tab;
   wm?.openWindow("mission-control", { focus: true });
 }
@@ -800,13 +793,6 @@ watch(shellRef, (val) => {
         </div>
       </template>
 
-      <!-- WINDOW 6: PLAYBOOKS -->
-      <template #app-playbooks>
-        <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
-          <LearnedPlaybooksCard :refresh-tick="dbRefreshTick + missionRefreshTick" />
-        </div>
-      </template>
-
       <!-- WINDOW 7: CALENDAR -->
       <template #app-calendar>
         <div class="flex h-full min-h-0 flex-col bg-white">
@@ -968,7 +954,7 @@ watch(shellRef, (val) => {
               </div>
               <div>
                 <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–9
+                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–8
                 </kbd>
                 Toggle Apps
               </div>

@@ -3,18 +3,13 @@ import { Type } from "@sinclair/typebox";
 import {
   addChannelMetric,
   deleteContact,
-  deleteCustomTrackerItem,
   deletePipelineItem,
   getStudioDbOverview,
   listChannelMetrics,
   listContacts,
-  listCustomTrackerItems,
-  listCustomTrackers,
   listPipelineItems,
   runReadOnlySql,
   upsertContact,
-  upsertCustomTracker,
-  upsertCustomTrackerItem,
   upsertPipelineItem,
   type ContactRole,
   type ContactStatus,
@@ -27,7 +22,7 @@ export default function (pi: ExtensionAPI) {
     name: "studio_db_overview",
     label: "Studio Database Overview",
     description:
-      "Inspect the unified Studio SQLite database (~/.omp/agent/studio.db) shared with Otto Studio OS: returns row counts for calendar_events, content_pipeline, contacts, channel_metrics, and all custom trackers.",
+      "Inspect the unified Studio SQLite database (~/.omp/agent/studio.db) shared with Otto Studio OS: returns row counts for calendar_events, content_pipeline, contacts, and channel_metrics.",
     parameters: Type.Object({}),
     async execute() {
       const overview = getStudioDbOverview();
@@ -42,7 +37,7 @@ export default function (pi: ExtensionAPI) {
     name: "studio_db_query",
     label: "Query Studio Database (Read-Only)",
     description:
-      "Run a read-only SELECT, WITH, or PRAGMA table_info SQL query against the unified Studio SQLite database (~/.omp/agent/studio.db). Useful for cross-table analysis across calendar_events, content_pipeline, contacts, channel_metrics, custom_trackers, and custom_items.",
+      "Run a read-only SELECT, WITH, or PRAGMA table_info SQL query against the unified Studio SQLite database (~/.omp/agent/studio.db). Useful for cross-table analysis across calendar_events, content_pipeline, contacts, and channel_metrics.",
     parameters: Type.Object({
       sql: Type.String({ description: "Read-only SQL SELECT/WITH query" }),
       params: Type.Optional(
@@ -269,97 +264,6 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: JSON.stringify({ count: metrics.length, metrics }, null, 2) }],
         details: { count: metrics.length },
-      };
-    },
-  });
-
-  // ---- Custom Trackers (Flexible Collections) ----
-
-  pi.registerTool({
-    name: "studio_tracker_create",
-    label: "Create Custom Studio Tracker",
-    description:
-      "Create or update a custom tracker collection in the shared Studio DB (e.g. 'game-backlog', 'ramadhan-series', 'merch-ideas'). It appears automatically in the Mission Control Studio DB tab.",
-    parameters: Type.Object({
-      name: Type.String({ description: "Display name of the tracker (e.g. 'Game Backlog')." }),
-      slug: Type.Optional(Type.String({ description: "Optional lowercase URL slug (auto-generated from name if omitted)." })),
-      description: Type.Optional(Type.String({ description: "Short description of what this tracker is for." })),
-      columns: Type.Optional(
-        Type.Array(Type.String(), {
-          description: "Extra custom column names besides title & status (e.g. ['genre', 'hours', 'notes']).",
-        })
-      ),
-    }),
-    async execute(_id, params) {
-      const tracker = upsertCustomTracker(params);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: true, tracker }, null, 2) }],
-        details: { slug: tracker.slug },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: "studio_tracker_list",
-    label: "List Custom Trackers & Items",
-    description:
-      "List all custom trackers, or pass trackerSlug to list all rows inside a specific custom tracker.",
-    parameters: Type.Object({
-      trackerSlug: Type.Optional(Type.String({ description: "Optional tracker slug to fetch its rows." })),
-    }),
-    async execute(_id, params) {
-      if (params.trackerSlug) {
-        const items = listCustomTrackerItems(params.trackerSlug);
-        return {
-          content: [{ type: "text", text: JSON.stringify({ trackerSlug: params.trackerSlug, count: items.length, items }, null, 2) }],
-          details: { count: items.length },
-        };
-      }
-      const trackers = listCustomTrackers();
-      return {
-        content: [{ type: "text", text: JSON.stringify({ count: trackers.length, trackers }, null, 2) }],
-        details: { count: trackers.length },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: "studio_tracker_upsert_item",
-    label: "Save Custom Tracker Row",
-    description: "Add or update a row inside a custom Studio DB tracker.",
-    parameters: Type.Object({
-      trackerSlug: Type.String({ description: "Slug of the custom tracker." }),
-      id: Type.Optional(Type.String({ description: "Existing item ID to update; omit to create new." })),
-      title: Type.Optional(Type.String({ description: "Row title." })),
-      status: Type.Optional(Type.String({ description: "Row status (e.g. 'open', 'playing', 'done')." })),
-      data: Type.Optional(
-        Type.Record(Type.String(), Type.String(), {
-          description: "Key-value map for the tracker's custom columns.",
-        })
-      ),
-    }),
-    async execute(_id, params) {
-      const item = upsertCustomTrackerItem(params);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: true, item }, null, 2) }],
-        details: { id: item.id },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: "studio_tracker_delete_item",
-    label: "Delete Custom Tracker Row",
-    description: "Delete a row from a custom Studio DB tracker.",
-    parameters: Type.Object({
-      trackerSlug: Type.String({ description: "Slug of the custom tracker." }),
-      id: Type.String({ description: "Row ID to delete." }),
-    }),
-    async execute(_id, params) {
-      const deleted = deleteCustomTrackerItem(params.trackerSlug, params.id);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: deleted, id: params.id }) }],
-        details: { deleted },
       };
     },
   });

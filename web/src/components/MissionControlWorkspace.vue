@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { DownloadIcon, PlusIcon, XIcon } from "@lucide/vue";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { renderMarkdown } from "../lib/markdown";
-import type { StudioTab } from "./ChatHeader.vue";
 import OttoMascot from "./OttoMascot.vue";
 import type { WorkspaceEntry, WorkspaceStats } from "./WorkspaceFileManager.vue";
+
+export type StudioTab = "overview" | "schedule" | "files" | "database" | "dossier" | "connectors";
 export interface ConnectorInfo {
   provider: string;
   displayName: string;
@@ -55,7 +56,7 @@ const emit = defineEmits<{
   "update:activeTab": [tab: StudioTab];
   openWorkspacePath: [relPath: string];
   selectMascotColor: [color: string];
-  countsUpdated: [counts: { schedule: number; files: number; database: number; playbooks: number; connectors: number }];
+  countsUpdated: [counts: { schedule: number; files: number; database: number; connectors: number }];
   askPrompt: [prompt: string];
   openSetup: [];
 }>();
@@ -71,15 +72,6 @@ const recentFiles = ref<WorkspaceEntry[]>([]);
 const dbSummary = ref({
   pipelineCount: 0,
   contactsCount: 0,
-  trackersCount: 0,
-});
-const learningSummary = ref({
-  enabled: false,
-  timezone: "UTC",
-  lastRunAt: null as string | null,
-  running: false,
-  pendingCount: 0,
-  activeCount: 0,
 });
 const calendarEvents = ref<CalendarEventItem[]>([]);
 const syncingGoogle = ref(false);
@@ -269,7 +261,6 @@ function emitCounts() {
     schedule: activeCalendarEvents.value.length,
     files: workspaceStats.value.fileCount,
     database: dbSummary.value.pipelineCount,
-    playbooks: learningSummary.value.activeCount + learningSummary.value.pendingCount,
     connectors: connectors.value.length,
   });
 }
@@ -277,13 +268,12 @@ function emitCounts() {
 async function fetchAll() {
   loading.value = true;
   try {
-    const [dRes, calRes, cRes, wsRes, dbRes, learnRes] = await Promise.all([
+    const [dRes, calRes, cRes, wsRes, dbRes] = await Promise.all([
       fetch("/api/dossier").then((r) => r.json()).catch(() => null),
       fetch("/api/calendar").then((r) => r.json()).catch(() => null),
       fetch("/api/connectors").then((r) => r.json()).catch(() => null),
       fetch("/api/workspace/list").then((r) => r.json()).catch(() => null),
       fetch("/api/db/overview").then((r) => r.json()).catch(() => null),
-      fetch("/api/learning").then((r) => r.json()).catch(() => null),
     ]);
     if (dRes && typeof dRes === "object") {
       dossierContent.value = String(dRes.content || "");
@@ -306,19 +296,6 @@ async function fetchAll() {
       dbSummary.value = {
         pipelineCount: Number(tables.content_pipeline || 0),
         contactsCount: Number(tables.contacts || 0),
-        trackersCount: Array.isArray(dbRes.customTrackers) ? dbRes.customTrackers.length : 0,
-      };
-    }
-    if (learnRes && typeof learnRes === "object") {
-      const cfg = learnRes.config || {};
-      const skills = Array.isArray(learnRes.skills) ? learnRes.skills : [];
-      learningSummary.value = {
-        enabled: Boolean(cfg.enabled),
-        timezone: String(cfg.timezone || "UTC"),
-        lastRunAt: cfg.lastRunAt ? String(cfg.lastRunAt) : null,
-        running: Boolean(cfg.running),
-        pendingCount: skills.filter((s: { status?: string }) => s?.status === "pending").length,
-        activeCount: skills.filter((s: { status?: string }) => s?.status === "active").length,
       };
     }
     emitCounts();
@@ -609,50 +586,6 @@ defineExpose({ fetchAll });
               <div v-if="connectors.length === 0" class="text-xs font-mono text-[var(--fg-muted)]">
                 No Sprites Connectors detected yet.
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- BENTO 4: (Y)our playbooks. (Hermes Nightly Self-Learning) -->
-        <div class="otto-card bento-card">
-          <div class="otto-card-head">
-            <span>(Y)our playbooks.</span>
-            <div class="otto-card-head-right">
-              <button type="button" class="head-link" @click="emit('update:activeTab', 'playbooks')">
-                {{ learningSummary.pendingCount > 0 ? `review (${learningSummary.pendingCount})` : "manage" }}
-              </button>
-            </div>
-          </div>
-
-          <div class="otto-card-body">
-            <div class="connector-chips">
-              <div class="connector-chip">
-                <span class="conn-dot"></span>
-                <span>{{ learningSummary.activeCount }} active SOP{{ learningSummary.activeCount === 1 ? "" : "s" }}</span>
-              </div>
-              <div class="connector-chip">
-                <span>{{ learningSummary.pendingCount }} pending review</span>
-              </div>
-              <div class="connector-chip">
-                <span>
-                  {{
-                    learningSummary.running
-                      ? "Reflecting now..."
-                      : learningSummary.enabled
-                        ? `Nightly 00:00 (${learningSummary.timezone})`
-                        : "Nightly paused"
-                  }}
-                </span>
-              </div>
-            </div>
-            <div class="db-mini-strip mt-auto">
-              <span>
-                {{
-                  learningSummary.lastRunAt
-                    ? `Last reflection ${formatTime(learningSummary.lastRunAt)}`
-                    : "Otto drafts channel-specific SOPs overnight for your approval."
-                }}
-              </span>
             </div>
           </div>
         </div>

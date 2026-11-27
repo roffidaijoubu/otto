@@ -88,7 +88,6 @@ const SHORTCUT_APP_IDS: StudioAppId[] = [
   "obs-overlays",
   "mission-control",
   "studio-db",
-  "playbooks",
   "calendar",
   "contacts",
   "settings",

@@ -128,17 +128,16 @@ Implemented by `DesktopShell.vue` and `useWindowManager.ts` on top of the ambien
 - **Top Menu Bar (`TopMenuBar.vue`, `36px` height):** Translucent white bar (`bg-white/84`, `backdrop-blur-md`) with the `Otto OS` menu (Spotlight, System Settings, Window/Layout actions), active app title, and studio timezone clock.
 - **Interactive Desktop Surface (`DesktopSurface.vue`):** Houses desktop shortcuts, live studio status subtitle, and the pure-SVG cursor-tracking `OttoMascot.vue`.
 - **Managed Window Stage (`DesktopWindow.vue`):** Pointer-capture draggable & resizable `#FFFFFF` `20px`-radius windows with auto-adaptive macOS/Windows controls (`auto` | `mac` | `windows`), dashed `#F9F5A2` edge-snap preview zones (`left`, `right`, `maximize`), layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`, `reset`), and `localStorage` geometry persistence. Initial layout opens **Otto Chat** (left) + **Mission Control** (right).
-- **9 Wired Studio Apps (`STUDIO_APPS` in `useWindowManager.ts`):**
+- **8 Wired Studio Apps (`STUDIO_APPS` in `useWindowManager.ts`):**
   1. **Otto Chat (`otto-chat`):** Co-Pilot chat stream (`MessageBubble.vue`), expandable `ThoughtTrace`, `SessionSidebar` drawer, pinned `TodoChecklistCard.vue`, and `ChatComposer.vue` (`#EDEDED` `25px` pill input + workspace upload + `#303030` primary `Send` pill).
   2. **Studio Files (`files`):** Unified 2-way workspace file manager & clip previewer (`WorkspaceFileManager.vue`).
   3. **OBS Overlays (`obs-overlays`):** Fly Machine-hosted overlay workspace (`ObsOverlaysWorkspaceApp.vue`) — live 16:9 transparent preview, copyable OBS Browser Source + mobile Remote Control URLs, machine status, and delete.
-  4. **Mission Control (`mission-control`):** Bento workspace (`MissionControlWorkspace.vue` with `Overview` | `Profile` | `Connectors` sub-tabs) featuring `(Y)our sprite.`, `(Y)our next stream.`, `(Y)our schedule.`, `(Y)our workspace.`, `(Y)our connectors.`, and `(Y)our playbooks.` cards.
-  5. **Studio DB (`studio-db`):** SQLite studio database explorer (`StudioDatabaseView.vue`).
-  6. **Playbooks (`playbooks`):** Human-gated learned SOPs & nightly reflection status (`LearnedPlaybooksCard.vue`).
-  7. **Calendar (`calendar`):** Month/Week/Agenda stream calendar with QStash wake-up badges (`CalendarWorkspaceApp.vue`).
-  8. **Contacts (`contacts`):** 3-pane creator rolodex CRM for artists, riggers, clippers, editors, and sponsors (`ContactsWorkspaceApp.vue`).
-  9. **System Settings (`settings`):** Studio preferences, `OttoMascot` color swatches, and window-control platform mode.
-- **Floating Pill Dock (`DesktopDock.vue`):** Centered translucent bottom dock grouping **8 primary apps** (OBS Overlays included) plus utility `System Settings` (`Alt+1..9`), with running/minimized indicators, context menus, and `#F9F5A2` attention dots.
+  4. **Mission Control (`mission-control`):** Bento workspace (`MissionControlWorkspace.vue` with `Overview` | `Profile` | `Connectors` sub-tabs) featuring `(Y)our sprite.`, `(Y)our next stream.`, `(Y)our schedule.`, `(Y)our workspace.`, and `(Y)our connectors.` cards.
+  5. **Studio DB (`studio-db`):** SQLite studio database explorer (`StudioDatabaseView.vue` — Content Pipeline & Channel Metrics).
+  6. **Calendar (`calendar`):** Month/Week/Agenda stream calendar with QStash wake-up badges (`CalendarWorkspaceApp.vue`).
+  7. **Contacts (`contacts`):** 3-pane creator rolodex CRM for artists, riggers, clippers, editors, and sponsors (`ContactsWorkspaceApp.vue`).
+  8. **System Settings (`settings`):** Studio preferences, `OttoMascot` color swatches, and window-control platform mode.
+- **Floating Pill Dock (`DesktopDock.vue`):** Centered translucent bottom dock grouping **7 primary apps** (OBS Overlays included) plus utility `System Settings` (`Alt+1..8`), with running/minimized indicators, context menus, and `#F9F5A2` attention dots.
 - **Spotlight Command Palette (`SpotlightCommand.vue`, `Cmd+K` / `Ctrl+K`):** Reka UI dialog searching apps, quick workspace folders, and layout presets.
 - **First-Run Setup (`StudioSetupWizard.vue`):** 3-step modal (`(Y)our studio setup · step N/3`) covering Identity, Passcode, and Connectors before the desktop shell is unlocked.
 - **Responsive Single-App Mode (`< 1024px`):** `useWindowManager` enters `isMobile`, rendering only the focused window full-bleed between the `36px` top menu bar and `78px` dock safe area so switching apps from the dock stays clean on narrow screens.

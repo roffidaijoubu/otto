@@ -91,26 +91,6 @@ export interface ChannelMetric {
   createdAt: string;
 }
 
-export interface CustomTracker {
-  slug: string;
-  name: string;
-  description: string;
-  columns: string[];
-  itemCount?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CustomTrackerItem {
-  id: string;
-  trackerSlug: string;
-  title: string;
-  status: string;
-  data: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
-
 let dbInstance: Database | null = null;
 let dbInstancePath: string | null = null;
 
@@ -200,48 +180,11 @@ function initSchema(db: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_metrics_recorded ON channel_metrics(recorded_at DESC);
 
-    CREATE TABLE IF NOT EXISTS custom_trackers (
-      slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      columns_json TEXT NOT NULL DEFAULT '["title","status","notes"]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS custom_items (
-      id TEXT PRIMARY KEY,
-      tracker_slug TEXT NOT NULL REFERENCES custom_trackers(slug) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      data_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_custom_items_slug ON custom_items(tracker_slug);
-
     CREATE TABLE IF NOT EXISTS studio_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-
-    CREATE TABLE IF NOT EXISTS learned_skills (
-      slug TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      source TEXT NOT NULL DEFAULT 'nightly',
-      confidence TEXT NOT NULL DEFAULT 'medium',
-      trigger_hint TEXT NOT NULL DEFAULT '',
-      evidence_summary TEXT NOT NULL DEFAULT '',
-      body_markdown TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_learned_skills_status ON learned_skills(status);
   `);
 
   // Drop legacy 3+1 pillar column cleanly on existing databases
@@ -771,202 +714,6 @@ export function deleteChannelMetric(id: string): boolean {
   return res.changes > 0;
 }
 
-// ---------- Custom Trackers (Dynamic Flexible Collections) ----------
-
-interface TrackerRow {
-  slug: string;
-  name: string;
-  description: string;
-  columns_json: string;
-  item_count?: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CustomItemRow {
-  id: string;
-  tracker_slug: string;
-  title: string;
-  status: string;
-  data_json: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export function slugifyTracker(raw: string): string {
-  const slug = raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-  if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-    throw new Error("Tracker slug must contain alphanumeric characters");
-  }
-  return slug;
-}
-
-export function listCustomTrackers(): CustomTracker[] {
-  const db = getStudioDb();
-  const rows = db
-    .query(`
-      SELECT t.*, COUNT(i.id) AS item_count
-      FROM custom_trackers t
-      LEFT JOIN custom_items i ON i.tracker_slug = t.slug
-      GROUP BY t.slug
-      ORDER BY t.updated_at DESC
-    `)
-    .all() as TrackerRow[];
-  return rows.map((r) => ({
-    slug: r.slug,
-    name: r.name,
-    description: r.description,
-    columns: safeJsonParse<string[]>(r.columns_json, ["notes"]),
-    itemCount: Number(r.item_count || 0),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
-}
-
-export function upsertCustomTracker(input: {
-  slug?: string;
-  name: string;
-  description?: string;
-  columns?: string[];
-}): CustomTracker {
-  const db = getStudioDb();
-  const name = input.name.trim();
-  if (!name) throw new Error("Tracker name is required");
-  const slug = slugifyTracker(input.slug || name);
-  const cols = (input.columns || ["notes"])
-    .map((c) => c.trim().replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 32))
-    .filter((c) => Boolean(c) && !["id", "title", "status"].includes(c.toLowerCase()));
-  const uniqueCols = Array.from(new Set(cols));
-  const nowIso = new Date().toISOString();
-
-  const existing = db
-    .query("SELECT * FROM custom_trackers WHERE slug = ?")
-    .get(slug) as TrackerRow | null;
-
-  db.prepare(`
-    INSERT INTO custom_trackers (slug, name, description, columns_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(slug) DO UPDATE SET
-      name = excluded.name,
-      description = excluded.description,
-      columns_json = excluded.columns_json,
-      updated_at = excluded.updated_at
-  `).run(
-    slug,
-    name,
-    (input.description ?? existing?.description ?? "").trim(),
-    JSON.stringify(uniqueCols.length > 0 ? uniqueCols : ["notes"]),
-    existing?.created_at ?? nowIso,
-    nowIso
-  );
-
-  return {
-    slug,
-    name,
-    description: (input.description ?? existing?.description ?? "").trim(),
-    columns: uniqueCols.length > 0 ? uniqueCols : ["notes"],
-    createdAt: existing?.created_at ?? nowIso,
-    updatedAt: nowIso,
-  };
-}
-
-export function deleteCustomTracker(slug: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM custom_trackers WHERE slug = ?").run(slug);
-  return res.changes > 0;
-}
-
-export function listCustomTrackerItems(trackerSlug: string): CustomTrackerItem[] {
-  const db = getStudioDb();
-  const rows = db
-    .query("SELECT * FROM custom_items WHERE tracker_slug = ? ORDER BY updated_at DESC")
-    .all(trackerSlug) as CustomItemRow[];
-  return rows.map((r) => ({
-    id: r.id,
-    trackerSlug: r.tracker_slug,
-    title: r.title,
-    status: r.status,
-    data: safeJsonParse<Record<string, string>>(r.data_json, {}),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
-}
-
-export function upsertCustomTrackerItem(input: {
-  id?: string;
-  trackerSlug: string;
-  title?: string;
-  status?: string;
-  data?: Record<string, string>;
-}): CustomTrackerItem {
-  const db = getStudioDb();
-  const tracker = db
-    .query("SELECT * FROM custom_trackers WHERE slug = ?")
-    .get(input.trackerSlug) as TrackerRow | null;
-  if (!tracker) throw new Error(`Custom tracker '${input.trackerSlug}' not found`);
-
-  const existing = input.id
-    ? (db
-        .query("SELECT * FROM custom_items WHERE id = ? AND tracker_slug = ?")
-        .get(input.id, input.trackerSlug) as CustomItemRow | null)
-    : null;
-  const nowIso = new Date().toISOString();
-  const title = (input.title ?? existing?.title ?? "").trim();
-  if (!title) throw new Error("Item title is required");
-
-  const prevData = existing ? safeJsonParse<Record<string, string>>(existing.data_json, {}) : {};
-  const mergedData: Record<string, string> = { ...prevData };
-  if (input.data && typeof input.data === "object") {
-    for (const [k, v] of Object.entries(input.data)) {
-      mergedData[String(k)] = String(v ?? "");
-    }
-  }
-
-  const item: CustomTrackerItem = {
-    id: existing?.id || input.id || makeId("row"),
-    trackerSlug: input.trackerSlug,
-    title,
-    status: (input.status ?? existing?.status ?? "open").trim() || "open",
-    data: mergedData,
-    createdAt: existing?.created_at ?? nowIso,
-    updatedAt: nowIso,
-  };
-
-  db.prepare(`
-    INSERT INTO custom_items (id, tracker_slug, title, status, data_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      status = excluded.status,
-      data_json = excluded.data_json,
-      updated_at = excluded.updated_at
-  `).run(
-    item.id,
-    item.trackerSlug,
-    item.title,
-    item.status,
-    JSON.stringify(item.data),
-    item.createdAt,
-    item.updatedAt
-  );
-
-  db.prepare("UPDATE custom_trackers SET updated_at = ? WHERE slug = ?").run(nowIso, input.trackerSlug);
-  return item;
-}
-
-export function deleteCustomTrackerItem(trackerSlug: string, id: string): boolean {
-  const db = getStudioDb();
-  const res = db
-    .prepare("DELETE FROM custom_items WHERE id = ? AND tracker_slug = ?")
-    .run(id, trackerSlug);
-  return res.changes > 0;
-}
-
 // ---------- Overview & Safe Read-Only SQL ----------
 
 function countQuery(db: Database, sql: string): number {
@@ -984,7 +731,6 @@ export function getStudioDbOverview() {
   const activePipe = pipeAll.filter((p) => p.status !== "dropped");
   const contactsCount = countQuery(db, "SELECT COUNT(*) as c FROM contacts");
   const metricsCount = countQuery(db, "SELECT COUNT(*) as c FROM channel_metrics");
-  const customTrackers = listCustomTrackers();
   return {
     dbPath: getStudioDbPath(),
     tables: {
@@ -993,7 +739,6 @@ export function getStudioDbOverview() {
       contacts: contactsCount,
       channel_metrics: metricsCount,
     },
-    customTrackers,
   };
 }
 

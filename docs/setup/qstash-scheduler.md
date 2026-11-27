@@ -74,4 +74,3 @@ Confirm QStash delivers the signed `POST /api/wakeup` and Otto posts the proacti
 
 - **Recurring jobs** use `schedule_wakeup` with a cron expression. Prefix it with `CRON_TZ=<IANA zone>` so "every Monday 20:00" means the talent's local time, e.g. `CRON_TZ=Asia/Jakarta 0 20 * * 1` (invalid zones are rejected before publishing).
 - **Silent / background jobs** (`mode: "background"`) run the agent turn without posting a chat message — used for nightly reflection and other housekeeping. Pass `silent: true` (or `mode: "background"`) plus a `jobType` when you don't want a visible chat reply.
-- A nightly reflection cron is managed by `web/server.ts` + `agent/lib/qstash-cron.ts` and can be tuned via `/api/learning/config`; it stages new learned playbooks as `pending` for human review.

@@ -1,6 +1,6 @@
 # Architecture Deep Dive — How Otto OS (`lma`) Combines `omp` RPC, Multi-Window Studio OS &amp; Native Fly.io Sprites Primitives
 
-This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 9 live-synced desktop apps over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
+This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 8 live-synced desktop apps over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
 
 ---
 
@@ -12,8 +12,8 @@ Otto OS takes the opposite approach: treat **`omp`** as the battle-tested agent 
 
 ```mermaid
 flowchart LR
-    B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>9 Wired Apps · Spotlight · ThoughtTrace"] <-->|"HTTPS · SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
-    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 12 Extensions · 8 Skills)"]
+    B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>8 Wired Apps · Spotlight · ThoughtTrace"] <-->|"HTTPS · SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
+    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 11 Extensions · 8 Skills)"]
     O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(7 Auto-Discovering Connectors)"]
 ```
 
@@ -26,7 +26,7 @@ flowchart LR
 | **First-class streaming events** | `thinking_delta`, `text_delta`, `tool_execution_start`, and `tool_execution_end` stream straight to the Vue 3 `<ThoughtTrace>` and `TodoChecklistCard` components over SSE. |
 | **Native session management** | `get_messages`, `new_session`, `switch_session`, and `abort` power multi-chat history and instant stop controls without a custom chat database. |
 | **Dual-layer persistent memory** | Structured `MEMORY.md` talent dossier (handles, timezone, team credits, OPSEC rules, schedule notes) paired with built-in **Mnemopi** SQLite memory (`noEmbeddings: true` for fast CPU-only FTS recall). |
-| **Modular extensions &amp; skills** | **12 extensions** registering **46 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **8 Markdown skills** (7 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
+| **Modular extensions &amp; skills** | **11 extensions** registering **38 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **8 Markdown skills** (7 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
 | **Runtime-enforced guardrails** | `generate_image: deny` and `generate_image.enabled: false` enforce the **strictly no AI-generated art/video** rule at the tool-permission layer, not just in prose. |
 
 ---
@@ -39,7 +39,7 @@ Instead of a single-column chat box with a cramped slide-over drawer, `web/` ren
 flowchart TB
     Shell["DesktopShell.vue + useWindowManager.ts<br/>Pointer-Capture Drag/Resize · Edge-Snap Ghosts · localStorage Geometry"]
     Top["TopMenuBar.vue + SpotlightCommand.vue (Cmd+K)<br/>App Launcher · Layout Presets"]
-    Dock["DesktopDock.vue (Alt+1..9) + DesktopSurface.vue<br/>Pure-SVG 3D Cursor-Tracking OttoMascot.vue"]
+    Dock["DesktopDock.vue (Alt+1..8) + DesktopSurface.vue<br/>Pure-SVG 3D Cursor-Tracking OttoMascot.vue"]
     SSE["Single Authenticated /api/events SSE Stream<br/>ThoughtTrace · TodoChecklistCard · workspace_changed · db_changed"]
 
     Top --> Shell
@@ -48,11 +48,11 @@ flowchart TB
 
     Shell --> A1["Otto Chat &amp; Mission Control"]
     Shell --> A2["Studio Files &amp; OBS Overlays"]
-    Shell --> A3["Studio DB &amp; Playbooks"]
-    Shell --> A4["Calendar (3-View), Contacts CRM &amp; System Settings"]
+    Shell --> A3["Studio DB &amp; Calendar (3-View)"]
+    Shell --> A4["Contacts CRM &amp; System Settings"]
 ```
 
-- **9 genuinely wired apps (`useWindowManager.ts` `StudioAppId`):** `otto-chat` (Otto Chat), `mission-control` (Overview, live stream countdown, connectors &amp; guardrails), `files` (2-way Studio Workspace + `/clips` HTTP 206 media player), `obs-overlays` (Fly Machine-hosted overlay host: 16:9 iframe preview, copyable OBS Browser Source + mobile Remote Control Deck URLs, machine status &amp; delete), `studio-db` (`StudioDatabaseView.vue` with 3 tabs: Content Pipeline, Channel Metrics &amp; Custom Trackers; read-only SQL queries run via the agent's `studio_db_query` tool), `playbooks` (`LearnedPlaybooksCard` approval queue + nightly reflection toggle), `calendar` (Month/Week/Agenda views with live QStash wake-up badges `T-2h`/`T-15m` + `.ics` export), `contacts` (3-pane Creator Rolodex CRM for human artists, riggers, clippers, editors &amp; sponsors with 1-click "Draft outreach with Otto"), and `settings` (Otto mascot swatches, studio profile &amp; Setup Wizard re-launch, window-controls mode `auto`/`mac`/`windows`, layout presets &amp; keyboard shortcut cheat sheet).
+- **8 genuinely wired apps (`useWindowManager.ts` `StudioAppId`):** `otto-chat` (Otto Chat), `mission-control` (Overview, live stream countdown, connectors &amp; guardrails), `files` (2-way Studio Workspace + `/clips` HTTP 206 media player), `obs-overlays` (Fly Machine-hosted overlay host: 16:9 iframe preview, copyable OBS Browser Source + mobile Remote Control Deck URLs, machine status &amp; delete), `studio-db` (`StudioDatabaseView.vue` with Content Pipeline &amp; Channel Metrics; read-only SQL queries run via the agent's `studio_db_query` tool), `calendar` (Month/Week/Agenda views with live QStash wake-up badges `T-2h`/`T-15m` + `.ics` export), `contacts` (3-pane Creator Rolodex CRM for human artists, riggers, clippers, editors &amp; sponsors with 1-click "Draft outreach with Otto"), and `settings` (Otto mascot swatches, studio profile &amp; Setup Wizard re-launch, window-controls mode `auto`/`mac`/`windows`, layout presets &amp; keyboard shortcut cheat sheet).
 - **Desktop ergonomics:** Pointer-capture drag and 8-edge resize, dashed yellow edge-snap ghosts (`left`, `right`, `maximize`), one-key layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`, `reset`), macOS/Windows auto-adaptive traffic-light or caption controls, persistent `localStorage` window rects, and an automatic `<1024px` responsive single-app mode.
 - **Spotlight (`SpotlightCommand.vue`):** `Cmd+K` / `Ctrl+K` searches apps, quick workspace folders, and layout presets.
 - **Zero-cold-start onboarding &amp; zero-AI-art craft:** First run opens the 3-step `StudioSetupWizard.vue` (413 IANA timezones, atomic `0600` passcode rotation, live connector readiness) paired with headless `scripts/bootstrap-dossier.sh` (`omp --no-session` scanning YouTube, Buffer, 30-day Google Calendar, and Exa to pre-fill `MEMORY.md` before turn #1). `OttoMascot.vue` is a 100% pure-SVG 3D sphere using `requestAnimationFrame` damped yaw/pitch projection and dynamic specular keylight — zero AI-generated assets.
@@ -122,37 +122,29 @@ Every key-bearing external API routes through `https://api.sprites.dev/v1/gatewa
   - **Upstash QStash (`Bearer`)** — agent self-scheduled one-shot, lifecycle, and `CRON_TZ` recurring wake-ups (`qstash-scheduler.ts`).
   - **Fly Machines (`https://api.machines.dev`)** — zero-Docker provisioning of a dedicated `256 MB` auto-stop Machine + `1 GB` Volume for public, transparent OBS Browser Sources and SSE Remote Control Decks (`agent/lib/obs-overlays.ts`, `obs-overlays.ts`).
 
-Across the **12 extensions** (**46 registered tools** + `--new`), all **7 connector extensions** (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **5 local-only extensions** (`studio-apps`, `studio-db`, `vod-clipper`, `skill-learner`, `new-session`) never require gateway secrets.
+Across the **11 extensions** (**38 registered tools** + `--new`), all **7 connector extensions** (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **4 local-only extensions** (`studio-apps`, `studio-db`, `vod-clipper`, `new-session`) never require gateway secrets.
 
 ---
 
-## 6. Unified 2-Way Studio Workspace, 8-Table SQLite WAL DB &amp; Learned Playbooks
+## 6. Unified 2-Way Studio Workspace &amp; 5-Table SQLite WAL DB
 
-Because Otto OS runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and an **8-table native SQLite WAL database** with zero external database servers:
+Because Otto OS runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and a **5-table native SQLite WAL database** with zero external database servers:
 
 ```mermaid
 flowchart LR
-    UI["Otto Studio OS<br/>(Studio Files · Studio DB · Calendar · Contacts · Playbooks · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
+    UI["Otto Studio OS<br/>(Studio Files · Studio DB · Calendar · Contacts · Chat 📎)"] <-->|"REST + SSE live refresh"| S["web/server.ts (Bun)"]
     S <-->|"web/lib/workspace.ts<br/>(realpathSync jail)"| WS["/home/sprite/workspace/<br/>clips · thumbnails · scripts · briefs · uploads · exports"]
-    S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL · 8 tables)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · channel_metrics<br/>custom_trackers · custom_items · studio_meta · learned_skills"]
+    S <-->|"agent/lib/studio-db.ts<br/>(SQLite WAL · 5 tables)"| DB["~/.omp/agent/studio.db<br/>calendar_events · content_pipeline · contacts · channel_metrics · studio_meta"]
     OMP["omp Agent (Otto)"] <-->|"read/write/media-reviewer/vod-clipper"| WS
-    OMP <-->|"studio-db.ts · qstash-scheduler.ts · skill-learner.ts"| DB
+    OMP <-->|"studio-db.ts · qstash-scheduler.ts"| DB
 ```
 
 | Layer | Backing Store | Shared By | Live Sync Mechanism |
 | :--- | :--- | :--- | :--- |
 | **Unified Workspace** | `/home/sprite/workspace/` | Studio Files app + Chat `📎` uploads + `omp` (`read`/`write`/`vod-clipper`/`media-reviewer`) | `tool_execution_end` + debounced `fs.watch` → SSE `workspace_changed` |
-| **Unified Studio DB** | `~/.omp/agent/studio.db` (`bun:sqlite`, `WAL`, `busy_timeout=5000`, 8 tables) | Web `/api/db/*`, `/api/calendar/*`, `/api/learning/*` + `omp` (14 DB tools + QStash + Playbooks) | `tool_execution_end` + API mutations → SSE `db_changed` |
+| **Unified Studio DB** | `~/.omp/agent/studio.db` (`bun:sqlite`, `WAL`, `busy_timeout=5000`, 5 tables) | Web `/api/db/*`, `/api/calendar/*` + `omp` (10 DB tools + QStash) | `tool_execution_end` + API mutations → SSE `db_changed` |
 | **Talent Dossier** | `~/.omp/agent/MEMORY.md` | Mission Control Dossier view + `omp` system prompt memory | Reloaded on turn completion |
 | **Chat Memory** | `~/.omp/agent/mnemopi.db` | Managed internally by `omp` | Automatic across sessions (cleared by clean-checkpoint reset) |
-
-### Learned Creator Playbooks (`agent/extensions/skill-learner.ts` + `agent/lib/learned-skills.ts`)
-
-Recurring creator-specific SOPs live outside the repo so `git pull`/checkpoint syncs never clobber them:
-
-- `learned_skills_list` / `learned_skill_read` / `learned_skill_save` / `learned_skill_delete` back a `learned-skills/<slug>/SKILL.md` store plus metadata in the `learned_skills` SQLite table.
-- Hard bounds enforce a **16 KiB** per-skill cap, a **30-skill** total cap, and a prompt-injection denylist; new playbooks always stage as `pending` and only become `active` after explicit 1-click human approval in the **Playbooks** app (`/api/learning*`).
-- When enabled via `/api/learning/config`, a **silent midnight reflection wake-up** (QStash cron via `agent/lib/qstash-cron.ts`, timezone-aware `CRON_TZ`) spawns an isolated `omp --no-session` pass (secrets stripped) over recent sessions, `MEMORY.md`, and `studio.db` to propose SOP candidates. Untrusted external text (web pages, YouTube metadata, live chat) is explicitly prohibited from being promoted into instructions.
 
 ---
 
@@ -169,8 +161,8 @@ flowchart LR
     G -->|"sprite restore &lt;prod-id&gt;"| P["Live Prod State<br/>(Zero Data Loss)"]
 ```
 
-1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** On every code commit, `.git/hooks/post-commit` backs up live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`mnemopi.db`/`studio.db`/`learned-skills`/`workspace/`, seeds `MEMORY.md` from the gitignored live dossier by default (`--no-memory` restores the blank `MEMORY.md.example`), rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only older `initialized:` checkpoints.
-2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs **27 deterministic fast checks** in ~10 seconds (**28** with `--live` adding a zero-key Gemini + Buffer round-trip) — TypeScript/Vite build, all **8 skill** &amp; **12 extension** symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, `CRON_TZ` validation, learned-playbook CRUD &amp; injection rejection, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
+1. **Perpetually Fresh Clean Baseline (`scripts/sync-initialized-checkpoint.sh` + `scripts/install-hooks.sh`):** On every code commit, `.git/hooks/post-commit` backs up live `MEMORY.md` (`prod: auto-backup`) if modified, syncs the repo to the Sprite, clears runtime sessions/memories/`mnemopi.db`/`studio.db`/`studio-apps`/`workspace/`, seeds `MEMORY.md` from the gitignored live dossier by default (`--no-memory` restores the blank `MEMORY.md.example`), rebuilds `web/`, restarts `lma-web`, creates a fresh `initialized: <sha>` checkpoint, and prunes only older `initialized:` checkpoints.
+2. **Deterministic Fast Gate (`scripts/verify-all.sh`):** Runs **24 deterministic fast checks** in ~10 seconds (**25** with `--live` adding a zero-key Gemini + Buffer round-trip) — TypeScript/Vite build, all **8 skill** &amp; **11 extension** symlinks, Python clipper compilation, `/.sprite/api.sock` Tasks API hold, `401` passcode &amp; QStash signature gates, path-traversal rejections, `CRON_TZ` validation, Unified Workspace PUT/GET/ZIP/DELETE round-trips, and Unified Studio DB SQLite CRUD checks.
 3. **Agentic Multi-Turn E2E Playbooks (`scripts/e2e/`):** Behavioral tests live as **5 Markdown playbooks** (`01-onboarding.md` … `05-qstash-proactive-wakeup.md`) paired with [`scripts/e2e/INDEX.md`](../scripts/e2e/INDEX.md) and a golden reference dossier ([`scripts/e2e/expected-memory.md`](../scripts/e2e/expected-memory.md)).
 
 ---

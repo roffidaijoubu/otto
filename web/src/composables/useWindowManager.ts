@@ -16,7 +16,6 @@ export type BuiltinAppId =
   | "files"
   | "obs-overlays"
   | "studio-db"
-  | "playbooks"
   | "calendar"
   | "contacts"
   | "settings";
@@ -246,18 +245,6 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "5",
   },
   {
-    id: "playbooks",
-    title: "Playbooks",
-    shortLabel: "Playbooks",
-    icon: "sparkles",
-    minWidth: 420,
-    minHeight: 340,
-    defaultWidth: 640,
-    defaultHeight: 540,
-    dockSection: "primary",
-    shortcutDigit: "6",
-  },
-  {
     id: "calendar",
     title: "Calendar",
     shortLabel: "Calendar",
@@ -267,7 +254,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 960,
     defaultHeight: 640,
     dockSection: "primary",
-    shortcutDigit: "7",
+    shortcutDigit: "6",
   },
   {
     id: "contacts",
@@ -279,7 +266,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 880,
     defaultHeight: 580,
     dockSection: "primary",
-    shortcutDigit: "8",
+    shortcutDigit: "7",
   },
   {
     id: "settings",
@@ -291,7 +278,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 620,
     defaultHeight: 560,
     dockSection: "utility",
-    shortcutDigit: "9",
+    shortcutDigit: "8",
   },
 ] as const;
 
