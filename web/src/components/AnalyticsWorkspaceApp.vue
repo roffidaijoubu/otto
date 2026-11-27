@@ -4,6 +4,7 @@ import { ExternalLinkIcon, PlusIcon, RefreshCwIcon, XIcon } from "@lucide/vue";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { YouTubeMetricsWidgetState } from "./ChannelMetricsWidget.vue";
+import PlatformBrandIcon from "./PlatformBrandIcon.vue";
 
 export interface ChannelMetric {
   id: string;
@@ -274,7 +275,10 @@ defineExpose({ fetchAll });
         <!-- YouTube KPI Row -->
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div class="rounded-2xl border border-[#ededed] bg-[#fafafa] p-3">
-            <div class="font-mono text-[10.5px] text-[#808080]">YOUTUBE SUBS</div>
+            <div class="flex items-center gap-1.5 font-mono text-[10.5px] text-[#808080]">
+              <PlatformBrandIcon platform="youtube" class="size-3.5 shrink-0" />
+              <span>YOUTUBE SUBS</span>
+            </div>
             <div class="mt-1 font-mono text-2xl text-[#303030] tabular-nums">
               {{ formatCompact(widgetState?.subscribers) }}
             </div>
@@ -398,11 +402,16 @@ defineExpose({ fetchAll });
         class="otto-card flex flex-col justify-between"
       >
         <div class="otto-card-head">
-          <div class="min-w-0">
-            <span class="block truncate">{{ s.label }}</span>
-            <span v-if="s.handle" class="block truncate font-mono text-[10.5px] font-normal text-[#808080]">
-              @{{ s.handle }}
-            </span>
+          <div class="flex min-w-0 items-center gap-2.5 text-left">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-xl border border-[#ededed] bg-[#fafafa]">
+              <PlatformBrandIcon :platform="s.platform" class="size-4" />
+            </div>
+            <div class="min-w-0">
+              <span class="block truncate text-left">{{ s.label }}</span>
+              <span v-if="s.handle" class="block truncate text-left font-mono text-[10.5px] font-normal text-[#808080]">
+                @{{ s.handle }}
+              </span>
+            </div>
           </div>
           <Button
             type="button"
@@ -546,7 +555,8 @@ defineExpose({ fetchAll });
               <tr v-for="m in filteredMetrics" :key="m.id" class="border-b border-[#f2f2f2] last:border-0">
                 <td class="py-2 pr-3 whitespace-nowrap text-[#303030]">{{ m.recordedAt }}</td>
                 <td class="py-2 pr-3 whitespace-nowrap">
-                  <span class="rounded-full bg-[#f2f2f2] px-2 py-0.5 text-[10.5px] text-[#303030]">
+                  <span class="inline-flex items-center gap-1.5 rounded-full bg-[#f2f2f2] px-2 py-0.5 text-[10.5px] text-[#303030]">
+                    <PlatformBrandIcon :platform="m.platform" class="size-3 shrink-0" />
                     {{ platformLabel(m.platform) }}
                   </span>
                 </td>

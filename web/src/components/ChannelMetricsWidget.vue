@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { RefreshCwIcon } from "@lucide/vue";
+import PlatformBrandIcon from "./PlatformBrandIcon.vue";
+
+interface SocialWidgetItem {
+  platform: "tiktok" | "instagram" | "x";
+  label: string;
+  handle: string;
+  followers: number | null;
+  deltaFollowers: number | null;
+}
 
 export interface LatestVideoPulse {
   id: string;
@@ -46,6 +55,7 @@ const emit = defineEmits<{
 }>();
 
 const state = ref<YouTubeMetricsWidgetState | null>(null);
+const socials = ref<SocialWidgetItem[]>([]);
 const syncing = ref(false);
 const togglingDaily = ref(false);
 const errorMsg = ref("");
@@ -97,10 +107,18 @@ const sparklinePath = computed(() => {
 
 async function loadWidget(auto = false) {
   try {
-    const res = await fetch(auto ? "/api/db/metrics/widget?auto=1" : "/api/db/metrics/widget");
-    if (!res.ok) return;
-    const data = (await res.json()) as { state?: YouTubeMetricsWidgetState };
-    if (data.state) state.value = data.state;
+    const [wRes, pRes] = await Promise.all([
+      fetch(auto ? "/api/db/metrics/widget?auto=1" : "/api/db/metrics/widget").catch(() => null),
+      fetch("/api/db/metrics/platforms").catch(() => null),
+    ]);
+    if (wRes && wRes.ok) {
+      const data = (await wRes.json()) as { state?: YouTubeMetricsWidgetState };
+      if (data.state) state.value = data.state;
+    }
+    if (pRes && pRes.ok) {
+      const pData = (await pRes.json()) as { socials?: SocialWidgetItem[] };
+      if (Array.isArray(pData.socials)) socials.value = pData.socials;
+    }
   } catch {
     // ignore transient network errors
   }
@@ -111,13 +129,19 @@ async function syncNow() {
   syncing.value = true;
   errorMsg.value = "";
   try {
-    const res = await fetch("/api/db/metrics/sync", { method: "POST" });
+    const res = await fetch("/api/db/metrics/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform: "all" }),
+    });
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
       state?: YouTubeMetricsWidgetState;
+      socials?: SocialWidgetItem[];
       error?: string;
     };
     if (data.state) state.value = data.state;
+    if (Array.isArray(data.socials)) socials.value = data.socials;
     if (!res.ok || data.ok === false) {
       errorMsg.value = data.error || "Sync failed";
     }
@@ -221,7 +245,10 @@ watch(
       <!-- 3 Core KPIs -->
       <div class="grid grid-cols-3 gap-2">
         <div class="flex flex-col">
-          <span class="font-mono text-[10px] text-[#808080]">Subs</span>
+          <span class="flex items-center gap-1 font-mono text-[10px] text-[#808080]">
+            <PlatformBrandIcon platform="youtube" class="size-3 shrink-0" />
+            Subs
+          </span>
           <span class="font-mono text-[18px] leading-tight text-[#303030] tabular-nums">
             {{ formatCompact(state?.subscribers) }}
           </span>
@@ -302,6 +329,31 @@ watch(
 
       <div v-else-if="!state?.connected" class="font-mono text-[10.5px] text-[#808080]">
         Click refresh to pull live YouTube stats into Studio DB.
+      </div>
+
+      <!-- Compact Multi-Platform Social Strip (TikTok, Instagram, X) -->
+      <div
+        v-if="socials.length > 0"
+        class="grid grid-cols-3 gap-1.5 border-t border-[#ededed] pt-2.5"
+      >
+        <button
+          v-for="s in socials"
+          :key="s.platform"
+          type="button"
+          class="flex items-center gap-1.5 rounded-xl bg-[#f4f4f4]/80 px-2 py-1.5 text-left transition-colors hover:bg-[#ececec]"
+          :title="`${s.label}${s.handle ? ` (@${s.handle})` : ''} — open Analytics`"
+          @click="emit('openMetrics')"
+        >
+          <PlatformBrandIcon :platform="s.platform" class="size-3.5 shrink-0" />
+          <div class="min-w-0">
+            <div class="truncate font-mono text-[11.5px] font-semibold leading-tight text-[#303030] tabular-nums">
+              {{ formatCompact(s.followers) }}
+            </div>
+            <div class="truncate font-mono text-[9px] leading-tight text-[#808080]">
+              {{ s.platform === "x" ? "X" : s.label }}
+            </div>
+          </div>
+        </button>
       </div>
 
       <!-- Footer -->
