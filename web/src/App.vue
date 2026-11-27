@@ -109,9 +109,10 @@ const liveThinking = ref("");
 const liveSteps = ref<TraceStep[]>([]);
 
 const starters = [
-  "Check my connected channels and set up my studio profile.",
-  "Audit my latest YouTube uploads and suggest sharper titles.",
-  "Help me plan tonight's stream and draft promo posts.",
+  "Plan tonight's stream, lock it on Calendar, and draft X, TikTok & IG promos.",
+  "Run a background VOD clip job on my latest stream and prep clips for my editor.",
+  "Check my recent TikTok, Instagram, and X posts — what's getting the best traction?",
+  "Build a live OBS Starting Soon overlay with a countdown timer and remote deck.",
 ];
 
 const hasLiveContent = computed(
@@ -646,7 +647,7 @@ watch(shellRef, (val) => {
                 <OttoMascot :size="52" :color="mascotColor" :state="statusState" />
                 <h2>Otto is in the room.</h2>
                 <p>
-                  No fluff, no yes-man answers, zero AI slop. Drag <span class="mark-y">(y)our</span> Studio OS windows around or tell Otto what stream or video we are sharpening today.
+                  Practical stream ops, zero AI art or video. Plan streams, clip VODs in the background, build live OBS overlays, or research what's working across <span class="mark-y">(y)our</span> channels.
                 </p>
                 <div class="starters">
                   <button

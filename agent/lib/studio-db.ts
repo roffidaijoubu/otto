@@ -994,7 +994,8 @@ export function createClipJob(input: {
   const db = getStudioDb();
   const id = makeId("job");
   const nowIso = new Date().toISOString();
-  const maxClips = Math.max(1, Math.min(5, Math.floor(input.maxClips ?? 3)));
+  const rawMax = input.maxClips ?? 0;
+  const maxClips = rawMax <= 0 ? 0 : Math.max(1, Math.min(30, Math.floor(rawMax)));
   const initialLog: ClipJobLogEntry[] = [
     { at: nowIso, stage: "Queued", message: "Clip job created and queued for background worker." },
   ];

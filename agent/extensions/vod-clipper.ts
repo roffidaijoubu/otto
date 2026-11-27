@@ -72,7 +72,7 @@ export default function (pi: ExtensionAPI) {
       const chatPath = path.join(workDir, `${videoId}.chat.json`);
       const transcriptPath = path.join(workDir, `${videoId}.transcript.json`);
       const langs = params.langs || "id-orig,id,en-orig,en";
-      const topK = Math.min(20, Math.max(3, params.topK ?? 12));
+      const topK = Math.min(40, Math.max(3, params.topK ?? 20));
 
       // Run live chat fetch & transcript fetch in parallel (reuse cached files if already scanned)
       let chatError: string | null = null;
@@ -312,7 +312,7 @@ export default function (pi: ExtensionAPI) {
       url: Type.String({ description: "YouTube VOD URL or 11-character video ID" }),
       title: Type.Optional(Type.String({ description: "Optional human-friendly stream/VOD title" })),
       maxClips: Type.Optional(
-        Type.Number({ description: "How many clips to extract (1 to 5, default: 3)" })
+        Type.Number({ description: "0 = Full Auto (all worthy moments, default), or explicit cap 1-30" })
       ),
       focusNotes: Type.Optional(
         Type.String({
@@ -335,7 +335,7 @@ export default function (pi: ExtensionAPI) {
           vodUrl: canonicalUrl,
           videoId,
           title: params.title || "",
-          maxClips: params.maxClips ?? 3,
+          maxClips: params.maxClips ?? 0,
           focusNotes: params.focusNotes || "",
         }),
       });

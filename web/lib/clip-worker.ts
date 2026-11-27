@@ -82,16 +82,22 @@ function buildWorkerPrompt(job: ClipJob): string {
     ? `Creator focus instructions: ${job.focusNotes}`
     : "Creator focus instructions: Pick the highest-energy, funniest, most quotable, or most shareable standalone moments (30-75 seconds each).";
 
+  const isAuto = job.maxClips <= 0;
+  const topK = isAuto ? 30 : Math.max(12, Math.min(40, job.maxClips * 2));
+  const targetLine = isAuto
+    ? "Target clip count: FULL AUTO — extract EVERY genuinely strong, distinct, clip-worthy moment across the full VOD (no arbitrary low cap; only skip weak/repetitive filler)."
+    : `Target clip count: up to ${job.maxClips} clips (quality over quantity; skip weak moments).`;
+
   return [
     `AUTONOMOUS BACKGROUND VOD CLIPPING JOB (jobId: ${job.id}).`,
     `You are running in an isolated background worker outside the main chat. Complete the full pipeline end-to-end without asking questions.`,
     `Target VOD: ${job.vodUrl} (videoId: ${job.videoId})`,
-    `Target clip count: up to ${job.maxClips} clips (quality over quantity; skip weak moments).`,
+    targetLine,
     focusLine,
     ``,
     `Execute these steps strictly in order:`,
     `1. Call vod_update_job_progress(jobId="${job.id}", stage="Scanning hype", message="Pulling live chat replay and transcript to detect hype peaks...")`,
-    `2. Call vod_scan_hype(url="${job.vodUrl}", topK=12). Inspect the returned candidate cards and pick up to ${job.maxClips} distinct, high-potential moments with clean start/end boundaries (30-75s each, with pre-roll context).`,
+    `2. Call vod_scan_hype(url="${job.vodUrl}", topK=${topK}). Inspect ALL returned candidate cards and select ${isAuto ? "every distinct, high-potential moment" : `up to ${job.maxClips} distinct, high-potential moments`} with clean start/end boundaries (30-75s each, with pre-roll context).`,
     `3. For each selected clip (1..N):`,
     `   a. Call vod_update_job_progress(jobId="${job.id}", stage="Cutting clip i/N", message="Downloading and cutting <short title>...")`,
     `   b. Call vod_cut_clip(url="${job.vodUrl}", startSec=..., endSec=..., name="clip_0i_<slug>").`,
@@ -122,7 +128,7 @@ export function startBackgroundClipJob(
     vodUrl: canonicalUrl,
     videoId,
     title: input.title?.trim() || `VOD ${videoId}`,
-    maxClips: input.maxClips ?? 3,
+    maxClips: input.maxClips ?? 0,
     focusNotes: input.focusNotes ?? "",
   });
 

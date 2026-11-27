@@ -1509,7 +1509,7 @@ Bun.serve({
             vodUrl: String(body.vodUrl),
             videoId: body.videoId ? String(body.videoId) : undefined,
             title: body.title ? String(body.title) : undefined,
-            maxClips: typeof body.maxClips === "number" ? body.maxClips : 3,
+            maxClips: typeof body.maxClips === "number" ? body.maxClips : 0,
             focusNotes: body.focusNotes ? String(body.focusNotes) : "",
           },
           {
@@ -2646,7 +2646,7 @@ Bun.serve({
           {
             vodUrl: String(body.vodUrl),
             title: body.title ? String(body.title) : undefined,
-            maxClips: typeof body.maxClips === "number" ? body.maxClips : 3,
+            maxClips: typeof body.maxClips === "number" ? body.maxClips : 0,
             focusNotes: body.focusNotes ? String(body.focusNotes) : "",
           },
           {

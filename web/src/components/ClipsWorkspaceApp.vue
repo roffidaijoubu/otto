@@ -86,7 +86,7 @@ const expandedJobId = ref<string | null>(null);
 
 const vodUrl = ref("");
 const vodTitle = ref("");
-const maxClips = ref(3);
+const maxClips = ref(0);
 const focusNotes = ref("");
 
 const activeRunningCount = computed(
@@ -317,7 +317,7 @@ onMounted(() => {
           </div>
 
           <form class="flex flex-col gap-2.5" @submit.prevent="launchJob">
-            <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_110px]">
+            <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_155px]">
               <Input
                 v-model="vodUrl"
                 placeholder="Paste YouTube VOD URL or video ID (e.g. https://youtu.be/...)"
@@ -329,11 +329,12 @@ onMounted(() => {
                 class="h-9 rounded-xl border border-black/10 bg-[#FAF9F6] px-2.5 text-xs text-[#171717] focus:outline-none"
                 :disabled="launching"
               >
-                <option :value="1">1 clip</option>
-                <option :value="2">2 clips</option>
-                <option :value="3">3 clips</option>
-                <option :value="4">4 clips</option>
-                <option :value="5">5 clips</option>
+                <option :value="0">Auto (all worthy)</option>
+                <option :value="3">Up to 3 clips</option>
+                <option :value="5">Up to 5 clips</option>
+                <option :value="10">Up to 10 clips</option>
+                <option :value="15">Up to 15 clips</option>
+                <option :value="20">Up to 20 clips</option>
               </select>
             </div>
 
@@ -395,7 +396,7 @@ onMounted(() => {
                     {{ job.title || job.videoId }}
                   </span>
                   <span class="font-mono text-[10px] text-neutral-400">
-                    up to {{ job.maxClips }} clips
+                    {{ job.maxClips <= 0 ? "full auto (all worthy)" : `up to ${job.maxClips} clips` }}
                   </span>
                 </div>
                 <p v-if="job.error" class="mt-1 text-[11px] text-red-600">
