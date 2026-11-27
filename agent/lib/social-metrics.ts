@@ -293,8 +293,31 @@ export async function syncSocialPlatform(
 export async function syncAllSocialMetrics(): Promise<
   Array<{ ok: boolean; platform: SocialPlatform; metric?: ChannelMetric; error?: string }>
 > {
+  if (socialSyncInFlight) return socialSyncInFlight;
   const platforms: SocialPlatform[] = ["tiktok", "instagram", "x"];
-  return Promise.all(platforms.map((p) => syncSocialPlatform(p)));
+  socialSyncInFlight = Promise.all(platforms.map((p) => syncSocialPlatform(p))).finally(() => {
+    socialSyncInFlight = null;
+  });
+  return socialSyncInFlight;
+}
+
+const AUTO_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours (matches YouTube widget throttle)
+let socialSyncInFlight: Promise<
+  Array<{ ok: boolean; platform: SocialPlatform; metric?: ChannelMetric; error?: string }>
+> | null = null;
+
+export function shouldAutoSyncSocialMetrics(): boolean {
+  if (socialSyncInFlight) return false;
+  const cache = readCache();
+  const platforms: SocialPlatform[] = ["tiktok", "instagram", "x"];
+  const now = Date.now();
+  // Trigger auto-sync if any platform has never synced or is older than 6 hours
+  return platforms.some((p) => {
+    const syncedAt = cache[p]?.syncedAt;
+    if (!syncedAt) return true;
+    const ts = Date.parse(syncedAt);
+    return Number.isNaN(ts) || now - ts >= AUTO_SYNC_INTERVAL_MS;
+  });
 }
 
 export function getSocialMetricsOverview(): SocialPlatformSummary[] {

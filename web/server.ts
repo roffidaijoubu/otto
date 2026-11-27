@@ -56,6 +56,7 @@ import {
 } from "../agent/lib/youtube-metrics.ts";
 import {
   getSocialMetricsOverview,
+  shouldAutoSyncSocialMetrics,
   syncAllSocialMetrics,
   syncSocialPlatform,
   type SocialPlatform,
@@ -2607,11 +2608,21 @@ Bun.serve({
       const tz = identity.timezone || "UTC";
       const state = getYouTubeMetricsWidgetState(tz);
       let autoSyncStarted = false;
-      if (url.searchParams.get("auto") === "1" && shouldAutoSyncYouTubeMetrics()) {
-        autoSyncStarted = true;
-        void syncYouTubeMetrics({ timezone: tz }).then((res) => {
-          if (res.ok) broadcast({ type: "db_changed" });
-        });
+      if (url.searchParams.get("auto") === "1") {
+        if (shouldAutoSyncYouTubeMetrics()) {
+          autoSyncStarted = true;
+          void syncYouTubeMetrics({ timezone: tz }).then((res) => {
+            if (res.ok) broadcast({ type: "db_changed" });
+          });
+        }
+        if (shouldAutoSyncSocialMetrics()) {
+          autoSyncStarted = true;
+          void syncAllSocialMetrics()
+            .then((results) => {
+              if (results.some((r) => r.ok)) broadcast({ type: "db_changed" });
+            })
+            .catch(() => {});
+        }
       }
       return Response.json({ state, autoSyncStarted });
     }
