@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  BOX_MAX_UPLOAD_BYTES,
   exportWorkspaceEntryToBox,
   resolveBoxGatewayUrl,
 } from "../../agent/lib/box.ts";
+import { getBoxSyncStatus, syncWorkspaceWithBox } from "../../agent/lib/box-sync.ts";
 import { errorMessage, jsonError, readJson, serveFileWithRange } from "../lib/http.ts";
 import { broadcast } from "../lib/sse.ts";
 import {
@@ -223,8 +225,30 @@ export async function handleWorkspaceRoutes(
   }
 
   if (req.method === "GET" && url.pathname === "/api/workspace/box-status") {
-    const gw = await resolveBoxGatewayUrl();
-    return Response.json({ connected: Boolean(gw) });
+    const status = await getBoxSyncStatus();
+    return Response.json({
+      connected: status.connected,
+      maxUploadBytes: BOX_MAX_UPLOAD_BYTES,
+      sync: status,
+    });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/workspace/box-sync/status") {
+    const status = await getBoxSyncStatus();
+    return Response.json({ ok: true, maxUploadBytes: BOX_MAX_UPLOAD_BYTES, sync: status });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/workspace/box-sync") {
+    const summary = await syncWorkspaceWithBox();
+    if (summary.pulledCount > 0 || summary.pushedCount > 0) {
+      broadcast({ type: "workspace_changed" });
+    }
+    return Response.json({
+      ok: !summary.lastError,
+      maxUploadBytes: BOX_MAX_UPLOAD_BYTES,
+      sync: summary,
+      error: summary.lastError || undefined,
+    });
   }
 
   if (req.method === "POST" && url.pathname === "/api/workspace/export-box") {

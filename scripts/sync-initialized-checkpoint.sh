@@ -2,10 +2,14 @@
 set -euo pipefail
 
 NO_MEMORY="${LMA_NO_MEMORY:-0}"
+CLEAN_WORKSPACE="${LMA_CLEAN_WORKSPACE:-0}"
 for arg in "$@"; do
   case "$arg" in
     --no-memory)
       NO_MEMORY="1"
+      ;;
+    --clean-workspace)
+      CLEAN_WORKSPACE="1"
       ;;
   esac
 done
@@ -87,7 +91,10 @@ tar \
     rm -rf /home/sprite/.omp/agent/sessions/* /home/sprite/.omp/agent/memories/* /home/sprite/.omp/logs/* \
       /home/sprite/.omp/agent/extensions /home/sprite/.omp/agent/skills \
       /home/sprite/.omp/agent/calendar.json* /home/sprite/.omp/agent/studio.db* /home/sprite/.omp/agent/mnemopi.db* \
-      /home/sprite/.omp/agent/studio-apps /home/sprite/workspace
+      /home/sprite/.omp/agent/studio-apps
+    if [ "'"${CLEAN_WORKSPACE}"'" = "1" ]; then
+      rm -rf /home/sprite/workspace
+    fi
     mkdir -p /home/sprite/.omp/agent
   '
 

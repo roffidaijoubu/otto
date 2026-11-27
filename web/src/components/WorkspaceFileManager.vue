@@ -146,7 +146,11 @@ import {
   triggerDownload,
   zipUrl,
 } from "@/lib/workspace-helpers";
-import { useWorkspaceBoxExport } from "@/composables/useWorkspaceBoxExport";
+import {
+  BOX_OVERSIZE_REASON,
+  isBoxOversize,
+  useWorkspaceBoxExport,
+} from "@/composables/useWorkspaceBoxExport";
 
 const props = defineProps<{
   refreshTick: number;
@@ -693,6 +697,8 @@ function askOttoAbout(entry: WorkspaceEntry) {
 }
 const {
   boxConnected,
+  boxSyncing,
+  boxLastSyncedAt,
   boxModalOpen,
   boxUploading,
   boxTargetName,
@@ -701,6 +707,7 @@ const {
   boxError,
   boxCopied,
   checkBoxStatus,
+  syncBoxNow,
   sendToBox,
   copyBoxLink,
 } = useWorkspaceBoxExport();
@@ -847,6 +854,20 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
             </BreadcrumbList>
           </Breadcrumb>
         </div>
+
+        <Button
+          v-if="boxConnected"
+          type="button"
+          size="xs"
+          variant="outline"
+          class="h-7 shrink-0 gap-1 rounded-lg bg-white px-2 font-mono text-[11px]"
+          :disabled="boxSyncing"
+          :title="boxLastSyncedAt ? `Last synced: ${formatTime(boxLastSyncedAt)}` : 'Sync Otto Assets & Handoffs with Box'"
+          @click="syncBoxNow(() => loadDirectory(currentPath))"
+        >
+          <RefreshCwIcon class="size-3" :class="boxSyncing ? 'animate-spin' : ''" />
+          <span>{{ boxSyncing ? "Syncing..." : "Sync Box" }}</span>
+        </Button>
 
         <Button
           type="button"
@@ -1246,6 +1267,14 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                               <Badge v-if="entry.matchedSrtRelPath" variant="secondary" class="font-mono text-[9.5px] h-4 px-1.5">
                                 .srt
                               </Badge>
+                              <Badge
+                                v-if="isBoxOversize(entry)"
+                                variant="outline"
+                                class="h-4 border-amber-300 bg-amber-50 px-1.5 font-mono text-[9.5px] text-amber-800"
+                                :title="BOX_OVERSIZE_REASON"
+                              >
+                                Local only (&gt;48 MB)
+                              </Badge>
                             </div>
                             <div class="sm:hidden font-mono text-[10.5px] text-muted-foreground truncate">
                               <span v-if="searchQuery.trim()">/{{ entry.relPath }} · </span>
@@ -1333,10 +1362,12 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   v-if="boxConnected"
-                                  @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                                  :disabled="isBoxOversize(entry)"
+                                  :title="isBoxOversize(entry) ? BOX_OVERSIZE_REASON : 'Send to Box'"
+                                  @select="!isBoxOversize(entry) && sendToBox(entry.relPath, entry.name, entry.isDir)"
                                 >
                                   <CloudUploadIcon />
-                                  Send to Box
+                                  {{ isBoxOversize(entry) ? "Send to Box (>48 MB limit)" : "Send to Box" }}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   v-if="entry.matchedSrtRelPath"
@@ -1401,10 +1432,12 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                         </ContextMenuItem>
                         <ContextMenuItem
                           v-if="boxConnected"
-                          @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                          :disabled="isBoxOversize(entry)"
+                          :title="isBoxOversize(entry) ? BOX_OVERSIZE_REASON : 'Send to Box'"
+                          @select="!isBoxOversize(entry) && sendToBox(entry.relPath, entry.name, entry.isDir)"
                         >
                           <CloudUploadIcon />
-                          Send to Box
+                          {{ isBoxOversize(entry) ? "Send to Box (>48 MB limit)" : "Send to Box" }}
                         </ContextMenuItem>
                         <ContextMenuItem
                           v-if="entry.matchedSrtRelPath"
@@ -1542,10 +1575,12 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   v-if="boxConnected"
-                                  @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                                  :disabled="isBoxOversize(entry)"
+                                  :title="isBoxOversize(entry) ? BOX_OVERSIZE_REASON : 'Send to Box'"
+                                  @select="!isBoxOversize(entry) && sendToBox(entry.relPath, entry.name, entry.isDir)"
                                 >
                                   <CloudUploadIcon />
-                                  Send to Box
+                                  {{ isBoxOversize(entry) ? "Send to Box (>48 MB limit)" : "Send to Box" }}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem @select="openMoveDialog(entry)">
                                   <FolderInputIcon />
@@ -1603,10 +1638,12 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                         </ContextMenuItem>
                         <ContextMenuItem
                           v-if="boxConnected"
-                          @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                          :disabled="isBoxOversize(entry)"
+                          :title="isBoxOversize(entry) ? BOX_OVERSIZE_REASON : 'Send to Box'"
+                          @select="!isBoxOversize(entry) && sendToBox(entry.relPath, entry.name, entry.isDir)"
                         >
                           <CloudUploadIcon />
-                          Send to Box
+                          {{ isBoxOversize(entry) ? "Send to Box (>48 MB limit)" : "Send to Box" }}
                         </ContextMenuItem>
                         <ContextMenuItem @select="openMoveDialog(entry)">
                           <FolderInputIcon />
@@ -1717,17 +1754,23 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
             <div class="flex items-center gap-1">
               <Tooltip v-if="boxConnected">
                 <TooltipTrigger as-child>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-xs"
-                    aria-label="Send to Box"
-                    @click="sendToBox(selectedFile.relPath, selectedFile.name, false)"
-                  >
-                    <CloudUploadIcon />
-                  </Button>
+                  <span class="inline-flex">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon-xs"
+                      aria-label="Send to Box"
+                      :disabled="isBoxOversize(selectedFile)"
+                      :title="isBoxOversize(selectedFile) ? BOX_OVERSIZE_REASON : 'Send to Box'"
+                      @click="!isBoxOversize(selectedFile) && sendToBox(selectedFile.relPath, selectedFile.name, false)"
+                    >
+                      <CloudUploadIcon />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent>Send to Box</TooltipContent>
+                <TooltipContent>
+                  {{ isBoxOversize(selectedFile) ? BOX_OVERSIZE_REASON : "Send to Box" }}
+                </TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger as-child>

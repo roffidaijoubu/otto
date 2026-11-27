@@ -5,7 +5,9 @@ import { LOGIN_HTML } from "./lib/login-html.ts";
 import { broadcast } from "./lib/sse.ts";
 import { rpc } from "./lib/rpc-bridge.ts";
 import { reconcileOrphanedClipJobs } from "./lib/clip-worker.ts";
+import { initCloudMemoryMdSync } from "./lib/memory-sync.ts";
 import { WORKSPACE_ROOT, ensureWorkspaceScaffold } from "./lib/workspace.ts";
+import { syncWorkspaceWithBox } from "../agent/lib/box-sync.ts";
 import { serveFavicon, serveSpa } from "./lib/static.ts";
 import { handlePublicRoutes } from "./routes/public.ts";
 import { handleWakeupRoutes } from "./routes/wakeup.ts";
@@ -26,12 +28,20 @@ loadPrivateEnv();
 initWebPassword();
 
 void rpc;
+void initCloudMemoryMdSync();
 void reconcileOrphanedClipJobs().catch((err) => {
   console.warn("[lma-web] reconcileOrphanedClipJobs warning:", err);
 });
 
 // Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
 ensureWorkspaceScaffold();
+void syncWorkspaceWithBox()
+  .then((summary) => {
+    if (summary.connected && (summary.pulledCount > 0 || summary.pushedCount > 0)) {
+      broadcast({ type: "workspace_changed" });
+    }
+  })
+  .catch(() => {});
 let workspaceWatchTimer: NodeJS.Timeout | null = null;
 try {
   fs.watch(WORKSPACE_ROOT, { recursive: true }, () => {

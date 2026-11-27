@@ -17,10 +17,10 @@ Use `thumbnail_save` whenever the creator asks to design, compose, or refine a Y
 ## 1. Asset Discovery & Multimodal Style Matching Workflow
 
 Before writing HTML:
-1. **Pick the right character pose:** Call `box_list_assets(subpath="Characters")` (and subfolders like `Characters/White_Light` or `Characters/Black_Dark`). Pick the expression that best matches the video's emotional hook (e.g., `gloom-horrified` for drama/shock, `wink-left-smug` for hot takes, `serious-stare` for deep dives, `laughing-open` for fun/collab). Avoid `solidbg` files unless intentionally placed inside a framed box.
-2. **Pick logo (optional):** Call `box_list_assets(subpath="Logos")` if a subtle brand emblem/badge strengthens recognition.
+1. **Check local synced assets FIRST (`/home/sprite/workspace/assets/`):** Box `Otto Assets/` (`Characters/`, `Logos/`, `Backgrounds/`) is incrementally synced into `/home/sprite/workspace/assets/`. Check local files first with `read` / `ls` for instant zero-API access; only fall back to `box_list_assets` + `box_download_file` if the folder is empty or a newly uploaded file isn't synced yet.
+2. **Pick the right character pose & logo:** Pick the expression that best matches the video's emotional hook (e.g., `gloom-horrified` for drama/shock, `wink-left-smug` for hot takes, `serious-stare` for deep dives, `laughing-open` for fun/collab). Avoid `solidbg` files unless intentionally placed inside a framed box.
 3. **Pick a real photo background:** Call `pixabay_search_backgrounds(query=..., limit=6)` for a high-contrast, uncluttered horizontal photo matching the topic mood, then download the best fit with `pixabay_download_image` to `assets/backgrounds/<slug>.jpg`.
-4. **Download & inspect with `read`:** Download chosen Box PNGs with `box_download_file` into `assets/characters/...` or `assets/logos/...`. Call `read` on your downloaded assets so you visually confirm framing, lighting direction, and brand palette before styling.
+4. **Visually inspect with `read`:** Call `read` on your chosen character/logo/background files so you visually confirm expression, framing, lighting direction, and brand palette before styling.
 
 ---
 
