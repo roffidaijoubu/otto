@@ -166,6 +166,9 @@ defineExpose<DesktopShellExposed>({
         @open-files-path="emit('open-files-path', $event)"
         @desktop-action="emit('desktop-action', $event)"
       >
+        <template v-if="$slots['desktop-top-right-widget']" #top-right-widget>
+          <slot name="desktop-top-right-widget" />
+        </template>
         <template v-if="$slots['desktop-widget']" #widget>
           <slot name="desktop-widget" />
         </template>

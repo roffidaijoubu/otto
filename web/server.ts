@@ -37,6 +37,12 @@ import {
   updateObsOverlayState,
 } from "../agent/lib/obs-overlays.ts";
 import {
+  getYouTubeMetricsWidgetState,
+  shouldAutoSyncYouTubeMetrics,
+  syncDailyMetricsQStashSchedule,
+  syncYouTubeMetrics,
+} from "../agent/lib/youtube-metrics.ts";
+import {
   classifyFile,
   createWorkspaceZip,
   ensureWorkspaceScaffold,
@@ -1359,6 +1365,18 @@ Bun.serve({
         return Response.json({ error: "Invalid JSON body" }, { status: 400 });
       }
       const label = typeof payload.label === "string" ? payload.label : "Scheduled Wake-Up";
+
+      // Deterministic zero-LLM daily YouTube metrics sync (no omp turn spawned)
+      if (payload.mode === "metrics_sync") {
+        const identity = readSetupIdentity();
+        const res = await syncYouTubeMetrics({ timezone: identity.timezone || "UTC" });
+        if (res.ok) broadcast({ type: "db_changed" });
+        return Response.json(
+          { ok: res.ok, mode: "metrics_sync", label, error: res.error },
+          { status: res.ok ? 200 : 500 }
+        );
+      }
+
       const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
       if (!prompt) {
         return Response.json({ error: "Missing prompt" }, { status: 400 });
@@ -2391,6 +2409,50 @@ Bun.serve({
     if (req.method === "GET" && url.pathname === "/api/db/metrics") {
       const limit = Number(url.searchParams.get("limit") || 50);
       return Response.json({ metrics: listChannelMetrics(Number.isFinite(limit) ? limit : 50) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/db/metrics/widget") {
+      const identity = readSetupIdentity();
+      const tz = identity.timezone || "UTC";
+      const state = getYouTubeMetricsWidgetState(tz);
+      let autoSyncStarted = false;
+      if (url.searchParams.get("auto") === "1" && shouldAutoSyncYouTubeMetrics()) {
+        autoSyncStarted = true;
+        void syncYouTubeMetrics({ timezone: tz }).then((res) => {
+          if (res.ok) broadcast({ type: "db_changed" });
+        });
+      }
+      return Response.json({ state, autoSyncStarted });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/metrics/sync") {
+      const identity = readSetupIdentity();
+      const res = await syncYouTubeMetrics({ timezone: identity.timezone || "UTC" });
+      if (res.ok) broadcast({ type: "db_changed" });
+      return Response.json(res, { status: res.ok ? 200 : 502 });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/db/metrics/daily-config") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as {
+          enabled?: boolean;
+          timezone?: string;
+        };
+        const identity = readSetupIdentity();
+        const tz =
+          typeof body.timezone === "string" && body.timezone.trim()
+            ? body.timezone.trim()
+            : identity.timezone || "UTC";
+        const enabled = Boolean(body.enabled);
+        const result = await syncDailyMetricsQStashSchedule({ enabled, timezone: tz });
+        broadcast({ type: "db_changed" });
+        return Response.json({
+          ...result,
+          state: getYouTubeMetricsWidgetState(tz),
+        });
+      } catch (err: unknown) {
+        return Response.json({ error: errorMessage(err) }, { status: 400 });
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/db/metrics") {

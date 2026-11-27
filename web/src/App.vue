@@ -19,6 +19,7 @@ import type { CustomAppId, DesktopShortcut } from "@/composables/useWindowManage
 import CustomStudioAppWindow from "./components/CustomStudioAppWindow.vue";
 import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
+import ChannelMetricsWidget from "./components/ChannelMetricsWidget.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
 import MessageBubble from "./components/MessageBubble.vue";
@@ -44,6 +45,7 @@ const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
 const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
+const studioDbRef = ref<InstanceType<typeof StudioDatabaseView> | null>(null);
 const activeObsOverlaySlug = ref("");
 const studioAppsRefreshTick = ref(0);
 const obsOverlaysRefreshTick = ref(0);
@@ -486,6 +488,13 @@ function handleFilesPathChanged(relDir: string) {
   });
 }
 
+function openStudioDbMetrics() {
+  shellRef.value?.wm.openWindow("studio-db", { focus: true });
+  nextTick(() => {
+    studioDbRef.value?.openTab("metrics");
+  });
+}
+
 function handleDesktopAction(action: "new-note" | "new-folder") {
   shellRef.value?.wm.openWindow("files", { focus: true });
   nextTick(() => {
@@ -623,6 +632,13 @@ watch(shellRef, (val) => {
       @open-files-path="openFilesAtPath"
       @desktop-action="handleDesktopAction"
     >
+      <template #desktop-top-right-widget>
+        <ChannelMetricsWidget
+          :refresh-tick="dbRefreshTick"
+          @open-metrics="openStudioDbMetrics"
+        />
+      </template>
+
       <!-- WINDOW 1: OTTO CHAT -->
       <template #window-actions-otto-chat>
         <Button
@@ -786,6 +802,7 @@ watch(shellRef, (val) => {
       <template #app-studio-db>
         <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
           <StudioDatabaseView
+            ref="studioDbRef"
             :refresh-tick="dbRefreshTick"
             @ask-prompt="handleMissionPrompt"
             @open-workspace-path="openFilesAtPath"

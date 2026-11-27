@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { FileTextIcon, ImageIcon, PlusIcon, XIcon } from "@lucide/vue";
+import { FileTextIcon, ImageIcon, PlusIcon, RefreshCwIcon, XIcon } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 export interface ContentPipelineItem {
   id: string;
@@ -43,6 +43,10 @@ const emit = defineEmits<{
 
 const subTab = ref<"pipeline" | "metrics">("pipeline");
 const loading = ref(false);
+const syncingYouTube = ref(false);
+const togglingDaily = ref(false);
+const dailySyncEnabled = ref(false);
+const dailySyncNote = ref("");
 const errorMsg = ref("");
 
 const pipeline = ref<ContentPipelineItem[]>([]);
@@ -65,13 +69,17 @@ async function fetchAllDb() {
   loading.value = true;
   errorMsg.value = "";
   try {
-    const [pRes, mRes, cRes] = await Promise.all([
+    const [pRes, mRes, cRes, wRes] = await Promise.all([
       fetch("/api/db/pipeline").then((r) => r.json()).catch(() => null),
       fetch("/api/db/metrics").then((r) => r.json()).catch(() => null),
       fetch("/api/db/contacts").then((r) => r.json()).catch(() => null),
+      fetch("/api/db/metrics/widget").then((r) => r.json()).catch(() => null),
     ]);
     if (pRes && Array.isArray(pRes.items)) pipeline.value = pRes.items;
     if (mRes && Array.isArray(mRes.metrics)) metrics.value = mRes.metrics;
+    if (wRes && wRes.state?.dailySync) {
+      dailySyncEnabled.value = Boolean(wRes.state.dailySync.enabled);
+    }
     emit("overviewUpdated", {
       pipelineCount: activePipeline.value.length,
       contactsCount: cRes && Array.isArray(cRes.contacts) ? cRes.contacts.length : 0,
@@ -147,6 +155,56 @@ async function removeMetric(id: string) {
   await fetchAllDb();
 }
 
+async function syncYouTubeNow() {
+  if (syncingYouTube.value) return;
+  syncingYouTube.value = true;
+  errorMsg.value = "";
+  dailySyncNote.value = "";
+  try {
+    const res = await fetch("/api/db/metrics/sync", { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || data.ok === false) {
+      errorMsg.value = data.error || "YouTube sync failed";
+    } else {
+      await fetchAllDb();
+    }
+  } catch (err) {
+    errorMsg.value = err instanceof Error ? err.message : "YouTube sync failed";
+  } finally {
+    syncingYouTube.value = false;
+  }
+}
+
+async function toggleDailySync() {
+  if (togglingDaily.value) return;
+  togglingDaily.value = true;
+  errorMsg.value = "";
+  try {
+    const res = await fetch("/api/db/metrics/daily-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !dailySyncEnabled.value }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      note?: string;
+      error?: string;
+      state?: { dailySync?: { enabled?: boolean } };
+    };
+    if (data.state?.dailySync) {
+      dailySyncEnabled.value = Boolean(data.state.dailySync.enabled);
+    }
+    if (data.note) dailySyncNote.value = data.note;
+    if (!res.ok && data.error) errorMsg.value = data.error;
+  } finally {
+    togglingDaily.value = false;
+  }
+}
+
+function openTab(tab: "pipeline" | "metrics") {
+  subTab.value = tab;
+}
+
 watch(
   () => props.refreshTick,
   () => {
@@ -155,7 +213,7 @@ watch(
   { immediate: true }
 );
 
-defineExpose({ fetchAllDb });
+defineExpose({ fetchAllDb, openTab });
 </script>
 
 <template>
@@ -279,18 +337,41 @@ defineExpose({ fetchAllDb });
           </div>
         </div>
 
-        <!-- TAB 3: CHANNEL METRICS HISTORY -->
+        <!-- TAB 2: CHANNEL METRICS HISTORY -->
         <div v-else-if="subTab === 'metrics'" class="space-y-3">
           <div class="db-panel-head">
-            <div class="db-sub">Log growth snapshots (or let Otto record them during YouTube audits).</div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="xs"
-              @click="emit('askPrompt', 'Check my live YouTube stats, log a fresh Channel Metrics snapshot into the Studio Database, and compare against my previous snapshots.')"
-            >
-              Log Live YT Snapshot
-            </Button>
+            <div class="db-sub">
+              Single source of truth synced with your desktop widget (0 LLM tokens).
+              <span v-if="dailySyncNote" class="ml-1 text-[var(--fg)]">· {{ dailySyncNote }}</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                size="xs"
+                :disabled="syncingYouTube"
+                @click="syncYouTubeNow"
+              >
+                <RefreshCwIcon data-icon="inline-start" :class="syncingYouTube ? 'animate-spin' : ''" />
+                {{ syncingYouTube ? "Syncing..." : "Sync YouTube" }}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                :disabled="togglingDaily"
+                @click="toggleDailySync"
+              >
+                {{ dailySyncEnabled ? "Daily Snapshot: On" : "Daily Snapshot: Off" }}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                @click="emit('askPrompt', 'Analyze my Channel Metrics history in Studio DB and highlight trends or next experiments.')"
+              >
+                Analyze with Otto
+              </Button>
+            </div>
           </div>
           <form class="db-form" @submit.prevent="addMetric">
             <input v-model="newMetricDate" type="date" class="db-input" />

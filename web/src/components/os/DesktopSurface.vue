@@ -100,6 +100,14 @@ function launchShortcut(item: DesktopShortcut) {
           </button>
         </div>
 
+        <!-- Top-Right Desktop Widget Slot -->
+        <div
+          v-if="$slots['top-right-widget']"
+          class="pointer-events-auto fixed top-[48px] right-5 hidden lg:block"
+        >
+          <slot name="top-right-widget" />
+        </div>
+
         <!-- Bottom-Right Companion Desktop Widget Slot -->
         <div class="pointer-events-auto fixed right-5 bottom-[92px] hidden lg:block">
           <slot name="widget">

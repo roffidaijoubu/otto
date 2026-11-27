@@ -714,6 +714,67 @@ export function deleteChannelMetric(id: string): boolean {
   return res.changes > 0;
 }
 
+export function upsertDailyChannelMetric(input: {
+  recordedAt?: string;
+  platform?: string;
+  subscribers?: number | null;
+  totalViews?: number | null;
+  avgCcv?: number | null;
+  avgCtr?: number | null;
+  notes?: string;
+}): ChannelMetric {
+  const db = getStudioDb();
+  const nowIso = new Date().toISOString();
+  const recordedAt = (input.recordedAt || nowIso.slice(0, 10)).trim();
+  const platform = (input.platform || "youtube").trim().toLowerCase();
+  const existing = db
+    .query(
+      "SELECT * FROM channel_metrics WHERE recorded_at = ? AND platform = ? ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(recordedAt, platform) as MetricRow | null;
+
+  if (!existing) {
+    return addChannelMetric({ ...input, recordedAt, platform });
+  }
+
+  const nextSubs =
+    typeof input.subscribers === "number" && Number.isFinite(input.subscribers)
+      ? Math.round(input.subscribers)
+      : existing.subscribers;
+  const nextViews =
+    typeof input.totalViews === "number" && Number.isFinite(input.totalViews)
+      ? Math.round(input.totalViews)
+      : existing.total_views;
+  const nextCcv =
+    typeof input.avgCcv === "number" && Number.isFinite(input.avgCcv)
+      ? Math.round(input.avgCcv)
+      : existing.avg_ccv;
+  const nextCtr =
+    typeof input.avgCtr === "number" && Number.isFinite(input.avgCtr)
+      ? Number(input.avgCtr)
+      : existing.avg_ctr;
+  const nextNotes =
+    typeof input.notes === "string" && input.notes.trim() ? input.notes.trim() : existing.notes;
+
+  db.prepare(`
+    UPDATE channel_metrics
+    SET subscribers = ?, total_views = ?, avg_ccv = ?, avg_ctr = ?, notes = ?
+    WHERE id = ?
+  `).run(nextSubs, nextViews, nextCcv, nextCtr, nextNotes, existing.id);
+
+  return {
+    id: existing.id,
+    recordedAt,
+    platform,
+    subscribers: nextSubs,
+    totalViews: nextViews,
+    avgCcv: nextCcv,
+    avgCtr: nextCtr,
+    notes: nextNotes,
+    createdAt: existing.created_at,
+  };
+}
+
 // ---------- Overview & Safe Read-Only SQL ----------
 
 function countQuery(db: Database, sql: string): number {
