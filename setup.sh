@@ -47,6 +47,12 @@ fi
 mkdir -p "${OMP_AGENT_DIR}/extensions"
 ln -sf "${REPO_DIR}/agent/APPEND_SYSTEM.md" "${OMP_AGENT_DIR}/APPEND_SYSTEM.md"
 ln -sf "${REPO_DIR}/agent/config.yml" "${OMP_AGENT_DIR}/config.yml"
+# Remove stale symlinks for pruned/renamed extensions
+for existing in "${OMP_AGENT_DIR}"/extensions/*.ts; do
+  if [ -L "$existing" ] && [ ! -e "$existing" ]; then
+    rm -f "$existing"
+  fi
+done
 for ext in "${REPO_DIR}"/agent/extensions/*.ts; do
   [ -e "$ext" ] && ln -sf "$ext" "${OMP_AGENT_DIR}/extensions/$(basename "$ext")"
 done

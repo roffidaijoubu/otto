@@ -138,7 +138,7 @@ check_grep() {
 }
 
 check_grep "All 8 skills symlinked" "CHECK_SKILLS:.*obs-overlay-craft.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*streaming-coaching.*studio-app-craft.*youtube-audit"
-check_grep "All 12 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*buffer-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*qstash-scheduler\.ts.*studio-apps\.ts.*studio-db\.ts.*vod-clipper\.ts"
+check_grep "All 14 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*instagram\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*qstash-scheduler\.ts.*studio-apps\.ts.*studio-db\.ts.*tiktok\.ts.*vod-clipper\.ts.*x-twitter\.ts"
 check_grep "Python clipper scripts compile cleanly" "CHECK_PY:OK"
 check_grep "Tasks API keep-alive hold (PUT 200 / DELETE 204)" "CHECK_TASKS:200:204"
 check_grep "GET /api/health returns ok:true" "CHECK_HEALTH:true"
@@ -165,8 +165,8 @@ if [ "$MODE" = "live" ]; then
   echo ""
   echo "3. Live Zero-Key Agent & Connector Smoke Tests (--live)"
   LIVE_OUT=$(sprite exec -- bash -c '
-  omp --tools youtube_tool,buffer_list_channels,schedule_wakeup,vod_scan_hype,vod_cut_clip,vod_prep_clip,watch_clip,critique_thumbnail \
-    -p "Call buffer_list_channels once, then reply with: LIVE_OK followed by the number of connected Buffer channels." --no-session 2>&1 || true
+  omp --tools youtube_tool,social_list_channels,schedule_wakeup,vod_scan_hype,vod_cut_clip,vod_prep_clip,watch_clip,critique_thumbnail \
+    -p "Call social_list_channels once, then reply with: LIVE_OK followed by the number of connected social channels." --no-session 2>&1 || true
   ')
   if echo "$LIVE_OUT" | grep -q "LIVE_OK"; then
     ok "Live zero-key Gemini + Buffer connector tool round-trip"

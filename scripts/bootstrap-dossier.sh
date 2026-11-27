@@ -34,9 +34,9 @@ fi
 
 echo "==> Bootstrapping Draft Talent Dossier from connected Sprites Connectors..."
 "${OMP_BIN}" --no-session \
-  --tools read,write,edit,buffer_list_channels,youtube_tool,calendar_sync_google,exa_search \
+  --tools read,write,edit,social_list_channels,youtube_tool,calendar_sync_google,exa_search \
   -p "Silent first-provision bootstrap task (no user is reading this reply).
-1. Call buffer_list_channels (ignore errors if Buffer is not connected).
+1. Call social_list_channels (ignore errors if Buffer is not connected).
 2. Call youtube_tool with slug YOUTUBE_LIST_USER_PLAYLISTS (arguments: {}) to discover the authenticated YouTube channelId and title; if found, call YOUTUBE_GET_CHANNEL_STATISTICS (arguments: {id: <channelId>}) and YOUTUBE_LIST_CHANNEL_VIDEOS (arguments: {channelId: <channelId>, maxResults: 5}). Ignore errors if YouTube is not connected.
 3. Call calendar_sync_google (daysAhead: 30) to pull any existing Google Calendar commitments. Ignore errors if Google Calendar is not connected.
 4. If you discovered a creator name or handle, run 1 quick exa_search query for their public bio/niche/branding.

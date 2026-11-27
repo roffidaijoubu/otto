@@ -13,7 +13,7 @@ Check `~/.omp/agent/MEMORY.md` first to see what is already known vs. what still
 
 ## 1. Proactive Discovery
 1. **Check connected accounts first** before asking for handles:
-   - **Connected Socials:** Call `buffer_list_channels` (if available) to discover connected X, TikTok, Instagram, or other handles.
+   - **Connected Socials:** Call `social_list_channels` (if available) to discover connected X, TikTok, Instagram, or other handles.
    - **YouTube Channel:** Call `youtube_tool` (`YOUTUBE_LIST_USER_PLAYLISTS` with `{}` first to get the channel ID, then `YOUTUBE_GET_CHANNEL_STATISTICS` with `{ id }`, `YOUTUBE_LIST_CHANNEL_VIDEOS`, or `YOUTUBE_GET_CHANNEL_ID_BY_HANDLE` with a leading `@`).
      - Call shape: `youtube_tool({ slug: "YOUTUBE_...", arguments: {...} })`.
    - **Public Bio & Lore:** If a creator name/handle is found (or provided by the user), use `exa_search` (and `firecrawl_scrape` if useful) to gather public bio, niche, hashtags, and artist/rigger credits.
