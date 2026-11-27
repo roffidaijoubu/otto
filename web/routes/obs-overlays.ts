@@ -10,6 +10,7 @@ import {
   sanitizeOverlayAssetName,
   updateObsOverlayState,
 } from "../../agent/lib/obs-overlays.ts";
+import { createStudioJob, updateStudioJob } from "../../agent/lib/studio-db.ts";
 
 export function buildObsOverlayCreatePrompt(userPrompt: string, attachedImages: string[] = []): string {
   const attached = attachedImages.map((s) => String(s || "").trim()).filter(Boolean);
@@ -69,10 +70,29 @@ export function dispatchObsOverlayBackgroundJob(opts: {
   attachedImages?: string[];
   slug?: string;
   label?: string;
+  existingJobId?: string;
 }): { jobId: string } {
-  const jobId = `obs_${Date.now().toString(36)}`;
+  const jobId = opts.existingJobId?.trim() || `obs_${Date.now().toString(36)}`;
   const targetSlug = (opts.slug || "").trim();
   const label = (opts.label || (targetSlug ? `Refining ${targetSlug}...` : "Building new OBS overlay...")).trim();
+
+  void createStudioJob({
+    id: jobId,
+    kind: "obs_overlay",
+    targetSlug,
+    title: label,
+    stage: targetSlug ? "Refining overlay" : "Building overlay",
+    status: "running",
+    payload: {
+      prompt: opts.prompt,
+      slug: targetSlug,
+      attachedImages: (opts.attachedImages || []).map((s) => String(s || "").trim()).filter(Boolean),
+      label,
+    },
+    logMessage: label,
+  })
+    .then(() => broadcast({ type: "jobs_changed", jobId }))
+    .catch(() => {});
 
   broadcast({
     type: "obs_overlay_job_started",
@@ -110,25 +130,43 @@ export function dispatchObsOverlayBackgroundJob(opts: {
         resolvedSlug = created?.slug || "";
       }
 
+      const errMsg = res.ok ? "" : data.error || "OBS overlay job failed";
+      await updateStudioJob(jobId, {
+        targetSlug: resolvedSlug || targetSlug,
+        status: res.ok ? "done" : "failed",
+        stage: res.ok ? "Completed" : "Failed",
+        error: errMsg,
+        logMessage: res.ok ? (data.reply || "Overlay deployed.") : errMsg,
+      }).catch(() => {});
+
       broadcast({
         type: "obs_overlay_job_finished",
         jobId,
         slug: resolvedSlug,
         ok: res.ok,
         reply: data.reply || "",
-        error: res.ok ? "" : data.error || "OBS overlay job failed",
+        error: errMsg,
       });
+      broadcast({ type: "jobs_changed", jobId });
       if (resolvedSlug) {
         broadcast({ type: "obs_overlays_changed", slug: resolvedSlug });
       }
     } catch (err: unknown) {
+      const errMsg = errorMessage(err);
+      await updateStudioJob(jobId, {
+        status: "failed",
+        stage: "Failed",
+        error: errMsg,
+        logMessage: errMsg,
+      }).catch(() => {});
       broadcast({
         type: "obs_overlay_job_finished",
         jobId,
         slug: targetSlug,
         ok: false,
-        error: errorMessage(err),
+        error: errMsg,
       });
+      broadcast({ type: "jobs_changed", jobId });
     }
   })();
 

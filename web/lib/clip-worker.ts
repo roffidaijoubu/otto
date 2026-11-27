@@ -6,13 +6,19 @@
  * via Tasks API until completion and streaming live status into SQLite (`clip_jobs`, `clips`).
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   createClipJob,
+  createStudioJob,
   getClipJob,
   listClipJobs,
   listClipRecords,
   updateClipJob,
+  updateStudioJob,
   type ClipJob,
+  type ClipPlanEntry,
+  type ClipRecord,
 } from "../../agent/lib/studio-db.ts";
 
 export interface ClipWorkerHooks {
@@ -94,12 +100,18 @@ export async function cancelBackgroundClipJob(
     stage: "Cancelled",
     logMessage: "Background clip job cancelled by creator.",
   });
+  await updateStudioJob(jobId, {
+    status: "cancelled",
+    stage: "Cancelled",
+    logMessage: "Background clip job cancelled by creator.",
+  }).catch(() => {});
   onBusyChange(activeWorkers.size > 0);
   onBroadcast({ type: "clips_changed", jobId });
+  onBroadcast({ type: "jobs_changed", jobId });
   return updated;
 }
 
-function buildWorkerPrompt(job: ClipJob): string {
+function buildWorkerPrompt(job: ClipJob, resumeRemaining?: ClipPlanEntry[], alreadySaved?: ClipRecord[]): string {
   const focusLine = job.focusNotes
     ? `Creator focus instructions: ${job.focusNotes}`
     : "Creator focus instructions: Pick the highest-energy, funniest, most quotable, or most shareable standalone moments (30-75 seconds each).";
@@ -109,6 +121,32 @@ function buildWorkerPrompt(job: ClipJob): string {
   const targetLine = isAuto
     ? "Target clip count: FULL AUTO — extract EVERY genuinely strong, distinct, clip-worthy moment across the full VOD (no arbitrary low cap; only skip weak/repetitive filler)."
     : `Target clip count: up to ${job.maxClips} clips (quality over quantity; skip weak moments).`;
+
+  if (resumeRemaining && resumeRemaining.length > 0) {
+    const savedSummary = (alreadySaved || [])
+      .map((c) => `- "${c.title}" (${c.startSec ?? "?"}s-${c.endSec ?? "?"}s, saved at ${c.filePath})`)
+      .join("\n");
+    const remainingJson = JSON.stringify(resumeRemaining, null, 2);
+    return [
+      `RESUMED BACKGROUND VOD CLIPPING JOB (jobId: ${job.id}).`,
+      `Target VOD: ${job.vodUrl} (videoId: ${job.videoId})`,
+      `Already completed & saved clips (DO NOT re-cut these):`,
+      savedSummary || "(none yet)",
+      ``,
+      `Remaining planned clips to process NOW (SKIP vod_scan_hype — the plan is already curated!):`,
+      remainingJson,
+      ``,
+      `For EACH remaining clip above in order:`,
+      `1. Call vod_update_job_progress(jobId="${job.id}", stage="Cutting clip <index>/<total>", message="Downloading and cutting <title>...")`,
+      `2. Call vod_cut_clip(url="${job.vodUrl}", startSec=<startSec>, endSec=<endSec>, name="clip_<index>_<slug>").`,
+      `3. Call vod_update_job_progress(jobId="${job.id}", stage="Normalizing clip <index>/<total>", message="Normalizing to CFR 30fps and -14 LUFS...")`,
+      `4. Call vod_prep_clip(inputPath=<mp4_path from cut>).`,
+      `5. Call vod_update_job_progress(jobId="${job.id}", stage="Reviewing clip <index>/<total>", message="Watching clip for 3-second hook and editor notes...")`,
+      `6. Call watch_clip(target=<output_path from prep>).`,
+      `7. Call vod_save_clip(jobId="${job.id}", videoId="${job.videoId}", title=<title>, filePath=<output_path from prep>, srtPath=<srt_path if present>, startSec=<startSec>, endSec=<endSec>, hookScore=<1-10>, editorNotes=<concise notes>, youtubeUrl=<youtube_url from cut>).`,
+      `When all remaining clips are saved, call vod_update_job_progress(jobId="${job.id}", stage="Completed", message="Resumed job finished extracting all remaining clips.") and reply concisely.`,
+    ].join("\n");
+  }
 
   return [
     `AUTONOMOUS BACKGROUND VOD CLIPPING JOB (jobId: ${job.id}).`,
@@ -120,6 +158,7 @@ function buildWorkerPrompt(job: ClipJob): string {
     `Execute these steps strictly in order:`,
     `1. Call vod_update_job_progress(jobId="${job.id}", stage="Scanning hype", message="Pulling live chat replay and transcript to detect hype peaks...")`,
     `2. Call vod_scan_hype(url="${job.vodUrl}", topK=${topK}). Inspect ALL returned candidate cards and select ${isAuto ? "every distinct, high-potential moment" : `up to ${job.maxClips} distinct, high-potential moments`} with clean start/end boundaries (30-75s each, with pre-roll context).`,
+    `2b. IMPORTANT (Resumable Checkpoint): Immediately call vod_save_clip_plan(jobId="${job.id}", clips=[{ index: 1, title: "...", startSec: ..., endSec: ..., reason: "..." }, ...]) BEFORE cutting clip #1 so progress can be resumed if anything interrupts the run!`,
     `3. For each selected clip (1..N):`,
     `   a. Call vod_update_job_progress(jobId="${job.id}", stage="Cutting clip i/N", message="Downloading and cutting <short title>...")`,
     `   b. Call vod_cut_clip(url="${job.vodUrl}", startSec=..., endSec=..., name="clip_0i_<slug>").`,
@@ -161,8 +200,113 @@ export async function startBackgroundClipJob(
       logMessage: "Checking VOD availability and downloadability with yt-dlp before scanning...",
     })) ?? job;
 
+  await createStudioJob({
+    id: job.id,
+    kind: "clip",
+    targetSlug: videoId,
+    title: runningJob.title,
+    stage: "Preflight check",
+    status: "running",
+    payload: {
+      vodUrl: canonicalUrl,
+      videoId,
+      title: runningJob.title,
+      maxClips: runningJob.maxClips,
+      focusNotes: runningJob.focusNotes,
+    },
+    logMessage: "Checking VOD availability and downloadability...",
+  }).catch(() => {});
+
   hooks.onBusyChange(true);
   hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
+  hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
+
+  launchClipWorkerLoop(runningJob, input.title, hooks);
+  return runningJob;
+}
+
+export async function resumeBackgroundClipJob(
+  jobId: string,
+  hooks: ClipWorkerHooks
+): Promise<ClipJob> {
+  const existing = await getClipJob(jobId);
+  if (!existing) throw new Error(`Clip job not found: ${jobId}`);
+  if (activeWorkers.has(jobId)) return existing;
+
+  const savedClips = await listClipRecords({ jobId, limit: 100 });
+  const wsRoot = path.resolve(process.env.LMA_WORKSPACE_DIR || path.join(process.env.HOME || "/home/sprite", "workspace"));
+  const verifiedSaved = savedClips.filter((c) => {
+    const abs = path.join(wsRoot, c.filePath.replace(/^\/+/, ""));
+    return fs.existsSync(abs);
+  });
+
+  let remaining: ClipPlanEntry[] | undefined;
+  if (existing.planJson.length > 0) {
+    remaining = existing.planJson.filter((plan) => {
+      return !verifiedSaved.some((saved) => {
+        if (saved.startSec !== null && saved.endSec !== null) {
+          return Math.abs(saved.startSec - plan.startSec) <= 8 && Math.abs(saved.endSec - plan.endSec) <= 8;
+        }
+        return saved.title.toLowerCase() === plan.title.toLowerCase();
+      });
+    });
+    if (remaining.length === 0 && verifiedSaved.length > 0) {
+      const done = (await updateClipJob(jobId, {
+        status: "done",
+        stage: "Completed",
+        error: "",
+        logMessage: `All ${verifiedSaved.length} planned clips are already saved.`,
+      })) ?? existing;
+      await updateStudioJob(jobId, {
+        status: "done",
+        stage: "Completed",
+        error: "",
+        logMessage: `All ${verifiedSaved.length} planned clips already saved.`,
+      }).catch(() => {});
+      hooks.onBroadcast({ type: "clips_changed", jobId });
+      hooks.onBroadcast({ type: "jobs_changed", jobId });
+      return done;
+    }
+  }
+
+  const resumed = (await updateClipJob(jobId, {
+    status: "running",
+    stage: remaining ? `Resuming (${verifiedSaved.length}/${existing.planJson.length} done)` : "Resuming...",
+    error: "",
+    completedAt: null,
+    logMessage: remaining
+      ? `Resuming clip job — skipping ${verifiedSaved.length} already-saved clip(s), cutting ${remaining.length} remaining.`
+      : "Resuming clip job using cached chat/transcript data.",
+  })) ?? existing;
+
+  await updateStudioJob(jobId, {
+    status: "running",
+    stage: resumed.stage,
+    error: "",
+    completedAt: null,
+    logMessage: remaining
+      ? `Resuming (${remaining.length} clips remaining).`
+      : "Resuming clip job.",
+  }).catch(() => {});
+
+  hooks.onBusyChange(true);
+  hooks.onBroadcast({ type: "clips_changed", jobId });
+  hooks.onBroadcast({ type: "jobs_changed", jobId });
+
+  launchClipWorkerLoop(resumed, resumed.title, hooks, remaining, verifiedSaved);
+  return resumed;
+}
+
+function launchClipWorkerLoop(
+  job: ClipJob,
+  explicitTitle: string | undefined,
+  hooks: ClipWorkerHooks,
+  resumeRemaining?: ClipPlanEntry[],
+  alreadySaved?: ClipRecord[]
+): void {
+  const videoId = job.videoId;
+  const canonicalUrl = job.vodUrl;
+  const runningJob = job;
 
   // Run fast yt-dlp preflight check asynchronously (2-4s) before burning LLM tokens or chat-scan time
   void (async () => {
@@ -210,19 +354,31 @@ export async function startBackgroundClipJob(
         error: friendly,
         logMessage: friendly,
       });
+      await updateStudioJob(job.id, {
+        status: "failed",
+        stage: "Preflight blocked",
+        error: friendly,
+        logMessage: friendly,
+      }).catch(() => {});
       hooks.onBusyChange(activeWorkers.size > 0);
       hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
+      hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
       return;
     }
 
     const discoveredTitle = pfOut.trim().split("\n")[0]?.trim();
     const effectiveJob =
       (await updateClipJob(job.id, {
-        ...(discoveredTitle && (!input.title || !input.title.trim()) ? { title: discoveredTitle } : {}),
-        stage: "Starting worker",
+        ...(discoveredTitle && (!explicitTitle || !explicitTitle.trim()) ? { title: discoveredTitle } : {}),
+        stage: resumeRemaining ? "Resuming worker" : "Starting worker",
         logMessage: `Preflight OK${discoveredTitle ? ` ("${discoveredTitle}")` : ""}. Launching isolated background clipper worker...`,
       })) ?? runningJob;
+    await updateStudioJob(job.id, {
+      title: effectiveJob.title,
+      stage: effectiveJob.stage,
+    }).catch(() => {});
     hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
+    hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
 
     const childEnv: Record<string, string | undefined> = {
       ...process.env,
@@ -235,6 +391,7 @@ export async function startBackgroundClipJob(
 
     const workerTools = [
       "vod_scan_hype",
+      "vod_save_clip_plan",
       "vod_cut_clip",
       "vod_prep_clip",
       "watch_clip",
@@ -242,7 +399,7 @@ export async function startBackgroundClipJob(
       "vod_save_clip",
     ].join(",");
 
-    const prompt = buildWorkerPrompt(effectiveJob);
+    const prompt = buildWorkerPrompt(effectiveJob, resumeRemaining, alreadySaved);
 
     const proc = Bun.spawn(
       [hooks.ompBin, "--no-session", "--tools", workerTools, "-p", prompt],
@@ -293,29 +450,33 @@ export async function startBackgroundClipJob(
           stage: "Completed",
           logMessage: "Background clipper worker finished.",
         });
+        await updateStudioJob(job.id, { status: "done", stage: "Completed", logMessage: "Clips ready." }).catch(() => {});
       } else if (code === 0 && savedForJob.length === 0) {
+        const msg =
+          current.progressLog[current.progressLog.length - 1]?.message ||
+          "Worker finished without saving any clips.";
         await updateClipJob(job.id, {
           status: "failed",
           stage: "No clips produced",
-          error:
-            current.progressLog[current.progressLog.length - 1]?.message ||
-            "Worker finished without saving any clips.",
+          error: msg,
           logMessage: "Worker exited with 0 saved clips.",
         });
+        await updateStudioJob(job.id, { status: "failed", stage: "No clips produced", error: msg }).catch(() => {});
       } else {
+        const errText = stderrTail.trim() || `Worker exited with code ${code}`;
         await updateClipJob(job.id, {
           status: "failed",
           stage: "Failed",
-          error: stderrTail.trim() || `Worker exited with code ${code}`,
+          error: errText,
           logMessage: `Background clipper worker exited with code ${code}.`,
         });
+        await updateStudioJob(job.id, { status: "failed", stage: "Failed", error: errText }).catch(() => {});
       }
     }
 
     hooks.onBusyChange(activeWorkers.size > 0);
     hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
+    hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
     hooks.onBroadcast({ type: "workspace_changed" });
   })();
-
-  return runningJob;
 }

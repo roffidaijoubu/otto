@@ -101,6 +101,14 @@ export interface ClipJobLogEntry {
   message: string;
 }
 
+export interface ClipPlanEntry {
+  index: number;
+  title: string;
+  startSec: number;
+  endSec: number;
+  reason?: string;
+}
+
 export interface ClipJob {
   id: string;
   vodUrl: string;
@@ -110,6 +118,26 @@ export interface ClipJob {
   focusNotes: string;
   status: ClipJobStatus;
   stage: string;
+  planJson: ClipPlanEntry[];
+  progressLog: ClipJobLogEntry[];
+  error: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export type StudioJobKind = "clip" | "thumbnail" | "obs_overlay" | "archive_sync";
+export type StudioJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+
+export interface StudioJob {
+  id: string;
+  kind: StudioJobKind;
+  targetSlug: string;
+  title: string;
+  status: StudioJobStatus;
+  stage: string;
+  payload: Record<string, unknown>;
+  checkpoint: Record<string, unknown>;
   progressLog: ClipJobLogEntry[];
   error: string;
   createdAt: string;
@@ -264,6 +292,7 @@ const SCHEMA_STATEMENTS: readonly string[] = [
     focus_notes TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'queued',
     stage TEXT NOT NULL DEFAULT 'Queued',
+    plan_json TEXT NOT NULL DEFAULT '[]',
     progress_log TEXT NOT NULL DEFAULT '[]',
     error TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -316,6 +345,23 @@ const SCHEMA_STATEMENTS: readonly string[] = [
     updated_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_studio_memories_updated ON studio_memories(updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS studio_jobs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    target_slug TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued',
+    stage TEXT NOT NULL DEFAULT 'Queued',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    checkpoint_json TEXT NOT NULL DEFAULT '{}',
+    progress_log TEXT NOT NULL DEFAULT '[]',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_studio_jobs_created ON studio_jobs(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_studio_jobs_kind ON studio_jobs(kind)`,
 ];
 
 function convertPlaceholdersToPg(sql: string): string {
@@ -421,9 +467,17 @@ async function initDriver(): Promise<DbDriver> {
     for (const stmt of SCHEMA_STATEMENTS) {
       await pg.unsafe(stmt);
     }
+    // Additive column migration for existing Neon clip_jobs tables
+    await pg.unsafe("ALTER TABLE clip_jobs ADD COLUMN IF NOT EXISTS plan_json TEXT NOT NULL DEFAULT '[]'").catch(() => {});
     return createPgDriver(pg);
   }
-  return createSqliteDriver(getSqliteFallback());
+  const sq = getSqliteFallback();
+  try {
+    sq.exec("ALTER TABLE clip_jobs ADD COLUMN plan_json TEXT NOT NULL DEFAULT '[]'");
+  } catch {
+    // Column already exists
+  }
+  return createSqliteDriver(sq);
 }
 
 async function getDb(): Promise<DbDriver> {
@@ -1062,6 +1116,7 @@ function rowToClipJob(row: Record<string, unknown>): ClipJob {
     focusNotes: String(row.focus_notes ?? ""),
     status: (String(row.status ?? "queued") as ClipJobStatus),
     stage: String(row.stage ?? "Queued"),
+    planJson: safeJsonParse<ClipPlanEntry[]>(row.plan_json as string, []),
     progressLog: safeJsonParse<ClipJobLogEntry[]>(row.progress_log as string, []),
     error: String(row.error ?? ""),
     createdAt: String(row.created_at ?? ""),
@@ -1146,6 +1201,7 @@ export async function updateClipJob(
     videoId?: string;
     status?: ClipJobStatus;
     stage?: string;
+    planJson?: ClipPlanEntry[];
     logMessage?: string;
     error?: string;
     completedAt?: string | null;
@@ -1156,6 +1212,7 @@ export async function updateClipJob(
   const nowIso = new Date().toISOString();
   const nextStage = patch.stage ?? existing.stage;
   const nextStatus = patch.status ?? existing.status;
+  const nextPlan = patch.planJson ?? existing.planJson;
   const nextLog = [...existing.progressLog];
   if (patch.logMessage) {
     nextLog.push({ at: nowIso, stage: nextStage, message: patch.logMessage });
@@ -1171,12 +1228,13 @@ export async function updateClipJob(
   const db = await getDb();
   await db.run(
     `UPDATE clip_jobs
-     SET title = ?, video_id = ?, status = ?, stage = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
+     SET title = ?, video_id = ?, status = ?, stage = ?, plan_json = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
      WHERE id = ?`,
     patch.title !== undefined ? patch.title : existing.title,
     patch.videoId !== undefined ? patch.videoId : existing.videoId,
     nextStatus,
     nextStage,
+    JSON.stringify(nextPlan),
     JSON.stringify(trimmedLog),
     patch.error !== undefined ? patch.error : existing.error,
     nowIso,
@@ -1524,4 +1582,176 @@ export async function deleteStudioMemory(id: string): Promise<boolean> {
   const db = await getDb();
   const res = await db.run("DELETE FROM studio_memories WHERE id = ?", id);
   return res.changes > 0;
+}
+
+// ---------- Unified Resumable Studio Jobs Queue ----------
+
+function rowToStudioJob(row: Record<string, unknown>): StudioJob {
+  return {
+    id: String(row.id ?? ""),
+    kind: (String(row.kind ?? "clip") as StudioJobKind),
+    targetSlug: String(row.target_slug ?? ""),
+    title: String(row.title ?? ""),
+    status: (String(row.status ?? "queued") as StudioJobStatus),
+    stage: String(row.stage ?? "Queued"),
+    payload: safeJsonParse<Record<string, unknown>>(row.payload_json as string, {}),
+    checkpoint: safeJsonParse<Record<string, unknown>>(row.checkpoint_json as string, {}),
+    progressLog: safeJsonParse<ClipJobLogEntry[]>(row.progress_log as string, []),
+    error: String(row.error ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+  };
+}
+
+export async function createStudioJob(input: {
+  id?: string;
+  kind: StudioJobKind;
+  targetSlug?: string;
+  title: string;
+  stage?: string;
+  status?: StudioJobStatus;
+  payload?: Record<string, unknown>;
+  checkpoint?: Record<string, unknown>;
+  logMessage?: string;
+}): Promise<StudioJob> {
+  const db = await getDb();
+  const id = input.id?.trim() || makeId("sjob");
+  const nowIso = new Date().toISOString();
+  const stage = input.stage || "Queued";
+  const status = input.status || "running";
+  const initialLog: ClipJobLogEntry[] = [
+    { at: nowIso, stage, message: input.logMessage || `${input.kind} job started.` },
+  ];
+  await db.run(
+    `INSERT INTO studio_jobs (
+      id, kind, target_slug, title, status, stage,
+      payload_json, checkpoint_json, progress_log, error, created_at, updated_at, completed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, NULL)
+    ON CONFLICT(id) DO UPDATE SET
+      target_slug = excluded.target_slug,
+      title = excluded.title,
+      status = excluded.status,
+      stage = excluded.stage,
+      payload_json = excluded.payload_json,
+      checkpoint_json = excluded.checkpoint_json,
+      progress_log = excluded.progress_log,
+      error = '',
+      updated_at = excluded.updated_at,
+      completed_at = NULL`,
+    id,
+    input.kind,
+    (input.targetSlug ?? "").trim(),
+    input.title.trim().slice(0, 180),
+    status,
+    stage,
+    JSON.stringify(input.payload ?? {}),
+    JSON.stringify(input.checkpoint ?? {}),
+    JSON.stringify(initialLog),
+    nowIso,
+    nowIso
+  );
+  return (await getStudioJob(id))!;
+}
+
+export async function getStudioJob(id: string): Promise<StudioJob | null> {
+  const db = await getDb();
+  const row = await db.get<Record<string, unknown>>("SELECT * FROM studio_jobs WHERE id = ?", id);
+  return row ? rowToStudioJob(row) : null;
+}
+
+export async function listStudioJobs(opts?: {
+  kind?: StudioJobKind;
+  limit?: number;
+}): Promise<StudioJob[]> {
+  const db = await getDb();
+  const limit = Math.max(1, Math.min(100, opts?.limit ?? 30));
+  if (opts?.kind) {
+    const rows = await db.all<Record<string, unknown>>(
+      "SELECT * FROM studio_jobs WHERE kind = ? ORDER BY created_at DESC LIMIT ?",
+      opts.kind,
+      limit
+    );
+    return rows.map(rowToStudioJob);
+  }
+  const rows = await db.all<Record<string, unknown>>(
+    "SELECT * FROM studio_jobs ORDER BY created_at DESC LIMIT ?",
+    limit
+  );
+  return rows.map(rowToStudioJob);
+}
+
+export async function updateStudioJob(
+  id: string,
+  patch: {
+    targetSlug?: string;
+    title?: string;
+    status?: StudioJobStatus;
+    stage?: string;
+    checkpoint?: Record<string, unknown>;
+    logMessage?: string;
+    error?: string;
+    completedAt?: string | null;
+  }
+): Promise<StudioJob | null> {
+  const existing = await getStudioJob(id);
+  if (!existing) return null;
+  const nowIso = new Date().toISOString();
+  const nextStage = patch.stage ?? existing.stage;
+  const nextStatus = patch.status ?? existing.status;
+  const nextCheckpoint = patch.checkpoint
+    ? { ...existing.checkpoint, ...patch.checkpoint }
+    : existing.checkpoint;
+  const nextLog = [...existing.progressLog];
+  if (patch.logMessage) {
+    nextLog.push({ at: nowIso, stage: nextStage, message: patch.logMessage });
+  }
+  const trimmedLog = nextLog.slice(-40);
+  const completedAt =
+    patch.completedAt !== undefined
+      ? patch.completedAt
+      : nextStatus === "done" || nextStatus === "failed" || nextStatus === "cancelled"
+        ? existing.completedAt ?? nowIso
+        : existing.completedAt;
+
+  const db = await getDb();
+  await db.run(
+    `UPDATE studio_jobs
+     SET target_slug = ?, title = ?, status = ?, stage = ?, checkpoint_json = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
+     WHERE id = ?`,
+    patch.targetSlug !== undefined ? patch.targetSlug : existing.targetSlug,
+    patch.title !== undefined ? patch.title : existing.title,
+    nextStatus,
+    nextStage,
+    JSON.stringify(nextCheckpoint),
+    JSON.stringify(trimmedLog),
+    patch.error !== undefined ? patch.error : existing.error,
+    nowIso,
+    completedAt,
+    id
+  );
+  return getStudioJob(id);
+}
+
+export async function deleteStudioJob(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM studio_jobs WHERE id = ?", id);
+  return res.changes > 0;
+}
+
+export async function reconcileOrphanedStudioJobs(): Promise<number> {
+  const jobs = await listStudioJobs({ limit: 50 });
+  let fixed = 0;
+  for (const j of jobs) {
+    if (j.status === "running" || j.status === "queued") {
+      await updateStudioJob(j.id, {
+        status: "failed",
+        stage: "Interrupted",
+        error: "Server restarted while this job was running. Click Resume to continue without losing progress.",
+        logMessage: "Marked as interrupted after server restart.",
+      });
+      fixed += 1;
+    }
+  }
+  return fixed;
 }

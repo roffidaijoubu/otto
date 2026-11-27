@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { listClipJobs, listClipRecords } from "../../agent/lib/studio-db.ts";
-import { getActiveClipWorkerIds, startBackgroundClipJob } from "./clip-worker.ts";
+import {
+  getActiveClipWorkerIds,
+  resumeBackgroundClipJob,
+  startBackgroundClipJob,
+} from "./clip-worker.ts";
 import { LMA_INTERNAL_SECRET, OMP_BIN, PORT, WORK_DIR } from "./config.ts";
 import { broadcast } from "./sse.ts";
 import { ensureWorkspaceScaffold, WORKSPACE_CLIPS_DIR } from "./workspace.ts";
@@ -33,6 +37,23 @@ export function startClipJob(
   rpc: SpriteHoldController
 ) {
   return startBackgroundClipJob(input, {
+    ompBin: OMP_BIN,
+    workDir: WORK_DIR,
+    port: PORT,
+    internalSecret: LMA_INTERNAL_SECRET,
+    onBroadcast: broadcast,
+    onBusyChange: (busy) => {
+      if (busy) {
+        void rpc.holdSpriteActive();
+      } else {
+        rpc.releaseSpriteHold();
+      }
+    },
+  });
+}
+
+export function resumeClipJob(jobId: string, rpc: SpriteHoldController) {
+  return resumeBackgroundClipJob(jobId, {
     ompBin: OMP_BIN,
     workDir: WORK_DIR,
     port: PORT,

@@ -13,7 +13,7 @@ import {
   indexSingleVideo,
   resolveCreatorChannelUrl,
 } from "../../agent/lib/pinecone-archive.ts";
-import { upsertArchiveVideo } from "../../agent/lib/studio-db.ts";
+import { createStudioJob, updateStudioJob, upsertArchiveVideo } from "../../agent/lib/studio-db.ts";
 import { broadcast } from "./sse.ts";
 
 export interface ArchiveSyncState {
@@ -112,6 +112,20 @@ export async function startBackgroundArchiveSync(opts: {
   syncState.startedAt = new Date().toISOString();
   syncState.finishedAt = null;
 
+  const jobId = `arch_${Date.now().toString(36)}`;
+  void createStudioJob({
+    id: jobId,
+    kind: "archive_sync",
+    targetSlug: channelUrl,
+    title: "Creator Archive Sync",
+    stage: "Discovering channel videos...",
+    status: "running",
+    payload: { channelUrl, includeShorts: opts.includeShorts !== false, limit: opts.limit },
+    logMessage: `Syncing ${channelUrl} to Pinecone`,
+  })
+    .then(() => broadcast({ type: "jobs_changed", jobId }))
+    .catch(() => {});
+
   broadcast({ type: "archive_changed", sync: getArchiveSyncState() });
 
   void (async () => {
@@ -193,8 +207,20 @@ export async function startBackgroundArchiveSync(opts: {
       syncState.running = false;
       syncState.currentTitle = "";
       syncState.finishedAt = new Date().toISOString();
+      await updateStudioJob(jobId, {
+        status: syncState.error ? "failed" : cancelRequested ? "cancelled" : "done",
+        stage: syncState.stage,
+        error: syncState.error,
+        checkpoint: {
+          discovered: syncState.discovered,
+          alreadyIndexed: syncState.alreadyIndexed,
+          indexedThisRun: syncState.indexedThisRun,
+        },
+        logMessage: `${syncState.stage} (${syncState.indexedThisRun} newly indexed, ${syncState.alreadyIndexed} already in Pinecone).`,
+      }).catch(() => {});
       await holdSpriteAwake(false);
       broadcast({ type: "archive_changed", sync: getArchiveSyncState() });
+      broadcast({ type: "jobs_changed", jobId });
     }
   })();
 

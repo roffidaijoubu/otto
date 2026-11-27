@@ -7,7 +7,7 @@ import {
   listClipRecords,
   updateClipBoxUrl,
 } from "../../agent/lib/studio-db.ts";
-import { listClipEcosystem, listLegacyClips, startClipJob } from "../lib/clip-service.ts";
+import { listClipEcosystem, listLegacyClips, resumeClipJob, startClipJob } from "../lib/clip-service.ts";
 import { cancelBackgroundClipJob } from "../lib/clip-worker.ts";
 import { serveFileWithRange } from "../lib/http.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
@@ -42,6 +42,21 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
         },
         rpc
       );
+      return Response.json({ ok: true, job });
+    } catch (err) {
+      return Response.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/api/clips/jobs/") && url.pathname.endsWith("/resume")) {
+    try {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/clips/jobs/".length, -"/resume".length)
+      );
+      const job = await resumeClipJob(id, rpc);
       return Response.json({ ok: true, job });
     } catch (err) {
       return Response.json(

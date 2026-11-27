@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { MessageSquareIcon, PlusIcon } from "@lucide/vue";
+import { Loader2Icon, MessageSquareIcon, PlusIcon } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -431,8 +431,11 @@ function connectEvents() {
       if (wm && wm.focusedWindowId.value !== "ideas") {
         wm.setWindowMeta("ideas", { badgeText: "Updated" });
       }
+    } else if (type === "jobs_changed") {
+      window.dispatchEvent(new CustomEvent("otto:jobs-changed"));
     } else if (type === "clips_changed" || type === "archive_changed") {
       clipsRefreshTick.value += 1;
+      window.dispatchEvent(new CustomEvent("otto:jobs-changed"));
       if (type === "clips_changed" && wm && wm.focusedWindowId.value !== "clips") {
         wm.setWindowMeta("clips", { badgeText: "Updated" });
       }
@@ -747,9 +750,9 @@ watch(shellRef, (val) => {
             </div>
           </main>
 
-          <div v-if="busy" class="activity">
-            <span class="pulse"></span>
-            <span>{{ activity }}</span>
+          <div v-if="busy" class="activity" role="status" aria-live="polite">
+            <Loader2Icon class="activity-spinner" aria-hidden="true" />
+            <span class="activity-text">{{ activity }}</span>
           </div>
 
           <div v-if="error" class="error-banner">{{ error }}</div>
@@ -897,7 +900,7 @@ watch(shellRef, (val) => {
 .messages-wrap {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 14px 12px;
+  padding: 16px 16px 12px;
   background: var(--surface);
 }
 .messages {
@@ -956,32 +959,41 @@ watch(shellRef, (val) => {
 }
 .activity {
   flex-shrink: 0;
-  padding: 6px 14px;
-  color: var(--fg);
-  background: var(--highlight-yellow);
-  font-size: 11.5px;
-  font-family: var(--font-mono);
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  background: #fafafa;
+  font-size: 12px;
+  font-family: var(--font-sans);
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--fg);
-  animation: blink 1.1s ease-in-out infinite;
+.activity-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--fg);
+  animation: spin 1s linear infinite;
 }
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+.activity-text {
+  color: var(--fg);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .error-banner {
   flex-shrink: 0;
-  padding: 8px 14px;
+  padding: 8px 16px;
+  border-top: 1px solid #fecaca;
   background: var(--error-bg);
   color: var(--error);
-  font-size: 11.5px;
-  font-family: var(--font-mono);
+  font-size: 12px;
+  font-family: var(--font-sans);
 }
 </style>

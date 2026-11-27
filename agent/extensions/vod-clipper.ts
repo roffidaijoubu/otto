@@ -352,6 +352,42 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "vod_save_clip_plan",
+    label: "Save Curated Clip Plan (Resumable Checkpoint)",
+    description:
+      "Persist the curated list of planned clips (title, startSec, endSec, reason) into Neon clip_jobs right after vod_scan_hype and BEFORE cutting clip #1, so if the job is interrupted or fails mid-way, Resume can skip re-scanning and continue from the next uncut clip.",
+    parameters: Type.Object({
+      jobId: Type.String({ description: "Clip job ID (e.g. job_a1b2c3d4e5)" }),
+      clips: Type.Array(
+        Type.Object({
+          index: Type.Number({ description: "1-based clip index (1, 2, 3, ...)" }),
+          title: Type.String({ description: "Working clip title" }),
+          startSec: Type.Number({ description: "Start timestamp in seconds" }),
+          endSec: Type.Number({ description: "End timestamp in seconds" }),
+          reason: Type.Optional(Type.String({ description: "Why this moment is clip-worthy" })),
+        })
+      ),
+    }),
+    async execute(_id, params) {
+      const updated = await updateClipJob(params.jobId, {
+        planJson: params.clips,
+        stage: `Planned ${params.clips.length} clips`,
+        logMessage: `Saved resumable plan with ${params.clips.length} clip(s) to Neon.`,
+      });
+      if (!updated) throw new Error(`Clip job not found: ${params.jobId}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ ok: true, jobId: updated.id, plannedCount: params.clips.length }),
+          },
+        ],
+        details: { ok: true, plannedCount: params.clips.length },
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "vod_update_job_progress",
     label: "Update Background Clip Job Progress",
     description:

@@ -14,17 +14,37 @@ import {
   saveThumbnailExportBytes,
 } from "../../agent/lib/thumbnails.ts";
 import { exportWorkspaceEntryToBox } from "../../agent/lib/box.ts";
+import { createStudioJob, updateStudioJob } from "../../agent/lib/studio-db.ts";
 
 export function dispatchThumbnailBackgroundJob(opts: {
   prompt: string;
   attachedImages?: string[];
   slug?: string;
   label?: string;
+  existingJobId?: string;
 }): { jobId: string } {
-  const jobId = `thumb_${Date.now().toString(36)}`;
+  const jobId = opts.existingJobId?.trim() || `thumb_${Date.now().toString(36)}`;
   const targetSlug = (opts.slug || "").trim();
   const label = (opts.label || (targetSlug ? `Refining ${targetSlug}...` : "Composing 1280×720 thumbnail...")).trim();
   const attached = (opts.attachedImages || []).map((s) => String(s || "").trim()).filter(Boolean);
+
+  void createStudioJob({
+    id: jobId,
+    kind: "thumbnail",
+    targetSlug,
+    title: label,
+    stage: targetSlug ? "Refining thumbnail" : "Composing thumbnail",
+    status: "running",
+    payload: {
+      prompt: opts.prompt,
+      slug: targetSlug,
+      attachedImages: attached,
+      label,
+    },
+    logMessage: label,
+  })
+    .then(() => broadcast({ type: "jobs_changed", jobId }))
+    .catch(() => {});
 
   broadcast({
     type: "thumbnail_job_started",
@@ -84,25 +104,43 @@ export function dispatchThumbnailBackgroundJob(opts: {
         resolvedSlug = created?.slug || "";
       }
 
+      const errMsg = res.ok ? "" : data.error || "Thumbnail job failed";
+      await updateStudioJob(jobId, {
+        targetSlug: resolvedSlug || targetSlug,
+        status: res.ok ? "done" : "failed",
+        stage: res.ok ? "Completed" : "Failed",
+        error: errMsg,
+        logMessage: res.ok ? (data.reply || "Thumbnail saved.") : errMsg,
+      }).catch(() => {});
+
       broadcast({
         type: "thumbnail_job_finished",
         jobId,
         slug: resolvedSlug,
         ok: res.ok,
         reply: data.reply || "",
-        error: res.ok ? "" : data.error || "Thumbnail job failed",
+        error: errMsg,
       });
+      broadcast({ type: "jobs_changed", jobId });
       if (resolvedSlug) {
         broadcast({ type: "thumbnails_changed", slug: resolvedSlug });
       }
     } catch (err: unknown) {
+      const errMsg = errorMessage(err);
+      await updateStudioJob(jobId, {
+        status: "failed",
+        stage: "Failed",
+        error: errMsg,
+        logMessage: errMsg,
+      }).catch(() => {});
       broadcast({
         type: "thumbnail_job_finished",
         jobId,
         slug: targetSlug,
         ok: false,
-        error: errorMessage(err),
+        error: errMsg,
       });
+      broadcast({ type: "jobs_changed", jobId });
     }
   })();
 

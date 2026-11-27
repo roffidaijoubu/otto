@@ -139,8 +139,9 @@ function attachIcon(kind: string): string {
     <form class="composer" @submit.prevent="submit">
       <Button
         type="button"
-        variant="secondary"
+        variant="ghost"
         size="icon-sm"
+        class="shrink-0 rounded-lg text-[var(--fg-muted)] hover:text-[var(--fg)]"
         :disabled="uploading || busy"
         title="Attach file to workspace/uploads & send to Otto"
         aria-label="Attach file"
@@ -157,14 +158,23 @@ function attachIcon(kind: string): string {
         @input="onInput"
         @keydown="onKeydown"
       ></textarea>
-      <Button v-if="busy" variant="destructive" size="sm" type="button" @click="emit('stop')">
+      <Button
+        v-if="busy"
+        variant="destructive"
+        size="sm"
+        type="button"
+        class="shrink-0 rounded-lg"
+        @click="emit('stop')"
+      >
         <SquareIcon data-icon="inline-start" />
         Stop
       </Button>
       <Button
+        v-else
         size="sm"
         type="submit"
-        :disabled="busy || uploading || (!modelValue.trim() && attachments.length === 0)"
+        class="shrink-0 rounded-lg"
+        :disabled="uploading || (!modelValue.trim() && attachments.length === 0)"
       >
         <SendHorizontalIcon data-icon="inline-start" />
         Send
@@ -178,10 +188,10 @@ function attachIcon(kind: string): string {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--surface);
-  padding: 12px 14px 14px;
+  padding: 10px 16px 14px;
 }
 .composer-wrap.is-dragover {
-  background: var(--highlight-yellow);
+  background: #fafafa;
 }
 .attach-chips {
   display: flex;
@@ -192,78 +202,67 @@ function attachIcon(kind: string): string {
 .attach-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 3px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--highlight-cyan);
-  font-size: 11px;
-  font-family: var(--font-mono);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-strong);
+  font-size: 11.5px;
+  font-family: var(--font-sans);
   color: var(--fg);
 }
 .attach-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
-  color: var(--fg);
+  color: var(--fg-muted);
   cursor: pointer;
-  padding: 0 2px;
-  font-size: 11px;
+  padding: 0;
+}
+.attach-rm:hover {
+  color: var(--fg);
 }
 .attach-err {
-  font-size: 11px;
-  font-family: var(--font-mono);
+  font-size: 12px;
+  font-family: var(--font-sans);
   color: var(--error);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .composer {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
-.attach-btn {
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--surface-alt);
-  color: var(--fg);
-  font-size: 15px;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  transition: background var(--duration-fast) var(--ease-out);
+.composer:focus-within {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 3px rgba(48, 48, 48, 0.08);
 }
-.attach-btn:hover:not(:disabled) {
-  background: var(--surface-inset-hover);
-}
-.attach-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.composer-wrap.is-dragover .composer {
+  border-color: var(--fg);
+  border-style: dashed;
 }
 .composer textarea {
   flex: 1;
-  min-height: 38px;
+  min-height: 32px;
   max-height: 150px;
   resize: none;
-  padding: 9px 15px;
+  padding: 6px 4px;
   border: none;
-  border-radius: var(--radius-input);
-  background: var(--surface-inset);
+  background: transparent;
   color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-family: var(--font-sans);
+  font-size: 13px;
   line-height: 1.45;
   outline: none;
-  transition: background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
 .composer textarea::placeholder {
   color: var(--fg-muted);
-}
-.composer textarea:hover {
-  background: var(--surface-inset-hover);
-}
-.composer textarea:focus {
-  background: var(--surface-inset);
-  box-shadow: var(--shadow-focus);
 }
 </style>

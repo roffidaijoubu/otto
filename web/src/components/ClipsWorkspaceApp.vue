@@ -353,6 +353,22 @@ async function cancelJob(id: string) {
   }
 }
 
+async function resumeJob(id: string) {
+  try {
+    const res = await fetch(`/api/clips/jobs/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) throw new Error(data.error || "Failed to resume job");
+    playSound("toggle");
+    toast.success("Resuming clip job from last Neon checkpoint!");
+    await loadEcosystem(true);
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Failed to resume job");
+  }
+}
+
 async function removeJob(id: string) {
   try {
     const res = await fetch(`/api/clips/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -1069,16 +1085,27 @@ onMounted(() => {
                 <Square class="size-2.5" aria-hidden="true" />
                 Stop
               </Button>
-              <Button
-                v-else
-                variant="ghost"
-                size="icon"
-                class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
-                title="Remove job from history"
-                @click="removeJob(job.id)"
-              >
-                <Trash2 class="size-3.5" aria-hidden="true" />
-              </Button>
+              <template v-else>
+                <Button
+                  v-if="job.status === 'failed' || job.status === 'cancelled'"
+                  size="sm"
+                  class="h-7 gap-1 rounded-lg bg-[#171717] px-2 text-[11px] text-white hover:bg-neutral-800"
+                  title="Resume from saved Neon plan & skip completed clips"
+                  @click="resumeJob(job.id)"
+                >
+                  <RefreshCw class="size-3" aria-hidden="true" />
+                  Resume
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
+                  title="Remove job from history"
+                  @click="removeJob(job.id)"
+                >
+                  <Trash2 class="size-3.5" aria-hidden="true" />
+                </Button>
+              </template>
             </div>
           </div>
 

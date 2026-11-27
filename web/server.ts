@@ -4,6 +4,7 @@ import { initWebPassword, isAuthenticated } from "./lib/auth.ts";
 import { LOGIN_HTML } from "./lib/login-html.ts";
 import { broadcast } from "./lib/sse.ts";
 import { rpc } from "./lib/rpc-bridge.ts";
+import { reconcileOrphanedStudioJobs } from "../agent/lib/studio-db.ts";
 import { reconcileOrphanedClipJobs } from "./lib/clip-worker.ts";
 import { initCloudMemoryMdSync } from "./lib/memory-sync.ts";
 import { WORKSPACE_ROOT, ensureWorkspaceScaffold } from "./lib/workspace.ts";
@@ -25,6 +26,7 @@ import { handleDbRoutes } from "./routes/db.ts";
 import { handleClipsRoutes } from "./routes/clips.ts";
 import { handleArchiveRoutes } from "./routes/archive.ts";
 import { handleCheckpointsRoutes } from "./routes/checkpoints.ts";
+import { handleJobsRoutes } from "./routes/jobs.ts";
 
 loadPrivateEnv();
 initWebPassword();
@@ -33,6 +35,9 @@ void rpc;
 void initCloudMemoryMdSync();
 void reconcileOrphanedClipJobs().catch((err) => {
   console.warn("[lma-web] reconcileOrphanedClipJobs warning:", err);
+});
+void reconcileOrphanedStudioJobs().catch((err) => {
+  console.warn("[lma-web] reconcileOrphanedStudioJobs warning:", err);
 });
 
 // Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
@@ -123,6 +128,9 @@ Bun.serve({
 
     const checkpointsRes = await handleCheckpointsRoutes(req, url);
     if (checkpointsRes) return checkpointsRes;
+
+    const jobsRes = await handleJobsRoutes(req, url);
+    if (jobsRes) return jobsRes;
 
     const spaRes = serveSpa(req, url);
     if (spaRes) return spaRes;
