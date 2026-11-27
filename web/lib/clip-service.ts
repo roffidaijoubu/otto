@@ -84,8 +84,14 @@ export function scanClipsDir(opts?: { trackedPaths?: Set<string> }): ClipFileEnt
   for (const vidEntry of fs.readdirSync(WORKSPACE_CLIPS_DIR, { withFileTypes: true })) {
     if (!vidEntry.isDirectory() || !/^[A-Za-z0-9_-]{6,32}$/.test(vidEntry.name)) continue;
     const vidDir = path.join(WORKSPACE_CLIPS_DIR, vidEntry.name);
-    for (const f of fs.readdirSync(vidDir)) {
+    const filesInDir = fs.readdirSync(vidDir);
+    const fileSet = new Set(filesInDir);
+    for (const f of filesInDir) {
       if (!f.endsWith(".mp4")) continue;
+      // Hide un-prepped raw twin when a normalized `_prepped.mp4` exists in the same VOD folder
+      if (!f.endsWith("_prepped.mp4") && fileSet.has(f.replace(/\.mp4$/, "_prepped.mp4"))) {
+        continue;
+      }
       const relPath = `clips/${vidEntry.name}/${f}`;
       if (opts?.trackedPaths?.has(relPath)) continue;
       const full = path.join(vidDir, f);

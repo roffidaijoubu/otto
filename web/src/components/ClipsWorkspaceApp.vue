@@ -158,8 +158,39 @@ const boxUploadingId = ref<string | null>(null);
 const copiedBoxId = ref<string | null>(null);
 const copiedNotes = ref(false);
 const expandedJobId = ref<string | null>(null);
+const selectedVideoId = ref<string | null>(null);
 const selectedClipId = ref<string | null>(null);
 const detailVideoRef = ref<HTMLVideoElement | null>(null);
+
+interface UnifiedClip {
+  id: string;
+  videoId: string;
+  title: string;
+  mp4Url: string;
+  mp4DownloadUrl: string;
+  srtUrl: string | null;
+  srtDownloadUrl: string | null;
+  filePath: string;
+  startSec: number | null;
+  endSec: number | null;
+  durationSec: number | null;
+  hookScore: number | null;
+  editorNotes: string;
+  youtubeUrl: string;
+  boxUrl: string;
+  sizeBytes: number | null;
+  updatedAt: string;
+  record: ClipRecord | null;
+}
+
+interface VodGroup {
+  videoId: string;
+  title: string;
+  vodUrl: string;
+  latestJob: ClipJob | null;
+  clips: UnifiedClip[];
+  updatedAt: string;
+}
 
 interface SrtCue {
   index: number;
@@ -196,39 +227,140 @@ const activeJobs = computed(() =>
   jobs.value.filter((j) => j.status === "running" || j.status === "queued")
 );
 
-const recentFinishedJobs = computed(() =>
-  jobs.value.filter((j) => j.status === "failed" || j.status === "cancelled" || j.status === "done")
-);
+const allUnifiedClips = computed<UnifiedClip[]>(() => {
+  const list: UnifiedClip[] = [];
+  for (const r of records.value) {
+    const mp4Url = clipMediaUrl(r.filePath);
+    const srtUrl = r.srtPath ? clipMediaUrl(r.srtPath) : null;
+    list.push({
+      id: r.id,
+      videoId: r.videoId || "unknown",
+      title: r.title,
+      mp4Url,
+      mp4DownloadUrl: `${mp4Url}&download=1`,
+      srtUrl,
+      srtDownloadUrl: srtUrl ? `${srtUrl}&download=1` : null,
+      filePath: r.filePath,
+      startSec: r.startSec,
+      endSec: r.endSec,
+      durationSec: r.durationSec,
+      hookScore: r.hookScore,
+      editorNotes: r.editorNotes,
+      youtubeUrl: r.youtubeUrl,
+      boxUrl: r.boxUrl,
+      sizeBytes: null,
+      updatedAt: r.updatedAt || r.createdAt,
+      record: r,
+    });
+  }
+  for (const f of untrackedFiles.value) {
+    list.push({
+      id: `file:${f.relPath}`,
+      videoId: f.videoId || "unknown",
+      title: f.name.replace(/_prepped$/, "").replace(/_/g, " "),
+      mp4Url: f.mp4Url,
+      mp4DownloadUrl: `${f.mp4Url}?download=1`,
+      srtUrl: f.srtUrl,
+      srtDownloadUrl: f.srtUrl ? `${f.srtUrl}?download=1` : null,
+      filePath: f.relPath,
+      startSec: null,
+      endSec: null,
+      durationSec: null,
+      hookScore: null,
+      editorNotes: "",
+      youtubeUrl: f.videoId ? `https://www.youtube.com/watch?v=${f.videoId}` : "",
+      boxUrl: "",
+      sizeBytes: f.sizeBytes,
+      updatedAt: f.updatedAt,
+      record: null,
+    });
+  }
+  return list;
+});
 
-const filteredRecords = computed(() => {
+const vodGroups = computed<VodGroup[]>(() => {
+  const map = new Map<string, VodGroup>();
+  const ensure = (videoId: string): VodGroup => {
+    const key = videoId || "unknown";
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        videoId: key,
+        title: key === "unknown" ? "Uncategorized Clips" : `VOD ${key}`,
+        vodUrl: key === "unknown" ? "" : `https://www.youtube.com/watch?v=${key}`,
+        latestJob: null,
+        clips: [],
+        updatedAt: "",
+      };
+      map.set(key, g);
+    }
+    return g;
+  };
+
+  for (const job of jobs.value) {
+    const g = ensure(job.videoId);
+    if (!g.latestJob || job.updatedAt > g.latestJob.updatedAt) {
+      g.latestJob = job;
+    }
+    if (job.title && (!g.title || g.title.startsWith("VOD "))) {
+      g.title = job.title;
+    }
+    if (job.vodUrl) g.vodUrl = job.vodUrl;
+    if (job.updatedAt > g.updatedAt) g.updatedAt = job.updatedAt;
+  }
+
+  for (const clip of allUnifiedClips.value) {
+    const g = ensure(clip.videoId);
+    g.clips.push(clip);
+    if (clip.updatedAt > g.updatedAt) g.updatedAt = clip.updatedAt;
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const aActive = a.latestJob && (a.latestJob.status === "running" || a.latestJob.status === "queued") ? 1 : 0;
+    const bActive = b.latestJob && (b.latestJob.status === "running" || b.latestJob.status === "queued") ? 1 : 0;
+    if (aActive !== bActive) return bActive - aActive;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+});
+
+const filteredVodGroups = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return records.value;
-  return records.value.filter(
+  if (!q) return vodGroups.value;
+  return vodGroups.value.filter(
+    (v) =>
+      v.title.toLowerCase().includes(q) ||
+      v.videoId.toLowerCase().includes(q) ||
+      v.clips.some((c) => c.title.toLowerCase().includes(q) || c.editorNotes.toLowerCase().includes(q))
+  );
+});
+
+const selectedVod = computed<VodGroup | null>(() => {
+  if (!selectedVideoId.value) return null;
+  return vodGroups.value.find((v) => v.videoId === selectedVideoId.value) ?? null;
+});
+
+const filteredVodClips = computed<UnifiedClip[]>(() => {
+  const clips = selectedVod.value?.clips ?? [];
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return clips;
+  return clips.filter(
     (c) =>
       c.title.toLowerCase().includes(q) ||
       c.editorNotes.toLowerCase().includes(q) ||
-      c.videoId.toLowerCase().includes(q)
+      c.filePath.toLowerCase().includes(q)
   );
 });
 
-const filteredUntracked = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return untrackedFiles.value;
-  return untrackedFiles.value.filter(
-    (f) => f.name.toLowerCase().includes(q) || f.videoId.toLowerCase().includes(q)
-  );
-});
+const totalClipsCount = computed(() => allUnifiedClips.value.length);
 
-const totalClipsCount = computed(() => records.value.length + untrackedFiles.value.length);
-
-const selectedClip = computed<ClipRecord | null>(() => {
+const selectedClip = computed<UnifiedClip | null>(() => {
   if (!selectedClipId.value) return null;
-  return records.value.find((r) => r.id === selectedClipId.value) ?? null;
+  return allUnifiedClips.value.find((c) => c.id === selectedClipId.value) ?? null;
 });
 
 const selectedClipIndex = computed(() => {
   if (!selectedClip.value) return -1;
-  return filteredRecords.value.findIndex((r) => r.id === selectedClip.value?.id);
+  return filteredVodClips.value.findIndex((c) => c.id === selectedClip.value?.id);
 });
 
 function parseSrtTimestampToSec(ts: string): number {
@@ -272,12 +404,12 @@ function onDetailTimeUpdate(e: Event) {
   if (el) detailCurrentTime.value = el.currentTime;
 }
 
-async function loadSrtForClip(clip: ClipRecord | null) {
+async function loadSrtForClip(clip: UnifiedClip | null) {
   srtCues.value = [];
-  if (!clip?.srtPath) return;
+  if (!clip?.srtUrl) return;
   srtLoading.value = true;
   try {
-    const res = await fetch(clipMediaUrl(clip.srtPath));
+    const res = await fetch(clip.srtUrl);
     if (!res.ok) return;
     const raw = await res.text();
     srtCues.value = parseSrtContent(raw);
@@ -288,7 +420,21 @@ async function loadSrtForClip(clip: ClipRecord | null) {
   }
 }
 
-function openClipDetail(clip: ClipRecord) {
+function openVod(videoId: string) {
+  selectedVideoId.value = videoId;
+  selectedClipId.value = null;
+  searchQuery.value = "";
+  playSound("toggle");
+}
+
+function closeVod() {
+  selectedVideoId.value = null;
+  selectedClipId.value = null;
+  searchQuery.value = "";
+}
+
+function openClipDetail(clip: UnifiedClip) {
+  selectedVideoId.value = clip.videoId;
   selectedClipId.value = clip.id;
   playSound("toggle");
 }
@@ -300,14 +446,14 @@ function closeClipDetail() {
 function goPrevClip() {
   const idx = selectedClipIndex.value;
   if (idx > 0) {
-    selectedClipId.value = filteredRecords.value[idx - 1].id;
+    selectedClipId.value = filteredVodClips.value[idx - 1].id;
   }
 }
 
 function goNextClip() {
   const idx = selectedClipIndex.value;
-  if (idx >= 0 && idx < filteredRecords.value.length - 1) {
-    selectedClipId.value = filteredRecords.value[idx + 1].id;
+  if (idx >= 0 && idx < filteredVodClips.value.length - 1) {
+    selectedClipId.value = filteredVodClips.value[idx + 1].id;
   }
 }
 
@@ -685,7 +831,7 @@ onMounted(() => {
           type="button"
           class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
           :class="activeTab === 'archive' ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-          @click="activeTab = 'archive'; selectedClipId = null; playSound('toggle'); loadArchiveStatus(true)"
+          @click="activeTab = 'archive'; selectedVideoId = null; selectedClipId = null; playSound('toggle'); loadArchiveStatus(true)"
         >
           <Database class="size-3.5" aria-hidden="true" />
           <span>Archive</span>
@@ -930,9 +1076,9 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- ==================== LIBRARY TAB (2-PAGE: LIST -> DETAIL) ==================== -->
+    <!-- ==================== LIBRARY TAB (3-PAGE: VODS -> VOD CLIPS -> CLIP VIEWER) ==================== -->
     <template v-else>
-    <!-- PAGE 2: CLIP DETAIL VIEW -->
+    <!-- PAGE 3: CLIP VIEWER -->
     <template v-if="selectedClip">
       <!-- Sticky Detail Header Bar -->
       <div class="flex shrink-0 items-center justify-between gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2.5">
@@ -945,8 +1091,9 @@ onMounted(() => {
             @click="closeClipDetail"
           >
             <ArrowLeft class="size-3.5" aria-hidden="true" />
-            <span>Back</span>
+            <span class="max-w-[160px] truncate">{{ selectedVod?.title || "Clips" }}</span>
           </Button>
+          <span class="text-neutral-300">/</span>
           <h3 class="truncate text-xs font-semibold text-[#171717]">
             {{ selectedClip.title }}
           </h3>
@@ -960,13 +1107,13 @@ onMounted(() => {
 
         <div class="flex shrink-0 items-center gap-1.5">
           <span
-            v-if="selectedClipIndex >= 0 && filteredRecords.length > 1"
+            v-if="selectedClipIndex >= 0 && filteredVodClips.length > 1"
             class="mr-1 font-mono text-[11px] text-neutral-500 tabular-nums"
           >
-            {{ selectedClipIndex + 1 }} / {{ filteredRecords.length }}
+            {{ selectedClipIndex + 1 }} / {{ filteredVodClips.length }}
           </span>
           <Button
-            v-if="filteredRecords.length > 1"
+            v-if="filteredVodClips.length > 1"
             variant="outline"
             size="icon"
             type="button"
@@ -978,12 +1125,12 @@ onMounted(() => {
             <ChevronLeft class="size-3.5" aria-hidden="true" />
           </Button>
           <Button
-            v-if="filteredRecords.length > 1"
+            v-if="filteredVodClips.length > 1"
             variant="outline"
             size="icon"
             type="button"
             class="size-7 rounded-lg bg-white"
-            :disabled="selectedClipIndex < 0 || selectedClipIndex >= filteredRecords.length - 1"
+            :disabled="selectedClipIndex < 0 || selectedClipIndex >= filteredVodClips.length - 1"
             title="Next clip"
             @click="goNextClip"
           >
@@ -1000,7 +1147,7 @@ onMounted(() => {
             <video
               :key="selectedClip.id"
               ref="detailVideoRef"
-              :src="clipMediaUrl(selectedClip.filePath)"
+              :src="selectedClip.mp4Url"
               controls
               preload="metadata"
               class="h-full w-full object-contain"
@@ -1033,6 +1180,9 @@ onMounted(() => {
               <span v-if="selectedClip.durationSec" class="text-neutral-500">
                 · {{ formatSec(selectedClip.durationSec) }} ({{ selectedClip.durationSec }}s)
               </span>
+              <span v-else-if="selectedClip.sizeBytes" class="text-neutral-500">
+                {{ formatBytes(selectedClip.sizeBytes) }}
+              </span>
               <span class="text-neutral-400">· CFR 30fps · -14 LUFS</span>
             </div>
 
@@ -1050,15 +1200,15 @@ onMounted(() => {
                 CC
               </Button>
               <a
-                :href="`${clipMediaUrl(selectedClip.filePath)}&download=1`"
+                :href="selectedClip.mp4DownloadUrl"
                 class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#171717] px-3 text-xs font-medium text-white hover:bg-neutral-800"
               >
                 <Download class="size-3.5" aria-hidden="true" />
                 Download MP4
               </a>
               <a
-                v-if="selectedClip.srtPath"
-                :href="`${clipMediaUrl(selectedClip.srtPath)}&download=1`"
+                v-if="selectedClip.srtDownloadUrl"
+                :href="selectedClip.srtDownloadUrl"
                 class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 text-xs font-medium text-neutral-800 hover:bg-neutral-50"
               >
                 <Download class="size-3.5" aria-hidden="true" />
@@ -1074,38 +1224,40 @@ onMounted(() => {
                 <ExternalLink class="size-3.5" aria-hidden="true" />
                 VOD Jump
               </a>
-              <Button
-                v-if="!selectedClip.boxUrl"
-                variant="outline"
-                size="sm"
-                class="h-8 gap-1.5 rounded-lg bg-white text-xs"
-                :disabled="boxUploadingId === selectedClip.id"
-                @click="sendClipToBox(selectedClip)"
-              >
-                <Loader2 v-if="boxUploadingId === selectedClip.id" class="size-3.5 animate-spin" aria-hidden="true" />
-                <Box v-else class="size-3.5" aria-hidden="true" />
-                Send to Box
-              </Button>
-              <Button
-                v-else
-                variant="outline"
-                size="sm"
-                class="h-8 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-xs text-emerald-800"
-                @click="copyBoxUrl(selectedClip.id, selectedClip.boxUrl)"
-              >
-                <Check v-if="copiedBoxId === selectedClip.id" class="size-3.5" aria-hidden="true" />
-                <Copy v-else class="size-3.5" aria-hidden="true" />
-                Copy Box Link
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-8 rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"
-                title="Delete clip"
-                @click="removeClipRecord(selectedClip.id)"
-              >
-                <Trash2 class="size-3.5" aria-hidden="true" />
-              </Button>
+              <template v-if="selectedClip.record">
+                <Button
+                  v-if="!selectedClip.boxUrl"
+                  variant="outline"
+                  size="sm"
+                  class="h-8 gap-1.5 rounded-lg bg-white text-xs"
+                  :disabled="boxUploadingId === selectedClip.id"
+                  @click="sendClipToBox(selectedClip.record)"
+                >
+                  <Loader2 v-if="boxUploadingId === selectedClip.id" class="size-3.5 animate-spin" aria-hidden="true" />
+                  <Box v-else class="size-3.5" aria-hidden="true" />
+                  Send to Box
+                </Button>
+                <Button
+                  v-else
+                  variant="outline"
+                  size="sm"
+                  class="h-8 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-xs text-emerald-800"
+                  @click="copyBoxUrl(selectedClip.id, selectedClip.boxUrl)"
+                >
+                  <Check v-if="copiedBoxId === selectedClip.id" class="size-3.5" aria-hidden="true" />
+                  <Copy v-else class="size-3.5" aria-hidden="true" />
+                  Copy Box Link
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-8 rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                  title="Delete clip"
+                  @click="removeClipRecord(selectedClip.id)"
+                >
+                  <Trash2 class="size-3.5" aria-hidden="true" />
+                </Button>
+              </template>
             </div>
           </div>
         </div>
@@ -1193,7 +1345,407 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- PAGE 1: CLIPS LIST VIEW -->
+    <!-- PAGE 2: ALL CLIPS FROM SELECTED VOD -->
+    <template v-else-if="selectedVod">
+      <!-- Sticky VOD Header Bar -->
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2.5">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            class="h-7 shrink-0 gap-1 rounded-lg bg-white px-2.5 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+            @click="closeVod"
+          >
+            <ArrowLeft class="size-3.5" aria-hidden="true" />
+            <span>All VODs</span>
+          </Button>
+          <h3 class="truncate text-xs font-semibold text-[#171717]">
+            {{ selectedVod.title }}
+          </h3>
+          <span
+            v-if="selectedVod.latestJob"
+            class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+            :class="
+              selectedVod.latestJob.status === 'running' || selectedVod.latestJob.status === 'queued'
+                ? 'bg-amber-100 text-amber-800'
+                : selectedVod.latestJob.status === 'done'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : selectedVod.latestJob.status === 'failed'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-neutral-100 text-neutral-600'
+            "
+          >
+            {{ selectedVod.latestJob.stage || selectedVod.latestJob.status }}
+          </span>
+        </div>
+
+        <div class="flex shrink-0 items-center gap-1.5">
+          <a
+            v-if="selectedVod.vodUrl"
+            :href="selectedVod.vodUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2.5 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            <ExternalLink class="size-3" aria-hidden="true" />
+            Open VOD
+          </a>
+          <template v-if="selectedVod.latestJob">
+            <Button
+              variant="outline"
+              size="xs"
+              class="h-7 gap-1 rounded-lg bg-white px-2 text-[11px] text-neutral-700"
+              @click="expandedJobId = expandedJobId === selectedVod.latestJob.id ? null : selectedVod.latestJob.id"
+            >
+              <Terminal class="size-3" aria-hidden="true" />
+              Log
+            </Button>
+            <Button
+              v-if="selectedVod.latestJob.status === 'running' || selectedVod.latestJob.status === 'queued'"
+              variant="outline"
+              size="xs"
+              class="h-7 gap-1 rounded-lg border-red-200 bg-white px-2 text-[11px] text-red-700 hover:bg-red-50"
+              @click="cancelJob(selectedVod.latestJob.id)"
+            >
+              <Square class="size-2.5" aria-hidden="true" />
+              Stop
+            </Button>
+            <Button
+              v-else-if="selectedVod.latestJob.status === 'failed' || selectedVod.latestJob.status === 'cancelled'"
+              size="xs"
+              class="h-7 gap-1 rounded-lg bg-[#171717] px-2 text-[11px] text-white hover:bg-neutral-800"
+              @click="resumeJob(selectedVod.latestJob.id)"
+            >
+              <RefreshCw class="size-3" aria-hidden="true" />
+              Resume
+            </Button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Optional Live Job Progress Strip (when job is running) -->
+      <div
+        v-if="selectedVod.latestJob && (selectedVod.latestJob.status === 'running' || selectedVod.latestJob.status === 'queued')"
+        class="shrink-0 border-b border-black/8 bg-amber-50/50 px-4 py-2"
+      >
+        <div class="flex items-center justify-between gap-2 text-[11px]">
+          <span class="flex items-center gap-1.5 font-medium text-amber-900">
+            <Loader2 class="size-3 animate-spin" aria-hidden="true" />
+            {{ selectedVod.latestJob.progressLog[selectedVod.latestJob.progressLog.length - 1]?.message || selectedVod.latestJob.stage }}
+          </span>
+          <span class="font-mono text-[10.5px] text-amber-800 tabular-nums">
+            {{ selectedVod.clips.length }} ready
+          </span>
+        </div>
+        <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-amber-200/70">
+          <div
+            class="h-full rounded-full bg-[#171717] transition-all duration-500"
+            :style="{ width: `${jobProgressPercent(selectedVod.latestJob)}%` }"
+          />
+        </div>
+      </div>
+
+      <!-- Expandable Worker Log for Selected VOD -->
+      <div
+        v-if="selectedVod.latestJob && expandedJobId === selectedVod.latestJob.id"
+        class="max-h-44 shrink-0 overflow-y-auto border-b border-black/8 bg-[#FAF9F6] px-4 py-2.5 font-mono text-[11px] text-neutral-600"
+      >
+        <div v-for="(entry, idx) in selectedVod.latestJob.progressLog" :key="idx" class="flex gap-2 py-0.5">
+          <span class="shrink-0 text-neutral-400">{{ entry.at.slice(11, 19) }}</span>
+          <span class="shrink-0 font-semibold text-neutral-800">[{{ entry.stage }}]</span>
+          <span class="break-words">{{ entry.message }}</span>
+        </div>
+      </div>
+
+      <!-- Clips Toolbar -->
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-black/8 bg-white px-4 py-2">
+        <div class="flex items-center gap-2">
+          <div class="inline-flex items-center rounded-lg border border-black/10 bg-[#FAF9F6] p-0.5">
+            <button
+              type="button"
+              class="flex size-7 items-center justify-center rounded-md transition-colors"
+              :class="viewMode === 'list' ? 'bg-[#171717] text-white' : 'text-neutral-500 hover:text-neutral-900'"
+              title="List view"
+              @click="viewMode = 'list'"
+            >
+              <List class="size-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="flex size-7 items-center justify-center rounded-md transition-colors"
+              :class="viewMode === 'grid' ? 'bg-[#171717] text-white' : 'text-neutral-500 hover:text-neutral-900'"
+              title="Grid view"
+              @click="viewMode = 'grid'"
+            >
+              <LayoutGrid class="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+          <span class="text-[11px] text-neutral-500">
+            {{ selectedVod.clips.length }} {{ selectedVod.clips.length === 1 ? "clip" : "clips" }} · CFR 30fps · -14 LUFS
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <Search
+              class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-400"
+              aria-hidden="true"
+            />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Filter clips..."
+              class="h-7 w-44 rounded-lg border border-black/10 bg-[#FAF9F6] pl-8 pr-6 text-xs text-[#171717] placeholder:text-neutral-400 focus:border-black/25 focus:bg-white focus:outline-none"
+            />
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+              @click="searchQuery = ''"
+            >
+              <X class="size-3" aria-hidden="true" />
+            </button>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-7 rounded-lg text-neutral-500 hover:text-neutral-900"
+            :disabled="loading"
+            title="Refresh"
+            @click="loadEcosystem(false)"
+          >
+            <RefreshCw class="size-3.5" :class="{ 'animate-spin': loading }" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      <!-- Clips List or Grid for Selected VOD -->
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div
+          v-if="filteredVodClips.length === 0"
+          class="flex flex-col items-center justify-center px-6 py-20 text-center"
+        >
+          <Film class="mb-3 size-8 text-neutral-300" aria-hidden="true" />
+          <p class="text-xs font-semibold text-neutral-700">
+            {{ selectedVod.latestJob && (selectedVod.latestJob.status === 'running' || selectedVod.latestJob.status === 'queued') ? "Extracting clips..." : "No clips yet for this VOD" }}
+          </p>
+          <p class="mt-1 max-w-sm text-[11px] text-neutral-500">
+            Clips appear here automatically as Otto cuts, normalizes to -14 LUFS, and generates ElevenLabs Scribe v3 subtitles.
+          </p>
+        </div>
+
+        <!-- LIST VIEW OF CLIPS -->
+        <div v-else-if="viewMode === 'list'" class="w-full">
+          <div
+            class="sticky top-0 z-10 grid grid-cols-[88px_1fr_72px_130px_190px] items-center gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2 text-[11px] font-semibold text-neutral-500"
+          >
+            <span>Clip</span>
+            <span>Title &amp; Editor Notes</span>
+            <span class="text-right">Hook</span>
+            <span>Details</span>
+            <span class="text-right">Actions</span>
+          </div>
+
+          <div
+            v-for="clip in filteredVodClips"
+            :key="clip.id"
+            class="grid grid-cols-[88px_1fr_72px_130px_190px] items-center gap-3 border-b border-black/6 px-4 py-2.5 transition-colors hover:bg-[#FAF9F6]/80"
+          >
+            <button
+              type="button"
+              class="group relative aspect-video w-[88px] overflow-hidden rounded-lg border border-black/10 bg-black text-left"
+              title="Open clip viewer"
+              @click="openClipDetail(clip)"
+            >
+              <video :src="clip.mp4Url" preload="metadata" muted class="h-full w-full object-cover" />
+              <span class="absolute inset-0 flex items-center justify-center bg-black/25 opacity-90 transition-opacity group-hover:bg-black/40">
+                <Play class="size-4 fill-white text-white" aria-hidden="true" />
+              </span>
+            </button>
+
+            <div class="min-w-0">
+              <button
+                type="button"
+                class="block max-w-full truncate text-left text-xs font-semibold text-[#171717] hover:underline"
+                @click="openClipDetail(clip)"
+              >
+                {{ clip.title }}
+              </button>
+              <p v-if="clip.editorNotes" class="mt-0.5 truncate text-[11px] text-neutral-500">
+                {{ clip.editorNotes }}
+              </p>
+              <p v-else class="mt-0.5 truncate font-mono text-[10px] text-neutral-400">
+                {{ clip.filePath }}
+              </p>
+            </div>
+
+            <div class="text-right">
+              <span
+                v-if="clip.hookScore !== null"
+                class="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-800"
+              >
+                {{ clip.hookScore }}/10
+              </span>
+              <span v-else class="font-mono text-[11px] text-neutral-400">—</span>
+            </div>
+
+            <div class="font-mono text-[11px] text-neutral-500">
+              <template v-if="clip.startSec !== null && clip.endSec !== null">
+                <div>{{ formatSec(clip.startSec) }}–{{ formatSec(clip.endSec) }}</div>
+                <div v-if="clip.durationSec" class="text-[10px] text-neutral-400">
+                  {{ formatSec(clip.durationSec) }} · -14 LUFS
+                </div>
+              </template>
+              <template v-else-if="clip.sizeBytes">
+                <div>{{ formatBytes(clip.sizeBytes) }}</div>
+                <div class="text-[10px] text-neutral-400">CFR 30fps</div>
+              </template>
+            </div>
+
+            <div class="flex items-center justify-end gap-1">
+              <a
+                :href="clip.mp4DownloadUrl"
+                class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
+                title="Download MP4"
+              >
+                <Download class="size-3" aria-hidden="true" />
+                MP4
+              </a>
+              <a
+                v-if="clip.srtDownloadUrl"
+                :href="clip.srtDownloadUrl"
+                class="inline-flex h-7 items-center rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+                title="Download SRT subtitles"
+              >
+                SRT
+              </a>
+              <template v-if="clip.record">
+                <Button
+                  v-if="!clip.boxUrl"
+                  variant="outline"
+                  size="icon"
+                  class="size-7 rounded-lg"
+                  title="Send to Box (Otto Handoffs/)"
+                  :disabled="boxUploadingId === clip.id"
+                  @click="sendClipToBox(clip.record)"
+                >
+                  <Loader2 v-if="boxUploadingId === clip.id" class="size-3.5 animate-spin" aria-hidden="true" />
+                  <Box v-else class="size-3.5" aria-hidden="true" />
+                </Button>
+                <Button
+                  v-else
+                  variant="outline"
+                  size="icon"
+                  class="size-7 rounded-lg border-emerald-200 bg-emerald-50 text-emerald-800"
+                  title="Copy Box handoff link"
+                  @click="copyBoxUrl(clip.id, clip.boxUrl)"
+                >
+                  <Check v-if="copiedBoxId === clip.id" class="size-3.5" aria-hidden="true" />
+                  <Copy v-else class="size-3.5" aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
+                  title="Remove clip"
+                  @click="removeClipRecord(clip.id)"
+                >
+                  <Trash2 class="size-3.5" aria-hidden="true" />
+                </Button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRID VIEW OF CLIPS -->
+        <div v-else class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          <article
+            v-for="clip in filteredVodClips"
+            :key="clip.id"
+            class="flex flex-col overflow-hidden rounded-xl border border-black/10 bg-white transition-colors hover:border-black/25"
+          >
+            <button
+              type="button"
+              class="group relative aspect-video w-full bg-black text-left"
+              @click="openClipDetail(clip)"
+            >
+              <video :src="clip.mp4Url" preload="metadata" muted class="h-full w-full object-cover" />
+              <span class="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors group-hover:bg-black/35">
+                <Play class="size-7 fill-white text-white" aria-hidden="true" />
+              </span>
+              <span
+                v-if="clip.durationSec"
+                class="absolute right-2 bottom-2 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white tabular-nums"
+              >
+                {{ formatSec(clip.durationSec) }}
+              </span>
+            </button>
+            <div class="flex flex-1 flex-col gap-2 p-3">
+              <div class="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  class="text-left text-xs font-semibold leading-snug text-[#171717] hover:underline"
+                  @click="openClipDetail(clip)"
+                >
+                  {{ clip.title }}
+                </button>
+                <span
+                  v-if="clip.hookScore !== null"
+                  class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-800"
+                >
+                  {{ clip.hookScore }}/10
+                </span>
+              </div>
+              <p v-if="clip.editorNotes" class="line-clamp-2 text-[11px] text-neutral-500">
+                {{ clip.editorNotes }}
+              </p>
+              <div class="mt-auto flex flex-wrap items-center gap-1.5 pt-1">
+                <a
+                  :href="clip.mp4DownloadUrl"
+                  class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
+                >
+                  <Download class="size-3" aria-hidden="true" />
+                  MP4
+                </a>
+                <a
+                  v-if="clip.srtDownloadUrl"
+                  :href="clip.srtDownloadUrl"
+                  class="inline-flex h-7 items-center rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+                >
+                  SRT
+                </a>
+                <template v-if="clip.record">
+                  <Button
+                    v-if="!clip.boxUrl"
+                    variant="outline"
+                    size="sm"
+                    class="h-7 gap-1 rounded-lg px-2 text-[11px]"
+                    :disabled="boxUploadingId === clip.id"
+                    @click="sendClipToBox(clip.record)"
+                  >
+                    <Box class="size-3" aria-hidden="true" />
+                    Box
+                  </Button>
+                  <Button
+                    v-else
+                    variant="outline"
+                    size="sm"
+                    class="h-7 gap-1 rounded-lg border-emerald-200 bg-emerald-50 px-2 text-[11px] text-emerald-800"
+                    @click="copyBoxUrl(clip.id, clip.boxUrl)"
+                  >
+                    <Copy class="size-3" aria-hidden="true" />
+                    Copy Link
+                  </Button>
+                </template>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </template>
+
+    <!-- PAGE 1: VODS LIST VIEW -->
     <template v-else>
     <!-- Row 1: Stacher-Style Full-Width Command / URL Omnibar -->
     <div class="shrink-0 border-b border-black/8 bg-[#FAF9F6] px-4 py-3">
@@ -1317,7 +1869,7 @@ onMounted(() => {
           {{ activeJobs.length }} running in background
         </span>
         <span v-else class="text-[11px] text-neutral-500">
-          {{ totalClipsCount }} {{ totalClipsCount === 1 ? "clip" : "clips" }} · CFR 30fps · -14 LUFS
+          {{ vodGroups.length }} {{ vodGroups.length === 1 ? "VOD" : "VODs" }} · {{ totalClipsCount }} {{ totalClipsCount === 1 ? "clip" : "clips" }}
         </span>
       </div>
 
@@ -1331,7 +1883,7 @@ onMounted(() => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Filter clips..."
+            placeholder="Filter VODs..."
             class="h-7 w-44 rounded-lg border border-black/10 bg-[#FAF9F6] pl-8 pr-6 text-xs text-[#171717] placeholder:text-neutral-400 focus:border-black/25 focus:bg-white focus:outline-none"
           />
           <button
@@ -1365,409 +1917,238 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Row 3: Full-Bleed Native List or Grid Surface -->
+    <!-- Row 3: Page 1 VODs Surface (List or Grid) -->
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <!-- LIST VIEW (Stacher-Style Native Table) -->
-      <div v-if="viewMode === 'list'" class="w-full">
-        <!-- Sticky Column Header -->
+      <!-- Empty State -->
+      <div
+        v-if="filteredVodGroups.length === 0"
+        class="flex flex-col items-center justify-center px-6 py-20 text-center"
+      >
+        <Film class="mb-3 size-8 text-neutral-300" aria-hidden="true" />
+        <p class="text-xs font-semibold text-neutral-700">No VODs clipped yet</p>
+        <p class="mt-1 max-w-sm text-[11px] text-neutral-500">
+          Paste any YouTube livestream VOD URL in the bar above and press Enter — Otto runs hype detection, full-arc cutting, -14 LUFS prep, and ElevenLabs Scribe v3 subtitles in the background.
+        </p>
+      </div>
+
+      <!-- VODs LIST VIEW -->
+      <div v-else-if="viewMode === 'list'" class="w-full">
         <div
-          class="sticky top-0 z-10 grid grid-cols-[88px_1fr_80px_130px_190px] items-center gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2 text-[11px] font-semibold text-neutral-500"
+          class="sticky top-0 z-10 grid grid-cols-[104px_1fr_100px_210px] items-center gap-3 border-b border-black/8 bg-[#FAF9F6] px-4 py-2 text-[11px] font-semibold text-neutral-500"
         >
-          <span>Thumbnail</span>
+          <span>VOD</span>
           <span>Title &amp; Status</span>
-          <span class="text-right">Hook</span>
-          <span>Details</span>
+          <span class="text-right">Clips</span>
           <span class="text-right">Actions</span>
         </div>
 
-        <!-- Active / Recent Background Jobs Rows -->
-        <template v-for="job in [...activeJobs, ...recentFinishedJobs]" :key="job.id">
+        <template v-for="vod in filteredVodGroups" :key="vod.videoId">
           <div
-            class="grid grid-cols-[88px_1fr_80px_130px_190px] items-center gap-3 border-b border-black/6 px-4 py-2.5 transition-colors hover:bg-[#FAF9F6]/80"
+            class="grid grid-cols-[104px_1fr_100px_210px] items-center gap-3 border-b border-black/6 px-4 py-3 transition-colors hover:bg-[#FAF9F6]/80"
           >
-            <!-- Thumb -->
-            <div class="relative aspect-video w-[88px] overflow-hidden rounded-lg border border-black/8 bg-neutral-100">
+            <!-- Clickable VOD Thumb -->
+            <button
+              type="button"
+              class="group relative aspect-video w-[104px] overflow-hidden rounded-lg border border-black/10 bg-neutral-100 text-left"
+              @click="openVod(vod.videoId)"
+            >
               <img
-                v-if="job.videoId"
-                :src="youtubeThumb(job.videoId)"
+                v-if="vod.videoId && vod.videoId !== 'unknown'"
+                :src="youtubeThumb(vod.videoId)"
                 alt=""
                 class="h-full w-full object-cover"
               />
               <div
-                v-if="job.status === 'running' || job.status === 'queued'"
-                class="absolute inset-0 flex items-center justify-center bg-black/35"
+                v-if="vod.latestJob && (vod.latestJob.status === 'running' || vod.latestJob.status === 'queued')"
+                class="absolute inset-0 flex items-center justify-center bg-black/40"
               >
                 <Loader2 class="size-4 animate-spin text-white" aria-hidden="true" />
               </div>
-            </div>
+            </button>
 
-            <!-- Title + Progress Bar + Stage -->
+            <!-- VOD Title + Status + Progress -->
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="truncate text-xs font-semibold text-[#171717]">
-                  {{ job.title || job.vodUrl }}
-                </span>
+                <button
+                  type="button"
+                  class="truncate text-left text-xs font-semibold text-[#171717] hover:underline"
+                  @click="openVod(vod.videoId)"
+                >
+                  {{ vod.title }}
+                </button>
                 <span
+                  v-if="vod.latestJob"
                   class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
                   :class="
-                    job.status === 'running' || job.status === 'queued'
+                    vod.latestJob.status === 'running' || vod.latestJob.status === 'queued'
                       ? 'bg-amber-100 text-amber-800'
-                      : job.status === 'done'
+                      : vod.latestJob.status === 'done'
                         ? 'bg-emerald-100 text-emerald-800'
-                        : job.status === 'failed'
+                        : vod.latestJob.status === 'failed'
                           ? 'bg-red-100 text-red-700'
                           : 'bg-neutral-100 text-neutral-600'
                   "
                 >
-                  {{ job.stage || job.status }}
+                  {{ vod.latestJob.stage || vod.latestJob.status }}
                 </span>
               </div>
 
-              <!-- Progress Bar (while running/queued) -->
               <div
-                v-if="job.status === 'running' || job.status === 'queued'"
+                v-if="vod.latestJob && (vod.latestJob.status === 'running' || vod.latestJob.status === 'queued')"
                 class="mt-1.5 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-neutral-200"
               >
                 <div
                   class="h-full rounded-full bg-[#171717] transition-all duration-500"
-                  :style="{ width: `${jobProgressPercent(job)}%` }"
+                  :style="{ width: `${jobProgressPercent(vod.latestJob)}%` }"
                 />
               </div>
 
-              <p v-if="job.error" class="mt-1 truncate text-[11px] text-red-600">
-                {{ job.error }}
+              <p v-if="vod.latestJob?.error" class="mt-1 truncate text-[11px] text-red-600">
+                {{ vod.latestJob.error }}
               </p>
               <p
-                v-else-if="job.progressLog.length > 0"
+                v-else-if="vod.latestJob && vod.latestJob.progressLog.length > 0"
                 class="mt-1 truncate text-[11px] text-neutral-500"
               >
-                {{ job.progressLog[job.progressLog.length - 1]?.message }}
+                {{ vod.latestJob.progressLog[vod.latestJob.progressLog.length - 1]?.message }}
+              </p>
+              <p v-else class="mt-1 font-mono text-[10.5px] text-neutral-400">
+                {{ vod.videoId }}
               </p>
             </div>
 
-            <!-- Hook col -->
-            <div class="text-right font-mono text-[11px] text-neutral-400">—</div>
-
-            <!-- Details col -->
-            <div class="font-mono text-[11px] text-neutral-500">
-              {{ job.maxClips <= 0 ? "Auto (all)" : `Max ${job.maxClips}` }}
+            <!-- Clip Count -->
+            <div class="text-right font-mono text-xs font-medium text-neutral-700 tabular-nums">
+              {{ vod.clips.length }} {{ vod.clips.length === 1 ? "clip" : "clips" }}
             </div>
 
-            <!-- Actions col -->
+            <!-- Actions -->
             <div class="flex items-center justify-end gap-1">
               <Button
-                variant="ghost"
-                size="sm"
-                class="h-7 gap-1 rounded-lg px-2 text-[11px] text-neutral-600"
-                @click="expandedJobId = expandedJobId === job.id ? null : job.id"
-              >
-                <Terminal class="size-3" aria-hidden="true" />
-                Log
-              </Button>
-              <Button
-                v-if="job.status === 'running' || job.status === 'queued'"
                 variant="outline"
                 size="sm"
-                class="h-7 gap-1 rounded-lg border-red-200 px-2 text-[11px] text-red-700 hover:bg-red-50"
-                @click="cancelJob(job.id)"
+                class="h-7 gap-1 rounded-lg bg-white px-2.5 text-[11px] font-medium text-[#171717]"
+                @click="openVod(vod.videoId)"
               >
-                <Square class="size-2.5" aria-hidden="true" />
-                Stop
+                <span>Open</span>
+                <ChevronRight class="size-3" aria-hidden="true" />
               </Button>
-              <template v-else>
-                <Button
-                  v-if="job.status === 'failed' || job.status === 'cancelled'"
-                  size="sm"
-                  class="h-7 gap-1 rounded-lg bg-[#171717] px-2 text-[11px] text-white hover:bg-neutral-800"
-                  title="Resume from saved Neon plan & skip completed clips"
-                  @click="resumeJob(job.id)"
-                >
-                  <RefreshCw class="size-3" aria-hidden="true" />
-                  Resume
-                </Button>
+              <template v-if="vod.latestJob">
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
-                  title="Remove job from history"
-                  @click="removeJob(job.id)"
+                  class="size-7 rounded-lg text-neutral-500 hover:text-neutral-900"
+                  title="Worker log"
+                  @click="expandedJobId = expandedJobId === vod.latestJob.id ? null : vod.latestJob.id"
                 >
-                  <Trash2 class="size-3.5" aria-hidden="true" />
+                  <Terminal class="size-3.5" aria-hidden="true" />
                 </Button>
+                <Button
+                  v-if="vod.latestJob.status === 'running' || vod.latestJob.status === 'queued'"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 gap-1 rounded-lg border-red-200 px-2 text-[11px] text-red-700 hover:bg-red-50"
+                  @click="cancelJob(vod.latestJob.id)"
+                >
+                  <Square class="size-2.5" aria-hidden="true" />
+                  Stop
+                </Button>
+                <template v-else>
+                  <Button
+                    v-if="vod.latestJob.status === 'failed' || vod.latestJob.status === 'cancelled'"
+                    size="sm"
+                    class="h-7 gap-1 rounded-lg bg-[#171717] px-2 text-[11px] text-white hover:bg-neutral-800"
+                    @click="resumeJob(vod.latestJob.id)"
+                  >
+                    <RefreshCw class="size-3" aria-hidden="true" />
+                    Resume
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
+                    title="Remove job from history"
+                    @click="removeJob(vod.latestJob.id)"
+                  >
+                    <Trash2 class="size-3.5" aria-hidden="true" />
+                  </Button>
+                </template>
               </template>
             </div>
           </div>
 
           <!-- Expandable Live Worker Log -->
           <div
-            v-if="expandedJobId === job.id"
+            v-if="vod.latestJob && expandedJobId === vod.latestJob.id"
             class="border-b border-black/8 bg-[#FAF9F6] px-6 py-2.5 font-mono text-[11px] text-neutral-600"
           >
-            <div v-for="(entry, idx) in job.progressLog" :key="idx" class="flex gap-2 py-0.5">
+            <div v-for="(entry, idx) in vod.latestJob.progressLog" :key="idx" class="flex gap-2 py-0.5">
               <span class="shrink-0 text-neutral-400">{{ entry.at.slice(11, 19) }}</span>
               <span class="shrink-0 font-semibold text-neutral-800">[{{ entry.stage }}]</span>
               <span class="break-words">{{ entry.message }}</span>
             </div>
           </div>
         </template>
-
-        <!-- Saved Clips Rows -->
-        <div
-          v-for="clip in filteredRecords"
-          :key="clip.id"
-          class="grid grid-cols-[88px_1fr_80px_130px_190px] items-center gap-3 border-b border-black/6 px-4 py-2.5 transition-colors hover:bg-[#FAF9F6]/80"
-        >
-          <!-- Clickable Video Thumb -->
-          <button
-            type="button"
-            class="group relative aspect-video w-[88px] overflow-hidden rounded-lg border border-black/10 bg-black text-left"
-            title="Open clip detail"
-            @click="openClipDetail(clip)"
-          >
-            <video
-              :src="clipMediaUrl(clip.filePath)"
-              preload="metadata"
-              muted
-              class="h-full w-full object-cover"
-            />
-            <span class="absolute inset-0 flex items-center justify-center bg-black/25 opacity-90 transition-opacity group-hover:bg-black/40">
-              <Play class="size-4 fill-white text-white" aria-hidden="true" />
-            </span>
-          </button>
-
-          <!-- Title + Editor Notes -->
-          <div class="min-w-0">
-            <button
-              type="button"
-              class="block max-w-full truncate text-left text-xs font-semibold text-[#171717] hover:underline"
-              @click="openClipDetail(clip)"
-            >
-              {{ clip.title }}
-            </button>
-            <p v-if="clip.editorNotes" class="mt-0.5 truncate text-[11px] text-neutral-500">
-              {{ clip.editorNotes }}
-            </p>
-          </div>
-
-          <!-- Hook Score -->
-          <div class="text-right">
-            <span
-              v-if="clip.hookScore !== null"
-              class="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-800"
-            >
-              {{ clip.hookScore }}/10
-            </span>
-            <span v-else class="font-mono text-[11px] text-neutral-400">—</span>
-          </div>
-
-          <!-- Timestamp & Duration -->
-          <div class="font-mono text-[11px] text-neutral-500">
-            <div v-if="clip.startSec !== null && clip.endSec !== null">
-              {{ formatSec(clip.startSec) }}–{{ formatSec(clip.endSec) }}
-            </div>
-            <div v-if="clip.durationSec" class="text-[10px] text-neutral-400">
-              {{ clip.durationSec }}s · -14 LUFS
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center justify-end gap-1">
-            <a
-              :href="`${clipMediaUrl(clip.filePath)}&download=1`"
-              class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
-              title="Download MP4"
-            >
-              <Download class="size-3" aria-hidden="true" />
-              MP4
-            </a>
-            <a
-              v-if="clip.srtPath"
-              :href="`${clipMediaUrl(clip.srtPath)}&download=1`"
-              class="inline-flex h-7 items-center rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
-              title="Download SRT subtitles"
-            >
-              SRT
-            </a>
-            <Button
-              v-if="!clip.boxUrl"
-              variant="outline"
-              size="icon"
-              class="size-7 rounded-lg"
-              title="Send to Box (Otto Handoffs/)"
-              :disabled="boxUploadingId === clip.id"
-              @click="sendClipToBox(clip)"
-            >
-              <Loader2 v-if="boxUploadingId === clip.id" class="size-3.5 animate-spin" aria-hidden="true" />
-              <Box v-else class="size-3.5" aria-hidden="true" />
-            </Button>
-            <Button
-              v-else
-              variant="outline"
-              size="icon"
-              class="size-7 rounded-lg border-emerald-200 bg-emerald-50 text-emerald-800"
-              title="Copy Box handoff link"
-              @click="copyBoxUrl(clip.id, clip.boxUrl)"
-            >
-              <Check v-if="copiedBoxId === clip.id" class="size-3.5" aria-hidden="true" />
-              <Copy v-else class="size-3.5" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="size-7 rounded-lg text-neutral-400 hover:text-red-600"
-              title="Remove clip"
-              @click="removeClipRecord(clip.id)"
-            >
-              <Trash2 class="size-3.5" aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-
-        <!-- Untracked Legacy Clips Rows -->
-        <div
-          v-for="file in filteredUntracked"
-          :key="file.relPath"
-          class="grid grid-cols-[88px_1fr_80px_130px_190px] items-center gap-3 border-b border-black/6 px-4 py-2.5 transition-colors hover:bg-[#FAF9F6]/80"
-        >
-          <div class="relative aspect-video w-[88px] overflow-hidden rounded-lg border border-black/10 bg-black">
-            <video :src="file.mp4Url" preload="metadata" muted class="h-full w-full object-cover" />
-          </div>
-          <div class="min-w-0">
-            <div class="truncate text-xs font-semibold text-[#171717]">{{ file.name }}</div>
-            <div class="mt-0.5 font-mono text-[10px] text-neutral-400">{{ file.relPath }}</div>
-          </div>
-          <div class="text-right font-mono text-[11px] text-neutral-400">—</div>
-          <div class="font-mono text-[11px] text-neutral-500">{{ formatBytes(file.sizeBytes) }}</div>
-          <div class="flex items-center justify-end gap-1">
-            <a
-              :href="`${file.mp4Url}?download=1`"
-              class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
-            >
-              <Download class="size-3" aria-hidden="true" />
-              MP4
-            </a>
-            <a
-              v-if="file.srtUrl"
-              :href="`${file.srtUrl}?download=1`"
-              class="inline-flex h-7 items-center rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              SRT
-            </a>
-          </div>
-        </div>
-
-        <!-- Clean Native Empty State -->
-        <div
-          v-if="jobs.length === 0 && filteredRecords.length === 0 && filteredUntracked.length === 0"
-          class="flex flex-col items-center justify-center px-6 py-20 text-center"
-        >
-          <Film class="mb-3 size-8 text-neutral-300" aria-hidden="true" />
-          <p class="text-xs font-semibold text-neutral-700">No clips or active jobs yet</p>
-          <p class="mt-1 max-w-sm text-[11px] text-neutral-500">
-            Paste any YouTube livestream VOD URL in the bar above and press Enter — Otto runs hype detection, cutting, -14 LUFS prep, and review in the background.
-          </p>
-        </div>
       </div>
 
-      <!-- GRID VIEW -->
-      <div v-else class="p-4">
-        <div
-          v-if="filteredRecords.length === 0 && filteredUntracked.length === 0"
-          class="flex flex-col items-center justify-center px-6 py-20 text-center"
+      <!-- VODs GRID VIEW -->
+      <div v-else class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+        <article
+          v-for="vod in filteredVodGroups"
+          :key="vod.videoId"
+          class="flex flex-col overflow-hidden rounded-xl border border-black/10 bg-white transition-colors hover:border-black/25"
         >
-          <Film class="mb-3 size-8 text-neutral-300" aria-hidden="true" />
-          <p class="text-xs font-semibold text-neutral-700">No clips to display</p>
-          <p class="mt-1 text-[11px] text-neutral-500">
-            Switch to List view to watch active background jobs or paste a VOD URL above.
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <article
-            v-for="clip in filteredRecords"
-            :key="clip.id"
-            class="flex flex-col overflow-hidden rounded-xl border border-black/10 bg-white transition-colors hover:border-black/25"
+          <button
+            type="button"
+            class="group relative aspect-video w-full bg-neutral-100 text-left"
+            @click="openVod(vod.videoId)"
           >
+            <img
+              v-if="vod.videoId && vod.videoId !== 'unknown'"
+              :src="youtubeThumb(vod.videoId)"
+              alt=""
+              class="h-full w-full object-cover"
+            />
+            <span class="absolute right-2 bottom-2 rounded bg-black/80 px-2 py-0.5 font-mono text-[10.5px] font-medium text-white tabular-nums">
+              {{ vod.clips.length }} {{ vod.clips.length === 1 ? "clip" : "clips" }}
+            </span>
+          </button>
+          <div class="flex flex-1 flex-col gap-2 p-3">
             <button
               type="button"
-              class="group relative aspect-video w-full bg-black text-left"
-              @click="openClipDetail(clip)"
+              class="line-clamp-2 text-left text-xs font-semibold leading-snug text-[#171717] hover:underline"
+              @click="openVod(vod.videoId)"
             >
-              <video
-                :src="clipMediaUrl(clip.filePath)"
-                preload="metadata"
-                muted
-                class="h-full w-full object-cover"
-              />
-              <span class="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors group-hover:bg-black/35">
-                <Play class="size-7 fill-white text-white" aria-hidden="true" />
-              </span>
-              <span
-                v-if="clip.durationSec"
-                class="absolute right-2 bottom-2 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white tabular-nums"
-              >
-                {{ formatSec(clip.durationSec) }}
-              </span>
+              {{ vod.title }}
             </button>
-            <div class="flex flex-1 flex-col gap-2 p-3">
-              <div class="flex items-start justify-between gap-2">
-                <button
-                  type="button"
-                  class="text-left text-xs font-semibold leading-snug text-[#171717] hover:underline"
-                  @click="openClipDetail(clip)"
-                >
-                  {{ clip.title }}
-                </button>
-                <span
-                  v-if="clip.hookScore !== null"
-                  class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-800"
-                >
-                  {{ clip.hookScore }}/10
-                </span>
-              </div>
-              <p v-if="clip.editorNotes" class="line-clamp-2 text-[11px] text-neutral-500">
-                {{ clip.editorNotes }}
-              </p>
-              <div class="mt-auto flex flex-wrap items-center gap-1.5 pt-1">
-                <a
-                  :href="`${clipMediaUrl(clip.filePath)}&download=1`"
-                  class="inline-flex h-7 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-800 hover:bg-neutral-50"
-                >
-                  <Download class="size-3" aria-hidden="true" />
-                  MP4
-                </a>
-                <a
-                  v-if="clip.srtPath"
-                  :href="`${clipMediaUrl(clip.srtPath)}&download=1`"
-                  class="inline-flex h-7 items-center rounded-lg border border-black/10 bg-white px-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  SRT
-                </a>
-                <Button
-                  v-if="!clip.boxUrl"
-                  variant="outline"
-                  size="sm"
-                  class="h-7 gap-1 rounded-lg px-2 text-[11px]"
-                  :disabled="boxUploadingId === clip.id"
-                  @click="sendClipToBox(clip)"
-                >
-                  <Box class="size-3" aria-hidden="true" />
-                  Box
-                </Button>
-                <Button
-                  v-else
-                  variant="outline"
-                  size="sm"
-                  class="h-7 gap-1 rounded-lg border-emerald-200 bg-emerald-50 px-2 text-[11px] text-emerald-800"
-                  @click="copyBoxUrl(clip.id, clip.boxUrl)"
-                >
-                  <Copy class="size-3" aria-hidden="true" />
-                  Copy Link
-                </Button>
-              </div>
+            <div class="mt-auto flex items-center justify-between gap-2 pt-1">
+              <span
+                v-if="vod.latestJob"
+                class="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                :class="
+                  vod.latestJob.status === 'running' || vod.latestJob.status === 'queued'
+                    ? 'bg-amber-100 text-amber-800'
+                    : vod.latestJob.status === 'done'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : vod.latestJob.status === 'failed'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-neutral-100 text-neutral-600'
+                "
+              >
+                {{ vod.latestJob.stage || vod.latestJob.status }}
+              </span>
+              <Button
+                variant="outline"
+                size="xs"
+                class="ml-auto h-7 gap-1 rounded-lg bg-white px-2.5 text-[11px]"
+                @click="openVod(vod.videoId)"
+              >
+                <span>Open Clips</span>
+                <ChevronRight class="size-3" aria-hidden="true" />
+              </Button>
             </div>
-          </article>
-        </div>
+          </div>
+        </article>
       </div>
     </div>
     </template>
