@@ -68,8 +68,9 @@ export function dispatchThumbnailBackgroundJob(opts: {
             `Instructions:`,
             `1. Call thumbnail_get(slug="${targetSlug}") first to inspect the current 1280x720 HTML and assets.`,
             `2. If needed, fetch assets from box_list_assets + box_download_file or pixabay_search_backgrounds + pixabay_download_image and inspect with read.`,
-            `3. Update the 1280x720 HTML/CSS (strictly NO AI-generated images) and call thumbnail_save with the EXACT same slug "${targetSlug}" and any newly added workspace asset paths in assets.`,
-            `4. Reply concisely (1-2 plain sentences) summarizing what you refined.`,
+            `3. Update the 1280x720 HTML/CSS (strictly NO AI-generated images; keep headline text strictly in its own clear column so it NEVER overlaps the character's face/eyes) and call thumbnail_save with the EXACT same slug "${targetSlug}" and any newly added workspace asset paths in assets.`,
+            `4. MANDATORY VISUAL SELF-CHECK: Call thumbnail_render(slug="${targetSlug}", format="jpg") and then call read on the rendered JPG filePath to visually inspect the actual rendered thumbnail with your own eyes. Check for: (a) ANY text/badge overlapping the character's face, eyes, or head, (b) awkward cropping or off-balance framing, (c) weak contrast or unreadable text at 120px mobile size, (d) anything inside the bottom-right 220x90px YouTube duration safe zone. If ANY defect is visible, fix the HTML/CSS, call thumbnail_save, and re-verify with thumbnail_render + read (up to 2 fix passes) until clean.`,
+            `5. Reply concisely (1-2 plain sentences) summarizing what you refined.`,
           ]
             .filter(Boolean)
             .join("\n")
@@ -85,9 +86,10 @@ export function dispatchThumbnailBackgroundJob(opts: {
             `2. Discover real creator cutouts & logos in Box using box_list_assets and download with box_download_file into "assets/..." (unless the creator already provided replacement images above).`,
             `3. Background can be either a crisp code-crafted CSS/SVG backdrop (studio gradients, radial spotlights, split color blocks, subtle geometric/halftone patterns) OR a real Pixabay photo via pixabay_search_backgrounds (isAiGenerated=false) + pixabay_download_image if a photographic scene adds context.`,
             `4. Inspect downloaded/uploaded images with read before styling.`,
-            `5. Compose a punchy 1280x720 HTML/CSS thumbnail (2-4 word bold hook, keep bottom-right YouTube duration corner clear) referencing assets via <img src="/assets/<basename>" />.`,
+            `5. Compose a punchy 1280x720 HTML/CSS thumbnail (2-4 word bold hook, keep headline strictly in its own side column so it NEVER overlaps the character's face/eyes, and keep the bottom-right 220x90px YouTube duration corner clear) referencing assets via <img src="/assets/<basename>" />.`,
             `6. Call thumbnail_save with a clean lowercase kebab-case slug, title, description, html, and assets.`,
-            `7. Reply concisely (1-2 plain sentences) summarizing the thumbnail and its slug.`,
+            `7. MANDATORY VISUAL SELF-CHECK: Immediately call thumbnail_render(slug="<your-slug>", format="jpg") and then call read on the rendered JPG filePath to visually inspect your actual rendered thumbnail! Verify with your own eyes that: (a) NO text, badge, or logo overlaps the character's face/eyes, (b) the character is cleanly framed and not awkwardly clipped, (c) text contrast is crisp at 120px mobile size, and (d) the bottom-right 220x90px duration safe zone is clear. If you spot ANY overlap or framing flaw, fix the HTML/CSS, call thumbnail_save, and re-verify with thumbnail_render + read (up to 2 fix passes) before finishing.`,
+            `8. Reply concisely (1-2 plain sentences) summarizing the thumbnail and its slug.`,
           ]
             .filter(Boolean)
             .join("\n");

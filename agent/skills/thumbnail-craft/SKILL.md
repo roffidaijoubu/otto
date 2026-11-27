@@ -48,10 +48,14 @@ Pass every downloaded workspace asset path in `assets: [...]` to `thumbnail_save
 
 ---
 
-## 4. Mandatory 120px Mobile Squint-Test Self-Check Loop
+## 4. Mandatory Visual Render & Inspection Loop (`thumbnail_render` → `read`)
 
-Before finishing any thumbnail creation or refinement, run a strict **Squint-Test Self-Check** inside your agent loop:
-1. **120px Legibility:** Would the 2–4 word hook still be instantly readable when shrunk to `120×68px` on a mobile YouTube feed? If font size is `< 84px`, word count > 4, or letter-spacing/stroke is thin, tighten the copy and increase weight/size immediately.
-2. **Contrast & Separation:** Does the text sit over a dark scrim/highlight block with > 10:1 contrast, and does the character cutout pop from the background via rim-light / drop-shadow + background blur/dimming?
-3. **YouTube Duration Safe Zone:** Confirm NO headline text, badge, or logo enters the bottom-right `220×90px` corner (`right <= 220px && bottom <= 90px`).
-4. **Auto-Fix Before Returning:** If any check fails (or if an exported PNG exists and `critique_thumbnail` flags readability issues), immediately fix the HTML/CSS and call `thumbnail_save` again on the same slug before replying to the creator.
+**NEVER ship a thumbnail blind from code alone.** Before finishing any thumbnail creation or refinement, you MUST visually inspect the real rendered `1280×720` image:
+1. **Render to JPG:** Call `thumbnail_render(slug="<slug>", format="jpg")` to render the exact `1280×720` image via headless Chrome.
+2. **Inspect Visually with `read`:** Call `read` on the returned `filePath` so you literally **see** the rendered thumbnail.
+3. **Check 4 Hard Gates:**
+   - **Zero Face/Subject Overlap:** Text, badges, and logos MUST NEVER cover the character's face, eyes, or mouth. Keep the headline strictly inside its own side column (e.g., left `max-width: 560px–600px`) and anchor the character cleanly on the opposite side (e.g., right `44%–54%` of frame) with clear visual separation.
+   - **Clean Framing:** No awkward head/chin clipping, no floating torso gap at the bottom edge.
+   - **120px Legibility & Contrast:** Would the 2–4 word hook still read instantly at `120×68px` on a phone? (> 10:1 contrast over a dark scrim/highlight block, `>= 84px` bold display font).
+   - **YouTube Duration Safe Zone:** Confirm NO headline text, badge, or logo enters the bottom-right `220×90px` corner (`right <= 220px && bottom <= 90px`).
+4. **Auto-Fix Before Returning:** If ANY gate fails when you look at the rendered JPG, immediately fix the HTML/CSS, call `thumbnail_save` on the same slug, and run `thumbnail_render` + `read` again (up to 2 fix passes) until visually clean.

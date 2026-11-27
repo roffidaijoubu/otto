@@ -112,7 +112,7 @@ export async function runThumbnailWorker(slug: string, prompt: string): Promise<
         OMP_BIN,
         "--no-session",
         "--tools",
-        "thumbnail_save,thumbnail_list,thumbnail_get,thumbnail_delete,box_list_assets,box_download_file,pixabay_search_backgrounds,pixabay_download_image,critique_thumbnail,read",
+        "thumbnail_save,thumbnail_list,thumbnail_get,thumbnail_delete,thumbnail_render,box_list_assets,box_download_file,pixabay_search_backgrounds,pixabay_download_image,critique_thumbnail,read",
         "-p",
         prompt,
       ],
