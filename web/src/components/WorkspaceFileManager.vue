@@ -10,7 +10,10 @@ import {
   CheckIcon,
   ChevronRightIcon,
   ClipboardListIcon,
+  CloudUploadIcon,
+  CopyIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   EyeIcon,
   FileCodeIcon,
   FilePlus2Icon,
@@ -834,6 +837,94 @@ function triggerDownload(url: string) {
   a.remove();
 }
 
+// ---- Box Handoff Export ----
+interface BoxExportResult {
+  kind: "file" | "folder";
+  id: string;
+  name: string;
+  url: string;
+  folderUrl: string;
+  uploadedCount: number;
+  skipped: Array<{ name: string; reason: string }>;
+}
+
+const boxConnected = ref(false);
+const boxModalOpen = ref(false);
+const boxUploading = ref(false);
+const boxTargetName = ref("");
+const boxTargetIsDir = ref(false);
+const boxResult = ref<BoxExportResult | null>(null);
+const boxError = ref("");
+const boxCopied = ref(false);
+
+async function checkBoxStatus() {
+  try {
+    const res = await fetch("/api/workspace/box-status");
+    if (res.ok) {
+      const data = (await res.json()) as { connected?: boolean };
+      boxConnected.value = Boolean(data.connected);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+void checkBoxStatus();
+
+async function sendToBox(relPath: string, displayName: string, isDir: boolean) {
+  boxTargetName.value = displayName || (relPath ? relPath.split("/").pop() || relPath : "workspace");
+  boxTargetIsDir.value = isDir;
+  boxResult.value = null;
+  boxError.value = "";
+  boxCopied.value = false;
+  boxModalOpen.value = true;
+  boxUploading.value = true;
+  try {
+    const res = await fetch("/api/workspace/export-box", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: relPath }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Partial<BoxExportResult> & {
+      ok?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !data.ok || !data.url) {
+      boxError.value = data.error || "Box upload failed";
+    } else {
+      boxResult.value = {
+        kind: data.kind === "folder" ? "folder" : "file",
+        id: data.id || "",
+        name: data.name || boxTargetName.value,
+        url: data.url,
+        folderUrl: data.folderUrl || data.url,
+        uploadedCount: data.uploadedCount ?? 1,
+        skipped: Array.isArray(data.skipped) ? data.skipped : [],
+      };
+      toast.success(`Uploaded ${boxResult.value.name} to Box`);
+    }
+  } catch (err) {
+    boxError.value = err instanceof Error ? err.message : "Box upload failed";
+  } finally {
+    boxUploading.value = false;
+  }
+}
+
+async function copyBoxLink() {
+  const url = boxResult.value?.url;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    boxCopied.value = true;
+    toast.success("Box link copied");
+    setTimeout(() => {
+      boxCopied.value = false;
+    }, 2000);
+  } catch {
+    toast.error("Could not copy link");
+  }
+}
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 function onSearchInput() {
   clearTimeout(searchTimer ?? undefined);
@@ -1183,6 +1274,10 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                     <ArchiveIcon />
                     Download ZIP
                   </ContextMenuItem>
+                  <ContextMenuItem v-if="boxConnected" @select="sendToBox(d, d || 'workspace', true)">
+                    <CloudUploadIcon />
+                    Send to Box
+                  </ContextMenuItem>
                 </ContextMenuGroup>
               </ContextMenuContent>
             </ContextMenu>
@@ -1197,6 +1292,17 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
             <DownloadIcon data-icon="inline-start" />
             Download ZIP
           </a>
+          <Button
+            v-if="boxConnected"
+            type="button"
+            variant="secondary"
+            size="xs"
+            class="w-full rounded-lg justify-center"
+            @click="sendToBox(currentPath, currentPath ? currentPath.split('/').pop() || currentPath : 'workspace', true)"
+          >
+            <CloudUploadIcon data-icon="inline-start" />
+            Send Folder to Box
+          </Button>
         </div>
       </aside>
 
@@ -1446,6 +1552,13 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                   Download
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
+                                  v-if="boxConnected"
+                                  @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                                >
+                                  <CloudUploadIcon />
+                                  Send to Box
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
                                   v-if="entry.matchedSrtRelPath"
                                   @select="triggerDownload(fileUrl(entry.matchedSrtRelPath, true))"
                                 >
@@ -1505,6 +1618,13 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                         >
                           <DownloadIcon />
                           Download
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          v-if="boxConnected"
+                          @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                        >
+                          <CloudUploadIcon />
+                          Send to Box
                         </ContextMenuItem>
                         <ContextMenuItem
                           v-if="entry.matchedSrtRelPath"
@@ -1640,6 +1760,13 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                   <DownloadIcon />
                                   Download
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  v-if="boxConnected"
+                                  @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                                >
+                                  <CloudUploadIcon />
+                                  Send to Box
+                                </DropdownMenuItem>
                                 <DropdownMenuItem @select="openMoveDialog(entry)">
                                   <FolderInputIcon />
                                   Rename / Move...
@@ -1693,6 +1820,13 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                         >
                           <DownloadIcon />
                           Download
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          v-if="boxConnected"
+                          @select="sendToBox(entry.relPath, entry.name, entry.isDir)"
+                        >
+                          <CloudUploadIcon />
+                          Send to Box
                         </ContextMenuItem>
                         <ContextMenuItem @select="openMoveDialog(entry)">
                           <FolderInputIcon />
@@ -1801,6 +1935,20 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
             </div>
 
             <div class="flex items-center gap-1">
+              <Tooltip v-if="boxConnected">
+                <TooltipTrigger as-child>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-xs"
+                    aria-label="Send to Box"
+                    @click="sendToBox(selectedFile.relPath, selectedFile.name, false)"
+                  >
+                    <CloudUploadIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Send to Box</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger as-child>
                   <a
@@ -2056,6 +2204,67 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- DIALOG: SEND TO BOX HANDOFF -->
+    <Dialog :open="boxModalOpen" @update:open="(open) => { if (!boxUploading) boxModalOpen = open; }">
+      <DialogContent class="sm:max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle class="font-mono text-sm">
+            {{ boxUploading ? "Uploading to Box..." : boxError ? "Box Upload Failed" : "Ready in Box" }}
+          </DialogTitle>
+          <DialogDescription class="font-mono text-xs truncate">
+            {{ boxTargetIsDir ? "Folder" : "File" }}: {{ boxTargetName }} → Otto Handoffs
+          </DialogDescription>
+        </DialogHeader>
+
+        <div v-if="boxUploading" class="flex items-center gap-3 rounded-xl border border-[#ededed] bg-[#fafafa] p-4 font-mono text-xs text-[#303030]">
+          <Spinner />
+          <span>Uploading {{ boxTargetIsDir ? "folder contents" : "file" }} to Box...</span>
+        </div>
+
+        <Alert v-else-if="boxError" variant="destructive">
+          <AlertDescription class="font-mono text-xs">{{ boxError }}</AlertDescription>
+        </Alert>
+
+        <div v-else-if="boxResult" class="flex flex-col gap-3">
+          <div class="font-mono text-xs text-[#166534] rounded-xl bg-[#e6f7ee] px-3 py-2">
+            Uploaded {{ boxResult.uploadedCount }} file{{ boxResult.uploadedCount === 1 ? "" : "s" }} to Box.
+            <span v-if="boxResult.skipped.length > 0" class="block text-[#854d0e] mt-1">
+              Skipped {{ boxResult.skipped.length }} item(s) (over 48 MB or unsupported).
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <Input :model-value="boxResult.url" readonly class="font-mono text-xs flex-1" />
+            <Button type="button" size="sm" @click="copyBoxLink">
+              <CheckIcon v-if="boxCopied" data-icon="inline-start" />
+              <CopyIcon v-else data-icon="inline-start" />
+              {{ boxCopied ? "Copied" : "Copy" }}
+            </Button>
+          </div>
+
+          <p class="font-mono text-[10.5px] leading-relaxed text-[#737373]">
+            Tip: share your <strong>Otto Handoffs</strong> folder once in Box with your human editor or artist so every link opens directly.
+          </p>
+        </div>
+
+        <DialogFooter class="mt-2">
+          <a
+            v-if="boxResult && !boxUploading"
+            :href="boxResult.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            :class="cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'no-underline')"
+          >
+            <ExternalLinkIcon data-icon="inline-start" />
+            Open in Box
+          </a>
+          <Button type="button" variant="secondary" size="sm" :disabled="boxUploading" @click="boxModalOpen = false">
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

@@ -43,6 +43,10 @@ import {
   syncYouTubeMetrics,
 } from "../agent/lib/youtube-metrics.ts";
 import {
+  exportWorkspaceEntryToBox,
+  resolveBoxGatewayUrl,
+} from "../agent/lib/box.ts";
+import {
   classifyFile,
   createWorkspaceZip,
   ensureWorkspaceScaffold,
@@ -589,6 +593,7 @@ function friendlyToolLabel(toolName: string): string {
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
   if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
   if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail...";
+  if (/^box_/i.test(toolName)) return "Syncing files with Box...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";
   if (/edit|write/i.test(toolName)) return "Updating workspace files...";
   if (/read/i.test(toolName)) return "Reviewing dossier & files...";
@@ -2206,6 +2211,28 @@ Bun.serve({
       } catch (err: unknown) {
         const msg = errorMessage(err);
         return Response.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/workspace/box-status") {
+      const gw = await resolveBoxGatewayUrl();
+      return Response.json({ connected: Boolean(gw) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspace/export-box") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as { path?: string };
+        const rawPath = typeof body.path === "string" ? body.path : "";
+        const { absPath, relPath } = resolveSafeWorkspacePath(rawPath, { allowMissing: false });
+        if (!fs.existsSync(absPath)) {
+          return Response.json({ ok: false, error: "File or folder not found" }, { status: 404 });
+        }
+        const result = await exportWorkspaceEntryToBox(absPath, relPath);
+        return Response.json({ ok: true, ...result });
+      } catch (err: unknown) {
+        const msg = errorMessage(err);
+        const status = /not connected/i.test(msg) ? 503 : /not found/i.test(msg) ? 404 : 400;
+        return Response.json({ ok: false, error: msg }, { status });
       }
     }
 

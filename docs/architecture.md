@@ -13,8 +13,8 @@ Otto OS takes the opposite approach: treat **`omp`** as the battle-tested agent 
 ```mermaid
 flowchart LR
     B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>7 Wired Apps · Desktop Widgets · Spotlight · ThoughtTrace"] <-->|"HTTPS · SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
-    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 11 Extensions · 8 Skills)"]
-    O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(7 Auto-Discovering Connectors)"]
+    S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 12 Extensions · 8 Skills)"]
+    O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(8 Auto-Discovering Connectors)"]
 ```
 
 ### What `omp` RPC Gives Us Out of the Box
@@ -26,7 +26,7 @@ flowchart LR
 | **First-class streaming events** | `thinking_delta`, `text_delta`, `tool_execution_start`, and `tool_execution_end` stream straight to the Vue 3 `<ThoughtTrace>` and `TodoChecklistCard` components over SSE. |
 | **Native session management** | `get_messages`, `new_session`, `switch_session`, and `abort` power multi-chat history and instant stop controls without a custom chat database. |
 | **Dual-layer persistent memory** | Structured `MEMORY.md` talent dossier (handles, timezone, team credits, OPSEC rules, schedule notes) paired with built-in **Mnemopi** SQLite memory (`noEmbeddings: true` for fast CPU-only FTS recall). |
-| **Modular extensions &amp; skills** | **11 extensions** registering **38 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **8 Markdown skills** (7 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
+| **Modular extensions &amp; skills** | **12 extensions** registering **41 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **8 Markdown skills** (7 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
 | **Runtime-enforced guardrails** | `generate_image: deny` and `generate_image.enabled: false` enforce the **strictly no AI-generated art/video** rule at the tool-permission layer, not just in prose. |
 
 ---
@@ -111,18 +111,18 @@ Rather than feeding 4-hour VOD transcripts into an expensive LLM and hoping it g
 
 ---
 
-## 5. Zero Outbound API Keys (7 Auto-Discovering Sprites Connectors)
+## 5. Zero Outbound API Keys (8 Auto-Discovering Sprites Connectors)
 
 Every key-bearing external API routes through `https://api.sprites.dev/v1/gateway/...`:
 
-- **Built-in BYOK Connectors:** Google Gemini (`models.yml`), Exa (`exa-gateway.ts`), Firecrawl (`firecrawl-gateway.ts`).
+- **Built-in Connectors:** Google Gemini (`models.yml`), **Box** (OAuth human-team clip &amp; brief handoff via `box-gateway.ts` &amp; `agent/lib/box.ts`), Exa (`exa-gateway.ts`), Firecrawl (`firecrawl-gateway.ts`).
 - **Custom API Connectors (provisioned via `sprite api /oauth/connections/custom_api`):**
   - **Composio v3 (`https://backend.composio.dev`, `x-api-key`)** — handles YouTube channel stats, video metadata, captions, human-approved packaging updates, and 2-way Google Calendar sync (`composio-youtube.ts`).
   - **Buffer (`https://api.buffer.com`, `Bearer`)** — single GraphQL API covering **X (Twitter), TikTok, and Instagram**, defaulting to `saveToDraft: true` so nothing publishes publicly without human sign-off (`buffer-gateway.ts`).
   - **Upstash QStash (`Bearer`)** — agent self-scheduled one-shot, lifecycle, and `CRON_TZ` recurring wake-ups (`qstash-scheduler.ts`).
   - **Fly Machines (`https://api.machines.dev`)** — zero-Docker provisioning of a dedicated `256 MB` auto-stop Machine + `1 GB` Volume for public, transparent OBS Browser Sources and SSE Remote Control Decks (`agent/lib/obs-overlays.ts`, `obs-overlays.ts`).
 
-Across the **11 extensions** (**38 registered tools** + `--new`), all **7 connector extensions** (`buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **4 local-only extensions** (`studio-apps`, `studio-db`, `vod-clipper`, `new-session`) never require gateway secrets.
+Across the **12 extensions** (**41 registered tools** + `--new`), all **8 connector extensions** (`box-gateway`, `buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **4 local-only extensions** (`studio-apps`, `studio-db`, `vod-clipper`, `new-session`) never require gateway secrets.
 
 ---
 

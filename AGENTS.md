@@ -36,8 +36,8 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # 11 extensions: connectors + vod-clipper + media-reviewer + studio-db + new-session + studio-apps + obs-overlays (38 tools)
-│   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), studio-apps.ts, obs-overlays.ts
+│   ├── extensions/             # 12 extensions: connectors (incl. Box) + vod-clipper + media-reviewer + studio-db + new-session + studio-apps + obs-overlays (41 tools)
+│   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), box.ts, youtube-metrics.ts, studio-apps.ts, obs-overlays.ts
 │   └── skills/                 # 8 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft + opt-in streaming-coaching)
 ├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (7 apps + Desktop Widgets + Spotlight)
 └── scripts/
@@ -62,7 +62,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~10 seconds — 24 deterministic checks (25 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 11 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, and authenticated Mission Control APIs:
+Runs in ~10 seconds — 24 deterministic checks (25 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 12 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip
