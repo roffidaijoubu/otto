@@ -1,6 +1,6 @@
 # Architecture Deep Dive — How Otto OS (`lma`) Combines `omp` RPC, Multi-Window Studio OS &amp; Native Fly.io Sprites Primitives
 
-This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 8 live-synced desktop apps over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
+This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 7 live-synced desktop apps and right-side Desktop Widgets over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
 
 ---
 
@@ -12,7 +12,7 @@ Otto OS takes the opposite approach: treat **`omp`** as the battle-tested agent 
 
 ```mermaid
 flowchart LR
-    B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>8 Wired Apps · Spotlight · ThoughtTrace"] <-->|"HTTPS · SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
+    B["Otto Studio OS (Vue 3 + Vite + shadcn-vue + Reka UI + Tailwind v4)<br/>7 Wired Apps · Desktop Widgets · Spotlight · ThoughtTrace"] <-->|"HTTPS · SSE"| S["Bun Supervisor (web/server.ts)<br/>Port 8080 · Passcode Gate · Tasks Hold"]
     S <-->|"Persistent JSONL stdin/stdout"| O["omp --mode rpc --no-ui<br/>(google/gemini-4-hydrogen · Mnemopi · 11 Extensions · 8 Skills)"]
     O -->|"Zero local keys"| G["Fly.io Sprites Gateway<br/>(7 Auto-Discovering Connectors)"]
 ```
@@ -39,20 +39,20 @@ Instead of a single-column chat box with a cramped slide-over drawer, `web/` ren
 flowchart TB
     Shell["DesktopShell.vue + useWindowManager.ts<br/>Pointer-Capture Drag/Resize · Edge-Snap Ghosts · localStorage Geometry"]
     Top["TopMenuBar.vue + SpotlightCommand.vue (Cmd+K)<br/>App Launcher · Layout Presets"]
-    Dock["DesktopDock.vue (Alt+1..8) + DesktopSurface.vue<br/>Pure-SVG 3D Cursor-Tracking OttoMascot.vue"]
+    Dock["DesktopDock.vue (Alt+1..7) + DesktopSurface.vue<br/>YouTube Metrics · Next Stream Countdown · Pure-SVG 3D OttoMascot.vue"]
     SSE["Single Authenticated /api/events SSE Stream<br/>ThoughtTrace · TodoChecklistCard · workspace_changed · db_changed"]
 
     Top --> Shell
     Dock --> Shell
     SSE --> Shell
 
-    Shell --> A1["Otto Chat &amp; Mission Control"]
-    Shell --> A2["Studio Files &amp; OBS Overlays"]
-    Shell --> A3["Studio DB &amp; Calendar (3-View)"]
-    Shell --> A4["Contacts CRM &amp; System Settings"]
+    Shell --> A1["Otto Chat &amp; Studio Files"]
+    Shell --> A2["OBS Overlays &amp; Studio DB"]
+    Shell --> A3["Calendar (3-View) &amp; Contacts CRM"]
+    Shell --> A4["System Settings (General, Profile &amp; Connectors)"]
 ```
 
-- **8 genuinely wired apps (`useWindowManager.ts` `StudioAppId`):** `otto-chat` (Otto Chat), `mission-control` (Overview, live stream countdown, connectors &amp; guardrails), `files` (2-way Studio Workspace + `/clips` HTTP 206 media player), `obs-overlays` (Fly Machine-hosted overlay host: 16:9 iframe preview, copyable OBS Browser Source + mobile Remote Control Deck URLs, machine status &amp; delete), `studio-db` (`StudioDatabaseView.vue` with Content Pipeline &amp; Channel Metrics; read-only SQL queries run via the agent's `studio_db_query` tool), `calendar` (Month/Week/Agenda views with live QStash wake-up badges `T-2h`/`T-15m` + `.ics` export), `contacts` (3-pane Creator Rolodex CRM for human artists, riggers, clippers, editors &amp; sponsors with 1-click "Draft outreach with Otto"), and `settings` (Otto mascot swatches, studio profile &amp; Setup Wizard re-launch, window-controls mode `auto`/`mac`/`windows`, layout presets &amp; keyboard shortcut cheat sheet).
+- **7 genuinely wired apps (`useWindowManager.ts` `StudioAppId`):** `otto-chat` (Otto Chat), `files` (2-way Studio Workspace + `/clips` HTTP 206 media player), `obs-overlays` (Fly Machine-hosted overlay host: 16:9 iframe preview, copyable OBS Browser Source + mobile Remote Control Deck URLs, machine status &amp; delete), `studio-db` (`StudioDatabaseView.vue` with Content Pipeline &amp; Channel Metrics synced programmatically at 0 LLM tokens; read-only SQL queries run via the agent's `studio_db_query` tool), `calendar` (Month/Week/Agenda views with live QStash wake-up badges `T-2h`/`T-15m` + `.ics` export), `contacts` (3-pane Creator Rolodex CRM for human artists, riggers, clippers, editors &amp; sponsors with 1-click "Draft outreach with Otto"), and `settings` (`SystemSettingsApp.vue` with `General`, `Profile` dossier, and `Connectors` + zero-key security telemetry tabs) — paired with live right-side **Desktop Widgets** (`ChannelMetricsWidget.vue`, `NextStreamWidget.vue`, and `OttoMascot.vue`).
 - **Desktop ergonomics:** Pointer-capture drag and 8-edge resize, dashed yellow edge-snap ghosts (`left`, `right`, `maximize`), one-key layout presets (`tile-2up`, `focus-chat`, `cascade`, `show-desktop`, `reset`), macOS/Windows auto-adaptive traffic-light or caption controls, persistent `localStorage` window rects, and an automatic `<1024px` responsive single-app mode.
 - **Spotlight (`SpotlightCommand.vue`):** `Cmd+K` / `Ctrl+K` searches apps, quick workspace folders, and layout presets.
 - **Zero-cold-start onboarding &amp; zero-AI-art craft:** First run opens the 3-step `StudioSetupWizard.vue` (413 IANA timezones, atomic `0600` passcode rotation, live connector readiness) paired with headless `scripts/bootstrap-dossier.sh` (`omp --no-session` scanning YouTube, Buffer, 30-day Google Calendar, and Exa to pre-fill `MEMORY.md` before turn #1). `OttoMascot.vue` is a 100% pure-SVG 3D sphere using `requestAnimationFrame` damped yaw/pitch projection and dynamic specular keylight — zero AI-generated assets.

@@ -53,8 +53,29 @@ export function normalizeQStashCron(raw: string): string {
   return `${tzPrefix}${fields.join(" ")}`;
 }
 
+export function extractIanaTimezone(raw: string): string {
+  const cleaned = raw.trim();
+  if (!cleaned) return "UTC";
+  // Extract first IANA-like token (e.g. "Asia/Jakarta" from "Asia/Jakarta (WIB, UTC+7)")
+  const ianaMatch = cleaned.match(/\b([A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+){1,2})\b/);
+  if (ianaMatch) {
+    try {
+      Intl.DateTimeFormat("en-US", { timeZone: ianaMatch[1] });
+      return ianaMatch[1];
+    } catch {
+      // fall through
+    }
+  }
+  const upper = cleaned.toUpperCase();
+  if (/\bWIB\b/.test(upper)) return "Asia/Jakarta";
+  if (/\bWITA\b/.test(upper)) return "Asia/Makassar";
+  if (/\bWIT\b/.test(upper)) return "Asia/Jayapura";
+  if (/\bUTC\b|\bGMT\b/.test(upper)) return "UTC";
+  return cleaned.split(/\s+/)[0] || "UTC";
+}
+
 export function buildMidnightCronForTimezone(timezone: string): string {
-  const tz = timezone.trim();
+  const tz = extractIanaTimezone(timezone);
   if (!tz || tz.toUpperCase() === "UTC") {
     return normalizeQStashCron("CRON_TZ=UTC 0 0 * * *");
   }

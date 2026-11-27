@@ -86,7 +86,6 @@ const SHORTCUT_APP_IDS: StudioAppId[] = [
   "otto-chat",
   "files",
   "obs-overlays",
-  "mission-control",
   "studio-db",
   "calendar",
   "contacts",

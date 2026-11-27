@@ -1,16 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import {
-  Columns2Icon,
-  LayersIcon,
-  LayoutGridIcon,
-  Maximize2Icon,
-  MessageSquareIcon,
-  PlugIcon,
-  PlusIcon,
-  RotateCcwIcon,
-  SparklesIcon,
-} from "@lucide/vue";
+import { MessageSquareIcon, PlusIcon } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,22 +13,21 @@ import ChannelMetricsWidget from "./components/ChannelMetricsWidget.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
 import MessageBubble from "./components/MessageBubble.vue";
-import MissionControlWorkspace, { type StudioTab } from "./components/MissionControlWorkspace.vue";
+import NextStreamWidget from "./components/NextStreamWidget.vue";
 import OttoMascot from "./components/OttoMascot.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
 import StudioDatabaseView from "./components/StudioDatabaseView.vue";
 import StudioSetupWizard from "./components/StudioSetupWizard.vue";
+import SystemSettingsApp, { type SettingsTab } from "./components/SystemSettingsApp.vue";
 import TodoChecklistCard from "./components/TodoChecklistCard.vue";
 import WorkspaceFileManager from "./components/WorkspaceFileManager.vue";
 import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/chat";
 
 const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
 
-type MissionSubTab = "overview" | "dossier" | "connectors";
-
-const MISSION_SUB_TABS: Array<{ id: MissionSubTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "dossier", label: "Profile" },
+const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "profile", label: "Profile" },
   { id: "connectors", label: "Connectors" },
 ];
 
@@ -87,10 +76,8 @@ const activity = ref("Thinking...");
 const connectionState = ref<"connecting" | "ready" | "error">("connecting");
 const error = ref("");
 const sidebarOpen = ref(false);
-const missionTab = ref<MissionSubTab>("overview");
+const settingsTab = ref<SettingsTab>("general");
 const filesTargetPath = ref("");
-const navCounts = ref({ schedule: 0, files: 0, database: 0, connectors: 0 });
-const missionRefreshTick = ref(0);
 const workspaceRefreshTick = ref(0);
 const dbRefreshTick = ref(0);
 const messagesWrapRef = ref<HTMLElement | null>(null);
@@ -360,7 +347,6 @@ function connectEvents() {
       commitLiveAssistant(msg.text);
     } else if (type === "workspace_changed") {
       workspaceRefreshTick.value += 1;
-      missionRefreshTick.value += 1;
       if (wm && wm.focusedWindowId.value !== "files") {
         wm.setWindowMeta("files", { badgeText: "Updated" });
       }
@@ -383,7 +369,6 @@ function connectEvents() {
       );
     } else if (type === "db_changed") {
       dbRefreshTick.value += 1;
-      missionRefreshTick.value += 1;
       if (wm && wm.focusedWindowId.value !== "studio-db") {
         wm.setWindowMeta("studio-db", { badgeText: "Updated" });
       }
@@ -391,7 +376,6 @@ function connectEvents() {
       commitLiveAssistant();
       busy.value = false;
       loadSessions();
-      missionRefreshTick.value += 1;
       workspaceRefreshTick.value += 1;
       dbRefreshTick.value += 1;
     } else if (type === "session_changed") {
@@ -450,24 +434,6 @@ function useStarter(prompt: string) {
 function handleMissionPrompt(prompt: string) {
   shellRef.value?.wm.openWindow("otto-chat", { focus: true });
   useStarter(prompt);
-}
-
-function handleMissionTabRequest(tab: StudioTab) {
-  const wm = shellRef.value?.wm;
-  if (tab === "schedule") {
-    wm?.openWindow("calendar", { focus: true });
-    return;
-  }
-  if (tab === "files") {
-    wm?.openWindow("files", { focus: true });
-    return;
-  }
-  if (tab === "database") {
-    wm?.openWindow("studio-db", { focus: true });
-    return;
-  }
-  missionTab.value = tab;
-  wm?.openWindow("mission-control", { focus: true });
 }
 
 function openFilesAtPath(relPath: string) {
@@ -570,7 +536,6 @@ async function loadSetupStatus() {
 
 function handleSetupDone() {
   showSetupWizard.value = false;
-  missionRefreshTick.value += 1;
   dbRefreshTick.value += 1;
   if (window.location.search.includes("setup=1")) {
     window.history.replaceState({}, "", window.location.pathname);
@@ -633,10 +598,17 @@ watch(shellRef, (val) => {
       @desktop-action="handleDesktopAction"
     >
       <template #desktop-top-right-widget>
-        <ChannelMetricsWidget
-          :refresh-tick="dbRefreshTick"
-          @open-metrics="openStudioDbMetrics"
-        />
+        <div class="flex flex-col gap-3">
+          <ChannelMetricsWidget
+            :refresh-tick="dbRefreshTick"
+            @open-metrics="openStudioDbMetrics"
+          />
+          <NextStreamWidget
+            :refresh-tick="dbRefreshTick"
+            @open-calendar="shellRef?.wm.openWindow('calendar', { focus: true })"
+            @ask-prompt="handleMissionPrompt"
+          />
+        </div>
       </template>
 
       <!-- WINDOW 1: OTTO CHAT -->
@@ -723,45 +695,7 @@ watch(shellRef, (val) => {
         </div>
       </template>
 
-      <!-- WINDOW 2: MISSION CONTROL -->
-      <template #window-actions-mission-control>
-        <div class="flex items-center gap-0.5 rounded-full bg-[#f2f2f2] p-0.5">
-          <button
-            v-for="sub in MISSION_SUB_TABS"
-            :key="sub.id"
-            type="button"
-            class="rounded-full px-2 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
-            :class="
-              missionTab === sub.id
-                ? 'bg-[#303030] text-white'
-                : 'text-[#666] hover:text-[#303030]'
-            "
-            @click="missionTab = sub.id"
-          >
-            {{ sub.label }}
-          </button>
-        </div>
-      </template>
-
-      <template #app-mission-control>
-        <div class="h-full overflow-y-auto bg-[#fafafa]/60 p-3.5">
-          <MissionControlWorkspace
-            :active-tab="missionTab"
-            :refresh-tick="missionRefreshTick"
-            :mascot-color="mascotColor"
-            :status-state="statusState"
-            :swatches="[...MASCOT_SWATCHES]"
-            @update:active-tab="handleMissionTabRequest"
-            @open-workspace-path="openFilesAtPath"
-            @select-mascot-color="setMascotColor"
-            @counts-updated="navCounts = $event"
-            @ask-prompt="handleMissionPrompt"
-            @open-setup="reopenSetup"
-          />
-        </div>
-      </template>
-
-      <!-- WINDOW 3: STUDIO FILES -->
+      <!-- WINDOW 2: STUDIO FILES -->
       <template #app-files>
         <div class="flex h-full min-h-0 flex-col bg-white">
           <WorkspaceFileManager
@@ -810,18 +744,17 @@ watch(shellRef, (val) => {
         </div>
       </template>
 
-      <!-- WINDOW 7: CALENDAR -->
+      <!-- WINDOW 5: CALENDAR -->
       <template #app-calendar>
         <div class="flex h-full min-h-0 flex-col bg-white">
           <CalendarWorkspaceApp
-            :refresh-tick="missionRefreshTick + dbRefreshTick"
+            :refresh-tick="dbRefreshTick"
             @ask-prompt="handleMissionPrompt"
-            @events-updated="navCounts.schedule = $event"
           />
         </div>
       </template>
 
-      <!-- WINDOW 8: CONTACTS -->
+      <!-- WINDOW 6: CONTACTS -->
       <template #app-contacts>
         <div class="flex h-full min-h-0 flex-col bg-white">
           <ContactsWorkspaceApp
@@ -831,183 +764,41 @@ watch(shellRef, (val) => {
         </div>
       </template>
 
-      <!-- WINDOW 7: SYSTEM SETTINGS -->
-      <template #app-settings>
-        <div class="flex h-full flex-col gap-4 overflow-y-auto bg-[#fafafa]/60 p-4">
-          <!-- Otto Appearance -->
-          <div class="otto-card p-4">
-            <div class="mb-3 font-mono text-xs font-semibold text-[#303030]">
-              Otto Appearance
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-              <OttoMascot :size="54" :color="mascotColor" :state="statusState" />
-              <div class="flex flex-col gap-2">
-                <div class="text-xs text-[#666]">
-                  Choose Otto's studio sphere color across windows and desktop companion.
-                </div>
-                <div class="flex items-center gap-2">
-                  <button
-                    v-for="sw in MASCOT_SWATCHES"
-                    :key="sw"
-                    type="button"
-                    class="size-6 rounded-full border-2 transition-transform hover:scale-110"
-                    :class="mascotColor === sw ? 'border-[#303030] scale-110' : 'border-black/15'"
-                    :style="{ background: sw }"
-                    :aria-label="`Set Otto color ${sw}`"
-                    @click="setMascotColor(sw)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Studio Identity & Onboarding -->
-          <div class="otto-card p-4">
-            <div class="mb-3 flex items-center justify-between gap-2">
-              <span class="font-mono text-xs font-semibold text-[#303030]">
-                Studio Profile &amp; Onboarding
-              </span>
-              <Button size="xs" type="button" @click="reopenSetup">
-                <SparklesIcon data-icon="inline-start" />
-                Re-run Setup Wizard
-              </Button>
-            </div>
-            <div class="grid grid-cols-2 gap-3 font-mono text-xs">
-              <div class="rounded-xl border border-[#ededed] bg-[#fafafa] p-3">
-                <div class="text-[10.5px] text-[#777]">CREATOR</div>
-                <div class="mt-0.5 font-semibold text-[#303030]">
-                  {{ setupInitialName || "Not configured" }}
-                </div>
-              </div>
-              <div class="rounded-xl border border-[#ededed] bg-[#fafafa] p-3">
-                <div class="text-[10.5px] text-[#777]">TIMEZONE</div>
-                <div class="mt-0.5 font-semibold text-[#303030]">
-                  {{ setupInitialTimezone || "Browser local" }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Window Layouts, Controls & Shortcuts -->
-          <div class="otto-card p-4">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <span class="font-mono text-xs font-semibold text-[#303030]">
-                Window Controls &amp; Layouts
-              </span>
-              <div
-                v-if="shellRef"
-                data-settings-controls-mode
-                class="flex items-center gap-0.5 rounded-full bg-[#f2f2f2] p-0.5"
-              >
-                <button
-                  type="button"
-                  data-controls-mode="auto"
-                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
-                  :class="
-                    shellRef.wm.controlsMode.value === 'auto'
-                      ? 'bg-[#303030] text-white'
-                      : 'text-[#666] hover:text-[#303030]'
-                  "
-                  @click="shellRef.wm.setControlsMode('auto')"
-                >
-                  Auto ({{ shellRef.wm.detectedPlatform === 'mac' ? 'macOS' : 'Windows' }})
-                </button>
-                <button
-                  type="button"
-                  data-controls-mode="mac"
-                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
-                  :class="
-                    shellRef.wm.controlsMode.value === 'mac'
-                      ? 'bg-[#303030] text-white'
-                      : 'text-[#666] hover:text-[#303030]'
-                  "
-                  @click="shellRef.wm.setControlsMode('mac')"
-                >
-                  macOS (Left)
-                </button>
-                <button
-                  type="button"
-                  data-controls-mode="windows"
-                  class="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
-                  :class="
-                    shellRef.wm.controlsMode.value === 'windows'
-                      ? 'bg-[#303030] text-white'
-                      : 'text-[#666] hover:text-[#303030]'
-                  "
-                  @click="shellRef.wm.setControlsMode('windows')"
-                >
-                  Windows (Right)
-                </button>
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button size="xs" variant="secondary" type="button" @click="shellRef?.wm.applyPreset('tile-2up')">
-                <Columns2Icon data-icon="inline-start" />
-                Tile 2-Up
-              </Button>
-              <Button size="xs" variant="secondary" type="button" @click="shellRef?.wm.applyPreset('focus-chat')">
-                <Maximize2Icon data-icon="inline-start" />
-                Focus Otto
-              </Button>
-              <Button size="xs" variant="secondary" type="button" @click="shellRef?.wm.applyPreset('cascade')">
-                <LayersIcon data-icon="inline-start" />
-                Cascade
-              </Button>
-              <Button size="xs" variant="secondary" type="button" @click="shellRef?.wm.applyPreset('show-desktop')">
-                <LayoutGridIcon data-icon="inline-start" />
-                Show Desktop
-              </Button>
-              <Button size="xs" variant="outline" type="button" @click="shellRef?.wm.applyPreset('reset')">
-                <RotateCcwIcon data-icon="inline-start" />
-                Reset Layout
-              </Button>
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2 font-mono text-[11px] text-[#666]">
-              <div>
-                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.spotlight ?? 'Ctrl+K' }}
-                </kbd>
-                Spotlight
-              </div>
-              <div>
-                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.altPrefix ?? 'Alt+' }}1–8
-                </kbd>
-                Toggle Apps
-              </div>
-              <div>
-                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.tile ?? 'Alt+Shift+T' }}
-                </kbd>
-                Tile 2-Up
-              </div>
-              <div>
-                <kbd class="rounded bg-[#f2f2f2] px-1.5 py-0.5 text-[#303030]">
-                  {{ shellRef?.wm.shortcutLabels.value.desktop ?? 'Alt+Shift+D' }}
-                </kbd>
-                Show Desktop
-              </div>
-            </div>
-          </div>
-
-          <!-- Quick Links -->
-          <div class="otto-card p-4">
-            <div class="mb-3 font-mono text-xs font-semibold text-[#303030]">
-              Connected Surfaces
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button
-                size="xs"
-                variant="secondary"
-                type="button"
-                @click="handleMissionTabRequest('connectors')"
-              >
-                <PlugIcon data-icon="inline-start" />
-                Sprites Connectors ({{ navCounts.connectors }})
-              </Button>
-            </div>
-          </div>
+      <!-- WINDOW 7: SYSTEM SETTINGS (General, Profile & Connectors) -->
+      <template #window-actions-settings>
+        <div class="flex items-center gap-0.5 rounded-full bg-[#f2f2f2] p-0.5">
+          <button
+            v-for="sub in SETTINGS_TABS"
+            :key="sub.id"
+            type="button"
+            class="rounded-full px-2 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
+            :class="
+              settingsTab === sub.id
+                ? 'bg-[#303030] text-white'
+                : 'text-[#666] hover:text-[#303030]'
+            "
+            @click="settingsTab = sub.id"
+          >
+            {{ sub.label }}
+          </button>
         </div>
+      </template>
+
+      <template #app-settings>
+        <SystemSettingsApp
+          :wm="shellRef?.wm ?? null"
+          :active-tab="settingsTab"
+          :refresh-tick="dbRefreshTick"
+          :mascot-color="mascotColor"
+          :status-state="statusState"
+          :swatches="MASCOT_SWATCHES"
+          :creator-name="setupInitialName"
+          :timezone="setupInitialTimezone"
+          @update:active-tab="settingsTab = $event"
+          @select-mascot-color="setMascotColor"
+          @open-setup="reopenSetup"
+          @ask-prompt="handleMissionPrompt"
+        />
       </template>
     </DesktopShell>
 

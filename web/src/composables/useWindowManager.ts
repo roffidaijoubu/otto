@@ -12,7 +12,6 @@ import {
 
 export type BuiltinAppId =
   | "otto-chat"
-  | "mission-control"
   | "files"
   | "obs-overlays"
   | "studio-db"
@@ -221,18 +220,6 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     shortcutDigit: "3",
   },
   {
-    id: "mission-control",
-    title: "Mission Control",
-    shortLabel: "Mission",
-    icon: "layout",
-    minWidth: 440,
-    minHeight: 360,
-    defaultWidth: 720,
-    defaultHeight: 680,
-    dockSection: "primary",
-    shortcutDigit: "4",
-  },
-  {
     id: "studio-db",
     title: "Studio DB",
     shortLabel: "Studio DB",
@@ -242,7 +229,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 760,
     defaultHeight: 580,
     dockSection: "primary",
-    shortcutDigit: "5",
+    shortcutDigit: "4",
   },
   {
     id: "calendar",
@@ -254,7 +241,7 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 960,
     defaultHeight: 640,
     dockSection: "primary",
-    shortcutDigit: "6",
+    shortcutDigit: "5",
   },
   {
     id: "contacts",
@@ -266,19 +253,19 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultWidth: 880,
     defaultHeight: 580,
     dockSection: "primary",
-    shortcutDigit: "7",
+    shortcutDigit: "6",
   },
   {
     id: "settings",
     title: "System Settings",
     shortLabel: "Settings",
     icon: "settings",
-    minWidth: 420,
-    minHeight: 380,
-    defaultWidth: 620,
-    defaultHeight: 560,
+    minWidth: 460,
+    minHeight: 400,
+    defaultWidth: 660,
+    defaultHeight: 580,
     dockSection: "utility",
-    shortcutDigit: "8",
+    shortcutDigit: "7",
   },
 ] as const;
 
@@ -369,11 +356,7 @@ function createInitialWindows(vw: number, vh: number): Record<StudioAppId, Studi
   const area = getWorkArea(vw, vh);
   const leftWidth = Math.max(
     STUDIO_APP_MAP["otto-chat"].minWidth,
-    Math.round((area.width - WINDOW_GAP) * 0.42)
-  );
-  const rightWidth = Math.max(
-    STUDIO_APP_MAP["mission-control"].minWidth,
-    area.width - WINDOW_GAP - leftWidth
+    Math.min(620, Math.round((area.width - WINDOW_GAP) * 0.46))
   );
 
   const result = {} as Record<StudioAppId, StudioWindowState>;
@@ -398,20 +381,13 @@ function createInitialWindows(vw: number, vh: number): Record<StudioAppId, Studi
     };
   });
 
-  // Clean default Studio OS layout: Otto Chat (left) + Mission Control (right)
+  // Clean default Studio OS layout: Otto Chat (left) + open Desktop Widgets (right)
   result["otto-chat"].isOpen = true;
-  result["otto-chat"].x = area.left;
+  result["otto-chat"].x = area.left + 104;
   result["otto-chat"].y = area.top;
-  result["otto-chat"].width = Math.min(leftWidth, area.width);
+  result["otto-chat"].width = Math.min(leftWidth, Math.max(360, area.width - 440));
   result["otto-chat"].height = area.height;
   result["otto-chat"].zIndex = Z_INDEX_MIN + 2;
-
-  result["mission-control"].isOpen = true;
-  result["mission-control"].x = area.left + Math.min(leftWidth, area.width) + WINDOW_GAP;
-  result["mission-control"].y = area.top;
-  result["mission-control"].width = Math.max(320, rightWidth);
-  result["mission-control"].height = area.height;
-  result["mission-control"].zIndex = Z_INDEX_MIN + 1;
 
   return result;
 }
@@ -940,7 +916,7 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
       const targets =
         openWindows.value.length > 0
           ? openWindows.value
-          : [windows["otto-chat"], windows["mission-control"], windows["files"]];
+          : [windows["otto-chat"], windows["files"], windows["calendar"]];
       targets.forEach((win, i) => {
         const def = appMap[win.id] ?? { defaultWidth: 680, defaultHeight: 580 };
         const step = i * 34;
@@ -996,11 +972,11 @@ export function createWindowManager(options: WindowManagerOptions = {}): WindowM
       return;
     }
 
-    // Default: tile-2up (Otto Chat left 42%, most-recent secondary or Mission Control right 58%)
+    // Default: tile-2up (Otto Chat left 42%, most-recent secondary or Calendar right 58%)
     const secondaryCandidates = visibleWindows.value
       .filter((w) => w.id !== "otto-chat")
       .sort((a, b) => b.zIndex - a.zIndex);
-    const secondaryId: StudioAppId = secondaryCandidates[0]?.id ?? "mission-control";
+    const secondaryId: StudioAppId = secondaryCandidates[0]?.id ?? "calendar";
 
     for (const app of apps) {
       if (app.id !== "otto-chat" && app.id !== secondaryId && windows[app.id]?.isOpen) {

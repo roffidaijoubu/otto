@@ -15,7 +15,11 @@ import {
   upsertDailyChannelMetric,
   type ChannelMetric,
 } from "./studio-db.ts";
-import { buildMidnightCronForTimezone, resolveQStashGatewayUrl } from "./qstash-cron.ts";
+import {
+  buildMidnightCronForTimezone,
+  extractIanaTimezone,
+  resolveQStashGatewayUrl,
+} from "./qstash-cron.ts";
 
 interface ComposioContext {
   baseUrl: string;
@@ -179,7 +183,7 @@ function toFiniteInt(val: unknown): number | null {
 
 function todayDateInTimezone(timezone?: string): string {
   try {
-    const tz = timezone && timezone.trim() ? timezone.trim() : "UTC";
+    const tz = timezone ? extractIanaTimezone(timezone) : "UTC";
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
       year: "numeric",
@@ -543,7 +547,7 @@ export async function syncDailyMetricsQStashSchedule(opts: {
   scheduleId: string | null;
   note?: string;
 }> {
-  const tz = opts.timezone.trim() || "UTC";
+  const tz = extractIanaTimezone(opts.timezone || "UTC");
   const cron = buildMidnightCronForTimezone(tz);
   const existingId = getStudioMeta("yt_daily_qstash_schedule_id");
   const existingCron = getStudioMeta("yt_daily_cron");

@@ -109,26 +109,17 @@ function launchShortcut(item: DesktopShortcut) {
         </div>
 
         <!-- Bottom-Right Companion Desktop Widget Slot -->
-        <div class="pointer-events-auto fixed right-5 bottom-[92px] hidden lg:block">
+        <div class="pointer-events-auto fixed right-6 bottom-[90px] hidden lg:block">
           <slot name="widget">
             <button
               type="button"
               data-os-companion-widget
-              class="flex items-center gap-3.5 rounded-[20px] border border-black/8 bg-white/82 px-4 py-3 text-left shadow-[0_12px_32px_rgba(32,32,32,0.09)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:bg-white/95"
+              :title="`Summon Otto — ${statusSubtitle}`"
+              :aria-label="`Summon Otto (${statusSubtitle})`"
+              class="flex size-[84px] items-center justify-center rounded-full border border-white/50 bg-white/55 shadow-[0_14px_34px_rgba(32,32,32,0.12)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/80 active:scale-98"
               @click="wm.openWindow('otto-chat')"
             >
-              <OttoMascot :size="44" :color="mascotColor" :state="mascotState" />
-              <div class="flex flex-col gap-0.5 pr-1">
-                <span class="font-mono text-[12px] font-bold tracking-tight text-[#303030]">
-                  Otto Studio OS
-                </span>
-                <span class="font-mono text-[11px] text-[#6d6d6d]">
-                  {{ statusSubtitle }}
-                </span>
-                <span class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-[#f9f5a2] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#303030]">
-                  Click to summon Otto · {{ wm.shortcutLabels.value.spotlight }}
-                </span>
-              </div>
+              <OttoMascot :size="60" :color="mascotColor" :state="mascotState" />
             </button>
           </slot>
         </div>

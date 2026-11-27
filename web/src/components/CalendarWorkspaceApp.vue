@@ -37,7 +37,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, CalendarWakeupHook } from "./MissionControlWorkspace.vue";
+import type { CalendarEventItem, CalendarWakeupHook } from "@/types/calendar";
 
 type CalendarViewMode = "month" | "week" | "agenda";
 

@@ -39,7 +39,7 @@ lma/
 │   ├── extensions/             # 11 extensions: connectors + vod-clipper + media-reviewer + studio-db + new-session + studio-apps + obs-overlays (38 tools)
 │   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), studio-apps.ts, obs-overlays.ts
 │   └── skills/                 # 8 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft + opt-in streaming-coaching)
-├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (8 apps + Spotlight)
+├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (7 apps + Desktop Widgets + Spotlight)
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
     ├── verify-all.sh                   # Deterministic 24-check verification suite (25 with --live)
