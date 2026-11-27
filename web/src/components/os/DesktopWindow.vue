@@ -32,6 +32,17 @@ const frameStyle = computed(() => {
       zIndex: props.win.zIndex,
     };
   }
+  if (isPinnedChat.value && !props.win.isMaximized) {
+    return {
+      top: "auto",
+      left: "auto",
+      right: "118px",
+      bottom: "12px",
+      width: `${props.win.width}px`,
+      height: `${props.win.height}px`,
+      zIndex: props.win.zIndex,
+    };
+  }
   return {
     transform: `translate3d(${props.win.x}px, ${props.win.y}px, 0)`,
     width: `${props.win.width}px`,
@@ -254,16 +265,16 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
           isFocused
             ? 'bg-[#fafafa] border-[#ededed]'
             : 'bg-[#f6f6f6]/90 border-[#efefef]',
-          !isMobile && 'cursor-grab active:cursor-grabbing'
+          !isMobile && !isPinnedChat && 'cursor-grab active:cursor-grabbing'
         )
       "
       @pointerdown="handleTitlebarPointerDown"
-      @dblclick="handleTitlebarDoubleClick"
+      @dblclick="!isPinnedChat && handleTitlebarDoubleClick()"
     >
       <!-- Left: macOS traffic lights (mac only) + App icon + Title + Subtitle -->
       <div class="flex min-w-0 items-center gap-2.5">
         <div
-          v-if="isMacControls"
+          v-if="isMacControls && !isPinnedChat"
           data-window-controls="mac"
           class="flex items-center gap-1.5"
           data-no-drag="true"
@@ -368,7 +379,7 @@ function handleTitlebarDoubleClick(event: MouseEvent) {
       <div class="flex shrink-0 items-center gap-1.5" data-no-drag="true">
         <slot name="actions" />
 
-        <template v-if="!isMacControls">
+        <template v-if="!isMacControls && !isPinnedChat">
           <span
             v-if="$slots.actions"
             class="mx-0.5 h-4 w-px bg-black/10"

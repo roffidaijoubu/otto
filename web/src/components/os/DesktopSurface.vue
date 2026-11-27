@@ -119,7 +119,11 @@ function launchShortcut(item: DesktopShortcut) {
               :title="`Summon Otto — ${statusSubtitle}`"
               :aria-label="`Summon Otto (${statusSubtitle})`"
               class="flex size-[84px] items-center justify-center rounded-full border border-white/50 bg-white/55 shadow-[0_14px_34px_rgba(32,32,32,0.12)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/80 active:scale-98"
-              @click="wm.openWindow('otto-chat')"
+              @click="
+                wm.windows['otto-chat']?.isOpen && !wm.windows['otto-chat']?.isMinimized
+                  ? wm.minimizeWindow('otto-chat')
+                  : wm.openWindow('otto-chat', { focus: true })
+              "
             >
               <OttoMascot :size="60" :color="mascotColor" :state="mascotState" />
             </button>
