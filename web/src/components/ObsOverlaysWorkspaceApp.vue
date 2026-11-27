@@ -847,10 +847,10 @@ defineExpose({
 
       <!-- Main Split: Left Studio (Overlay Box + Live Controller Box Always Visible) | Right (Refine with Otto) -->
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        <!-- Left Workspace: 2 Framed Boxes -->
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#F2F1EE] p-3">
+        <!-- Left Workspace: 2 Framed Boxes Side-by-Side (Wide 1920x1080 Canvas + Narrow OBS-Dock Live Controller) -->
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#F2F1EE] p-3 lg:flex-row">
           <!-- BOX 1: True 1920x1080 Scaled Overlay Preview Box -->
-          <div class="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+          <div class="flex min-h-[240px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
             <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3 py-1.5">
               <span class="font-mono text-[11px] font-semibold text-[#171717]">
                 OBS Canvas Preview
@@ -894,11 +894,11 @@ defineExpose({
             </div>
           </div>
 
-          <!-- BOX 2: Live Controller Box (Always Visible, Framed Just Like Overlay) -->
-          <div class="flex min-h-[190px] flex-[2] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+          <!-- BOX 2: Narrow OBS-Dock Live Controller Box -->
+          <div class="flex min-h-[220px] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white lg:h-full lg:w-[320px] xl:w-[340px]">
             <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3 py-1.5">
               <span class="font-mono text-[11px] font-semibold text-[#171717]">
-                Live Controller
+                Live Controller · OBS Dock
               </span>
               <a
                 :href="selectedOverlay.controlUrl"
