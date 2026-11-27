@@ -10,7 +10,9 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     (url.pathname === "/api/internal/studio-app/open" ||
       url.pathname === "/api/internal/studio-app/changed" ||
       url.pathname === "/api/internal/obs-overlay/open" ||
-      url.pathname === "/api/internal/obs-overlay/changed")
+      url.pathname === "/api/internal/obs-overlay/changed" ||
+      url.pathname === "/api/internal/thumbnail/open" ||
+      url.pathname === "/api/internal/thumbnail/changed")
   ) {
     const denied = requireInternalSecret(req);
     if (denied) return denied;
@@ -39,8 +41,18 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
         title: body.title || slug,
         autoFocus: body.autoFocus !== false,
       });
-    } else {
+    } else if (url.pathname === "/api/internal/obs-overlay/changed") {
       broadcast({ type: "obs_overlays_changed", slug, deleted: body.deleted === true });
+    } else if (url.pathname === "/api/internal/thumbnail/open") {
+      broadcast({ type: "thumbnails_changed", slug });
+      broadcast({
+        type: "thumbnail_open",
+        slug,
+        title: body.title || slug,
+        autoFocus: body.autoFocus !== false,
+      });
+    } else {
+      broadcast({ type: "thumbnails_changed", slug, deleted: body.deleted === true });
     }
     return Response.json({ ok: true, slug });
   }

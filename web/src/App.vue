@@ -8,6 +8,7 @@ import { DesktopShell, type DesktopShellExposed } from "@/components/os";
 import type { CustomAppId, DesktopShortcut } from "@/composables/useWindowManager";
 import CustomStudioAppWindow from "./components/CustomStudioAppWindow.vue";
 import ObsOverlaysWorkspaceApp from "./components/ObsOverlaysWorkspaceApp.vue";
+import ThumbnailsWorkspaceApp from "./components/ThumbnailsWorkspaceApp.vue";
 import AnalyticsWorkspaceApp from "./components/AnalyticsWorkspaceApp.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChannelMetricsWidget from "./components/ChannelMetricsWidget.vue";
@@ -31,9 +32,12 @@ const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", 
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
 const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
+const thumbnailsRef = ref<InstanceType<typeof ThumbnailsWorkspaceApp> | null>(null);
 const activeObsOverlaySlug = ref("");
+const activeThumbnailSlug = ref("");
 const studioAppsRefreshTick = ref(0);
 const obsOverlaysRefreshTick = ref(0);
+const thumbnailsRefreshTick = ref(0);
 const clipsRefreshTick = ref(0);
 
 interface InstalledCustomApp {
@@ -48,6 +52,7 @@ const installedCustomApps = ref<InstalledCustomApp[]>([]);
 const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
   { id: "clips", label: "Clips", sublabel: "VOD Clipper", icon: "scissors", appId: "clips" },
   { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
+  { id: "thumbnails", label: "Thumbnails", sublabel: "Zero-AI Studio", icon: "image", appId: "thumbnails" },
   { id: "ideas", label: "Ideas", sublabel: "Content", icon: "lightbulb", appId: "ideas" },
   { id: "analytics", label: "Analytics", sublabel: "YouTube", icon: "chart", appId: "analytics" },
   { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },
@@ -230,6 +235,20 @@ function openObsOverlayWindow(slug?: string, title?: string, autoFocus = true) {
   }
 }
 
+function openThumbnailWindow(slug?: string, title?: string, autoFocus = true) {
+  if (slug) activeThumbnailSlug.value = slug;
+  thumbnailsRefreshTick.value += 1;
+  shellRef.value?.wm.openWindow("thumbnails", {
+    focus: autoFocus,
+    subtitle: title || slug || undefined,
+  });
+  if (slug) {
+    nextTick(() => {
+      thumbnailsRef.value?.selectThumbnail(slug);
+    });
+  }
+}
+
 async function loadSessions() {
   try {
     const res = await fetch("/api/sessions");
@@ -365,6 +384,14 @@ function connectEvents() {
       obsOverlaysRefreshTick.value += 1;
     } else if (type === "obs_overlay_open") {
       openObsOverlayWindow(
+        typeof msg.slug === "string" ? msg.slug : undefined,
+        typeof msg.title === "string" ? msg.title : undefined,
+        msg.autoFocus !== false
+      );
+    } else if (type === "thumbnails_changed") {
+      thumbnailsRefreshTick.value += 1;
+    } else if (type === "thumbnail_open") {
+      openThumbnailWindow(
         typeof msg.slug === "string" ? msg.slug : undefined,
         typeof msg.title === "string" ? msg.title : undefined,
         msg.autoFocus !== false
@@ -726,6 +753,20 @@ watch(shellRef, (val) => {
             @ask-prompt="handleMissionPrompt"
             @selected-changed="
               shellRef?.wm.setWindowMeta('obs-overlays', { subtitle: $event.title })
+            "
+          />
+        </div>
+      </template>
+
+      <!-- WINDOW 3C: THUMBNAIL STUDIO (Zero-AI Isolated OMP Worker) -->
+      <template #app-thumbnails>
+        <div class="flex h-full min-h-0 flex-col bg-white">
+          <ThumbnailsWorkspaceApp
+            ref="thumbnailsRef"
+            :refresh-tick="thumbnailsRefreshTick"
+            :initial-slug="activeThumbnailSlug"
+            @selected-changed="
+              shellRef?.wm.setWindowMeta('thumbnails', { subtitle: $event.title })
             "
           />
         </div>

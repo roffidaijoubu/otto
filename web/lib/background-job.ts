@@ -100,3 +100,49 @@ export async function runOverlayRefine(slug: string, prompt: string): Promise<Re
     rpc.releaseSpriteHold();
   }
 }
+
+export async function runThumbnailWorker(slug: string, prompt: string): Promise<Response> {
+  const childEnv = buildAgentChildEnv();
+
+  rpc.backgroundBusy = true;
+  void rpc.holdSpriteActive();
+  try {
+    const proc = Bun.spawn(
+      [
+        OMP_BIN,
+        "--no-session",
+        "--tools",
+        "thumbnail_save,thumbnail_list,thumbnail_get,thumbnail_delete,box_list_assets,box_download_file,pixabay_search_backgrounds,pixabay_download_image,critique_thumbnail,read",
+        "-p",
+        prompt,
+      ],
+      {
+        cwd: WORK_DIR,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: childEnv,
+      }
+    );
+    const [stdoutText, stderrText, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    broadcast({ type: "thumbnails_changed", slug });
+    if (exitCode !== 0) {
+      return Response.json(
+        { error: stderrText.trim() || `Thumbnail worker exited (${exitCode})` },
+        { status: 500 }
+      );
+    }
+    return Response.json({
+      ok: true,
+      slug,
+      reply: stdoutText.trim() || `Updated thumbnail "${slug}".`,
+    });
+  } finally {
+    rpc.backgroundBusy = false;
+    rpc.releaseSpriteHold();
+  }
+}

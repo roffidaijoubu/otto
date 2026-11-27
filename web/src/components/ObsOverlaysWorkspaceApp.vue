@@ -128,34 +128,34 @@ const scaledIframeStyle = computed(() => ({
 const starters = [
   {
     label: "Starting Soon Countdown",
-    desc: "10-minute timer, stream title & live Start/Pause/Reset deck",
+    desc: "10-minute timer, stream title, brand logo & Start/Pause/Reset deck",
     prompt:
-      "Deploy a transparent 1920x1080 Starting Soon countdown OBS overlay to my Fly Machine with remote Start/Pause/Reset and editable stream title.",
+      "Deploy a 1920x1080 Starting Soon countdown OBS overlay to my Fly Machine with my logo from Otto Assets, match the visual style and color palette to my logo, and include remote Start/Pause/Reset plus editable stream title.",
   },
   {
     label: "Broadcast Lower Third",
-    desc: "Clean animated name/topic plate with remote show/hide toggle",
+    desc: "Clean animated name/topic plate styled to your logo with remote toggle",
     prompt:
-      "Deploy a clean transparent 1920x1080 Lower Third OBS overlay to my Fly Machine with remote toggle and editable speaker/topic text.",
+      "Deploy a clean transparent 1920x1080 Lower Third OBS overlay to my Fly Machine featuring my logo from Otto Assets, match the visual style and color palette to my logo, with remote show/hide toggle and editable speaker/topic text.",
   },
   {
     label: "Be Right Back Slate",
-    desc: "Minimal BRB screen with editable return note & remote control",
+    desc: "Minimal BRB screen with your logo, brand palette & editable return note",
     prompt:
-      "Deploy a minimal 1920x1080 Be Right Back OBS overlay to my Fly Machine with an editable return message and live remote control.",
+      "Deploy a minimal 1920x1080 Be Right Back OBS overlay to my Fly Machine with my logo from Otto Assets, match the visual style and color palette to my logo, with an editable return message and live remote control.",
   },
   {
     label: "Stream Goal Bar",
-    desc: "Compact follower/sub goal progress bar with live +1 / edit controls",
+    desc: "Compact follower/sub goal bar styled to your logo with live +1 controls",
     prompt:
-      "Deploy a clean transparent 1920x1080 Stream Goal Bar OBS overlay to my Fly Machine with editable goal title, current/target counters, and live remote control.",
+      "Deploy a clean transparent 1920x1080 Stream Goal Bar OBS overlay to my Fly Machine featuring my logo from Otto Assets, match the visual style and color palette to my logo, with editable goal title, current/target counters, and live remote control.",
   },
 ];
 
 const quickRefineChips = [
+  "Include my logo & match its visual style",
   "Make typography bigger & sharper",
   "Move overlay to bottom-left safe zone",
-  "Use cleaner high-contrast dark pill style",
   "Add subtle entrance animation",
 ];
 

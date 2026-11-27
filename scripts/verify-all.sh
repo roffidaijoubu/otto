@@ -69,6 +69,9 @@ echo "CHECK_CONNECTORS:${CONN_INFO}"
 CLIPS_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/clips | jq -r ".clips | type")
 echo "CHECK_CLIPS:${CLIPS_TYPE}"
 
+THUMBS_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/thumbnails | jq -r ".thumbnails | type")
+echo "CHECK_THUMBS:${THUMBS_TYPE}"
+
 CAL_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/calendar | jq -r ".events | type")
 echo "CHECK_CALENDAR:${CAL_TYPE}"
 
@@ -137,8 +140,8 @@ check_grep() {
   fi
 }
 
-check_grep "All 8 skills symlinked" "CHECK_SKILLS:.*obs-overlay-craft.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*streaming-coaching.*studio-app-craft.*youtube-audit"
-check_grep "All 14 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*instagram\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*qstash-scheduler\.ts.*studio-apps\.ts.*studio-db\.ts.*tiktok\.ts.*vod-clipper\.ts.*x-twitter\.ts"
+check_grep "All 9 skills symlinked" "CHECK_SKILLS:.*obs-overlay-craft.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*streaming-coaching.*studio-app-craft.*thumbnail-craft.*youtube-audit"
+check_grep "All 16 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*composio-youtube\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*instagram\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*pixabay\.ts.*qstash-scheduler\.ts.*studio-apps\.ts.*studio-db\.ts.*thumbnails\.ts.*tiktok\.ts.*vod-clipper\.ts.*x-twitter\.ts"
 check_grep "Python clipper scripts compile cleanly" "CHECK_PY:OK"
 check_grep "Tasks API keep-alive hold (PUT 200 / DELETE 204)" "CHECK_TASKS:200:204"
 check_grep "GET /api/health returns ok:true" "CHECK_HEALTH:true"
@@ -147,6 +150,7 @@ check_grep "Unsigned spoofed /api/wakeup blocked (401)" "CHECK_SPOOF_WAKEUP:401"
 check_grep "Authenticated /api/dossier readable" "CHECK_DOSSIER:true"
 check_grep "Authenticated /api/connectors live (zeroLocalKeys=true, aiMediaDisabled=true)" "CHECK_CONNECTORS:[1-9][0-9]*:true:true"
 check_grep "Authenticated /api/clips returns array" "CHECK_CLIPS:array"
+check_grep "Authenticated /api/thumbnails returns array" "CHECK_THUMBS:array"
 check_grep "Authenticated /api/calendar returns array" "CHECK_CALENDAR:array"
 check_grep "Authenticated /api/calendar/export.ics returns VCALENDAR" "^CHECK_CALENDAR_ICS:BEGIN:VCALENDAR$"
 check_grep "Authenticated /api/sessions returns array" "CHECK_SESSIONS:array"

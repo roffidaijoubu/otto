@@ -17,6 +17,7 @@ import { handleConnectorsRoutes } from "./routes/connectors.ts";
 import { handleWorkspaceRoutes } from "./routes/workspace.ts";
 import { handleStudioAppsRoutes } from "./routes/studio-apps.ts";
 import { handleObsOverlaysRoutes } from "./routes/obs-overlays.ts";
+import { handleThumbnailsRoutes } from "./routes/thumbnails.ts";
 import { handleDbRoutes } from "./routes/db.ts";
 import { handleClipsRoutes } from "./routes/clips.ts";
 
@@ -89,6 +90,9 @@ Bun.serve({
 
     const obsOverlaysRes = await handleObsOverlaysRoutes(req, url);
     if (obsOverlaysRes) return obsOverlaysRes;
+
+    const thumbnailsRes = await handleThumbnailsRoutes(req, url);
+    if (thumbnailsRes) return thumbnailsRes;
 
     const dbRes = await handleDbRoutes(req, url);
     if (dbRes) return dbRes;

@@ -39,6 +39,7 @@ const props = withDefaults(
       { id: "clips", label: "Clips", sublabel: "VOD Clipper", icon: "scissors", appId: "clips" },
       { id: "brand", label: "Brand Kit", sublabel: "/brand", icon: "folder", appId: "files", filesPath: "brand" },
       { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
+      { id: "thumbnails", label: "Thumbnails", sublabel: "Zero-AI Studio", icon: "image", appId: "thumbnails" },
       { id: "ideas", label: "Ideas", sublabel: "Content", icon: "lightbulb", appId: "ideas" },
       { id: "analytics", label: "Analytics", sublabel: "YouTube", icon: "chart", appId: "analytics" },
       { id: "calendar", label: "Calendar", sublabel: "Schedule", icon: "calendar", appId: "calendar" },

@@ -15,6 +15,7 @@ export type BuiltinAppId =
   | "otto-chat"
   | "files"
   | "obs-overlays"
+  | "thumbnails"
   | "clips"
   | "ideas"
   | "analytics"
@@ -31,6 +32,7 @@ export type StudioAppIconName =
   | "folder"
   | "layers"
   | "tv"
+  | "image"
   | "app"
   | "globe"
   | "database"
@@ -224,6 +226,17 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultHeight: 660,
     dockSection: "primary",
     shortcutDigit: "3",
+  },
+  {
+    id: "thumbnails",
+    title: "Thumbnails",
+    shortLabel: "Thumbs",
+    icon: "image",
+    minWidth: 560,
+    minHeight: 440,
+    defaultWidth: 980,
+    defaultHeight: 680,
+    dockSection: "primary",
   },
   {
     id: "clips",
