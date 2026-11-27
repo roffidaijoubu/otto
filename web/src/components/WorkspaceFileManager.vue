@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch, type Component } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -9,26 +9,19 @@ import {
   CaptionsIcon,
   CheckIcon,
   ChevronRightIcon,
-  ClipboardListIcon,
   CloudUploadIcon,
   CopyIcon,
   DownloadIcon,
   ExternalLinkIcon,
   EyeIcon,
-  FileCodeIcon,
   FilePlus2Icon,
-  FileTextIcon,
-  FilmIcon,
-  FolderIcon,
   FolderInputIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   HardDriveIcon,
-  ImageIcon,
   LayoutGridIcon,
   ListIcon,
   MoreHorizontalIcon,
-  MusicIcon,
   PackageIcon,
   PencilIcon,
   PlusIcon,
@@ -128,31 +121,32 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { renderMarkdown } from "../lib/markdown";
 import WorkspaceFileSkeleton from "./WorkspaceFileSkeleton.vue";
-
-export interface WorkspaceEntry {
-  name: string;
-  relPath: string;
-  absPath: string;
-  isDir: boolean;
-  kind: "dir" | "image" | "video" | "audio" | "markdown" | "text" | "other";
-  editable: boolean;
-  previewable: boolean;
-  sizeBytes: number;
-  updatedAt: string;
-  matchedSrtRelPath?: string | null;
-}
-
-export interface WorkspaceStats {
-  totalBytes: number;
-  fileCount: number;
-  clipCount: number;
-}
-
-type ViewMode = "list" | "grid";
-type SortMode = "name-asc" | "modified-desc" | "size-desc";
-
-const ROOT_SELECT_VALUE = "__workspace_root__";
-const VIEW_STORAGE_KEY = "otto_fm_view_mode";
+import {
+  ROOT_SELECT_VALUE,
+  VIEW_STORAGE_KEY,
+  type SortMode,
+  type ViewMode,
+  type WorkspaceEntry,
+  type WorkspaceStats,
+} from "@/types/workspace";
+import {
+  askActionLabel,
+  buildAskOttoPrompt,
+  buildBreadcrumbs,
+  entryIconComponent,
+  fileUrl,
+  folderIconComponent,
+  formatBytes,
+  formatTime,
+  kindBadgeLabel,
+  normalizeDirPath,
+  readStoredViewMode,
+  sortModeLabel,
+  sortWorkspaceEntries,
+  triggerDownload,
+  zipUrl,
+} from "@/lib/workspace-helpers";
+import { useWorkspaceBoxExport } from "@/composables/useWorkspaceBoxExport";
 
 const props = defineProps<{
   refreshTick: number;
@@ -164,33 +158,6 @@ const emit = defineEmits<{
   statsUpdated: [payload: { stats: WorkspaceStats; recentFiles: WorkspaceEntry[] }];
   pathChanged: [relDir: string];
 }>();
-
-function normalizeDirPath(relDir: string): string {
-  return relDir.replace(/^\/+|\/+$/g, "");
-}
-
-function buildBreadcrumbs(relDir: string): Array<{ name: string; path: string }> {
-  const out: Array<{ name: string; path: string }> = [{ name: "workspace", path: "" }];
-  const normalized = normalizeDirPath(relDir);
-  if (!normalized) return out;
-  const parts = normalized.split("/").filter(Boolean);
-  let acc = "";
-  for (const part of parts) {
-    acc = acc ? `${acc}/${part}` : part;
-    out.push({ name: part, path: acc });
-  }
-  return out;
-}
-
-function readStoredViewMode(): ViewMode {
-  try {
-    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (saved === "grid" || saved === "list") return saved;
-  } catch {
-    // ignore storage failures
-  }
-  return "list";
-}
 
 const initialNormalizedPath = normalizeDirPath(props.initialPath || "");
 const currentPath = ref(initialNormalizedPath);
@@ -262,26 +229,9 @@ const renderedPreviewHtml = computed(() =>
   selectedFile.value?.kind === "markdown" ? renderMarkdown(textContent.value) : ""
 );
 
-const sortedItems = computed(() => {
-  const copy = [...items.value];
-  copy.sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    if (sortMode.value === "modified-desc") {
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    }
-    if (sortMode.value === "size-desc") {
-      return b.sizeBytes - a.sizeBytes || a.name.localeCompare(b.name);
-    }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-  });
-  return copy;
-});
+const sortedItems = computed(() => sortWorkspaceEntries(items.value, sortMode.value));
 
-const sortLabel = computed(() => {
-  if (sortMode.value === "modified-desc") return "Newest";
-  if (sortMode.value === "size-desc") return "Largest";
-  return "Name";
-});
+const sortLabel = computed(() => sortModeLabel(sortMode.value));
 
 function setViewMode(mode: ViewMode) {
   viewMode.value = mode;
@@ -290,68 +240,6 @@ function setViewMode(mode: ViewMode) {
   } catch {
     // ignore storage failures
   }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
-function folderIconComponent(dirPath: string, isActive: boolean): Component {
-  const seg = dirPath.split("/")[0];
-  if (seg === "clips") return FilmIcon;
-  if (seg === "thumbnails") return ImageIcon;
-  if (seg === "scripts") return FileTextIcon;
-  if (seg === "briefs") return ClipboardListIcon;
-  if (seg === "uploads") return UploadIcon;
-  if (seg === "exports") return PackageIcon;
-  return isActive ? FolderOpenIcon : FolderIcon;
-}
-
-function entryIconComponent(entry: WorkspaceEntry): Component {
-  if (entry.isDir) return folderIconComponent(entry.relPath, false);
-  if (entry.kind === "image") return ImageIcon;
-  if (entry.kind === "video") return FilmIcon;
-  if (entry.kind === "audio") return MusicIcon;
-  if (entry.kind === "markdown") return FileTextIcon;
-  if (entry.kind === "text") return FileCodeIcon;
-  return PackageIcon;
-}
-
-function kindBadgeLabel(entry: WorkspaceEntry): string {
-  if (entry.isDir) return "folder";
-  if (entry.kind === "markdown") return "md";
-  const dot = entry.name.lastIndexOf(".");
-  if (dot > 0 && dot < entry.name.length - 1) {
-    return entry.name.slice(dot + 1).toLowerCase().slice(0, 6);
-  }
-  return entry.kind;
-}
-
-function fileUrl(relPath: string, download = false): string {
-  const q = new URLSearchParams({ path: relPath });
-  if (download) q.set("download", "1");
-  return `/api/workspace/file?${q.toString()}`;
-}
-
-function zipUrl(relDir: string): string {
-  const q = new URLSearchParams({ path: relDir });
-  return `/api/workspace/zip?${q.toString()}`;
 }
 
 interface LoadDirectoryOptions {
@@ -801,129 +689,21 @@ async function confirmDelete() {
 }
 
 function askOttoAbout(entry: WorkspaceEntry) {
-  const hidden = `<hidden>Workspace file absolute path: ${entry.absPath} (relative: ${entry.relPath}, type: ${entry.kind})</hidden>`;
-  if (entry.kind === "image") {
-    emit(
-      "askPrompt",
-      `Review my thumbnail draft "${entry.name}" for mobile readability and give concrete revision notes for my human artist.\n${hidden}`
-    );
-    return;
-  }
-  if (entry.kind === "video") {
-    emit(
-      "askPrompt",
-      `Watch my clip "${entry.name}" and critique the first 3-second hook, pacing, dead air, and editor notes.\n${hidden}`
-    );
-    return;
-  }
-  emit(
-    "askPrompt",
-    `Read and review my workspace file "${entry.relPath}" and share your feedback.\n${hidden}`
-  );
+  emit("askPrompt", buildAskOttoPrompt(entry));
 }
-
-function askActionLabel(entry: WorkspaceEntry): string {
-  if (entry.kind === "image") return "Review Thumbnail";
-  if (entry.kind === "video") return "Review Clip";
-  return "Ask Otto";
-}
-
-function triggerDownload(url: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-// ---- Box Handoff Export ----
-interface BoxExportResult {
-  kind: "file" | "folder";
-  id: string;
-  name: string;
-  url: string;
-  folderUrl: string;
-  uploadedCount: number;
-  skipped: Array<{ name: string; reason: string }>;
-}
-
-const boxConnected = ref(false);
-const boxModalOpen = ref(false);
-const boxUploading = ref(false);
-const boxTargetName = ref("");
-const boxTargetIsDir = ref(false);
-const boxResult = ref<BoxExportResult | null>(null);
-const boxError = ref("");
-const boxCopied = ref(false);
-
-async function checkBoxStatus() {
-  try {
-    const res = await fetch("/api/workspace/box-status");
-    if (res.ok) {
-      const data = (await res.json()) as { connected?: boolean };
-      boxConnected.value = Boolean(data.connected);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-void checkBoxStatus();
-
-async function sendToBox(relPath: string, displayName: string, isDir: boolean) {
-  boxTargetName.value = displayName || (relPath ? relPath.split("/").pop() || relPath : "workspace");
-  boxTargetIsDir.value = isDir;
-  boxResult.value = null;
-  boxError.value = "";
-  boxCopied.value = false;
-  boxModalOpen.value = true;
-  boxUploading.value = true;
-  try {
-    const res = await fetch("/api/workspace/export-box", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: relPath }),
-    });
-    const data = (await res.json().catch(() => ({}))) as Partial<BoxExportResult> & {
-      ok?: boolean;
-      error?: string;
-    };
-    if (!res.ok || !data.ok || !data.url) {
-      boxError.value = data.error || "Box upload failed";
-    } else {
-      boxResult.value = {
-        kind: data.kind === "folder" ? "folder" : "file",
-        id: data.id || "",
-        name: data.name || boxTargetName.value,
-        url: data.url,
-        folderUrl: data.folderUrl || data.url,
-        uploadedCount: data.uploadedCount ?? 1,
-        skipped: Array.isArray(data.skipped) ? data.skipped : [],
-      };
-      toast.success(`Uploaded ${boxResult.value.name} to Box`);
-    }
-  } catch (err) {
-    boxError.value = err instanceof Error ? err.message : "Box upload failed";
-  } finally {
-    boxUploading.value = false;
-  }
-}
-
-async function copyBoxLink() {
-  const url = boxResult.value?.url;
-  if (!url) return;
-  try {
-    await navigator.clipboard.writeText(url);
-    boxCopied.value = true;
-    toast.success("Box link copied");
-    setTimeout(() => {
-      boxCopied.value = false;
-    }, 2000);
-  } catch {
-    toast.error("Could not copy link");
-  }
-}
+const {
+  boxConnected,
+  boxModalOpen,
+  boxUploading,
+  boxTargetName,
+  boxTargetIsDir,
+  boxResult,
+  boxError,
+  boxCopied,
+  checkBoxStatus,
+  sendToBox,
+  copyBoxLink,
+} = useWorkspaceBoxExport();
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 function onSearchInput() {

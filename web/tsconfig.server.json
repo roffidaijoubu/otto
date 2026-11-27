@@ -11,5 +11,5 @@
     "lib": ["ESNext"],
     "types": ["bun"]
   },
-  "include": ["server.ts"]
+  "include": ["server.ts", "lib/**/*.ts", "routes/**/*.ts"]
 }
