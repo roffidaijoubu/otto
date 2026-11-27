@@ -90,10 +90,12 @@ export function scanClipsDir(opts?: { trackedPaths?: Set<string> }): ClipFileEnt
   return clips;
 }
 
-export function listClipEcosystem() {
+export async function listClipEcosystem() {
   ensureWorkspaceScaffold();
-  const jobs = listClipJobs(30);
-  const records = listClipRecords({ limit: 80 });
+  const [jobs, records] = await Promise.all([
+    listClipJobs(30),
+    listClipRecords({ limit: 80 }),
+  ]);
   const trackedPaths = new Set(records.map((r) => r.filePath));
   const untrackedFiles = scanClipsDir({ trackedPaths });
   return {

@@ -39,7 +39,7 @@ export async function syncMetricsForPlatform(
       body: {
         ok: anyOk,
         state: ytRes.state,
-        socials: getSocialMetricsOverview(),
+        socials: await getSocialMetricsOverview(),
         results: {
           youtube: { ok: ytRes.ok, error: ytRes.error },
           ...Object.fromEntries(socialRes.map((r) => [r.platform, { ok: r.ok, error: r.error }])),
@@ -57,7 +57,7 @@ export async function syncMetricsForPlatform(
       body: {
         ok: sRes.ok,
         result: sRes,
-        socials: getSocialMetricsOverview(),
+        socials: await getSocialMetricsOverview(),
         error: sRes.error,
       },
     };
@@ -72,15 +72,15 @@ export async function syncMetricsForPlatform(
   };
 }
 
-export function triggerAutoSyncMetricsIfNeeded(timezone = resolveTimezone()): boolean {
+export async function triggerAutoSyncMetricsIfNeeded(timezone = resolveTimezone()): Promise<boolean> {
   let autoSyncStarted = false;
-  if (shouldAutoSyncYouTubeMetrics()) {
+  if (await shouldAutoSyncYouTubeMetrics()) {
     autoSyncStarted = true;
     void syncYouTubeMetrics({ timezone }).then((res) => {
       if (res.ok) broadcast({ type: "db_changed" });
     });
   }
-  if (shouldAutoSyncSocialMetrics()) {
+  if (await shouldAutoSyncSocialMetrics()) {
     autoSyncStarted = true;
     void syncAllSocialMetrics()
       .then((results) => {

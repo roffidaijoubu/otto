@@ -257,8 +257,11 @@ async function fetchRecentEntriesViaYtDlp(channelId: string): Promise<FlatYtDlpE
 }
 
 async function resolveChannelId(ctx: ComposioContext): Promise<{ channelId: string; channelTitle: string }> {
-  const cachedId = getStudioMeta("yt_channel_id");
-  const cachedTitle = getStudioMeta("yt_channel_title") || "";
+  const [cachedId, cachedTitleRaw] = await Promise.all([
+    getStudioMeta("yt_channel_id"),
+    getStudioMeta("yt_channel_title"),
+  ]);
+  const cachedTitle = cachedTitleRaw || "";
   if (cachedId) {
     return { channelId: cachedId, channelTitle: cachedTitle };
   }
@@ -273,27 +276,43 @@ async function resolveChannelId(ctx: ComposioContext): Promise<{ channelId: stri
   if (!channelId) {
     throw new Error("Could not resolve YouTube channel ID from connected account playlists.");
   }
-  setStudioMeta("yt_channel_id", channelId);
-  if (channelTitle) setStudioMeta("yt_channel_title", channelTitle);
+  await setStudioMeta("yt_channel_id", channelId);
+  if (channelTitle) await setStudioMeta("yt_channel_title", channelTitle);
   return { channelId, channelTitle };
 }
 
-export function getYouTubeDailyConfig(fallbackTimezone = "UTC") {
+export async function getYouTubeDailyConfig(fallbackTimezone = "UTC") {
+  const [enabled, tz, cron, scheduleId] = await Promise.all([
+    getStudioMeta("yt_daily_enabled"),
+    getStudioMeta("yt_daily_timezone"),
+    getStudioMeta("yt_daily_cron"),
+    getStudioMeta("yt_daily_qstash_schedule_id"),
+  ]);
   return {
-    enabled: getStudioMeta("yt_daily_enabled") === "1",
-    timezone: getStudioMeta("yt_daily_timezone") || fallbackTimezone || "UTC",
-    cron: getStudioMeta("yt_daily_cron"),
-    scheduleId: getStudioMeta("yt_daily_qstash_schedule_id"),
+    enabled: enabled === "1",
+    timezone: tz || fallbackTimezone || "UTC",
+    cron,
+    scheduleId,
   };
 }
 
-export function getYouTubeMetricsWidgetState(fallbackTimezone = "UTC"): YouTubeMetricsWidgetState {
-  const metrics = listChannelMetrics(30).filter((m) => m.platform === "youtube");
+export async function getYouTubeMetricsWidgetState(
+  fallbackTimezone = "UTC"
+): Promise<YouTubeMetricsWidgetState> {
+  const [allMetrics, rawCache, lastSyncMeta, channelIdMeta, channelTitleMeta, dailySync] =
+    await Promise.all([
+      listChannelMetrics(30),
+      getStudioMeta("yt_widget_cache"),
+      getStudioMeta("yt_metrics_last_sync_at"),
+      getStudioMeta("yt_channel_id"),
+      getStudioMeta("yt_channel_title"),
+      getYouTubeDailyConfig(fallbackTimezone),
+    ]);
+  const metrics = allMetrics.filter((m) => m.platform === "youtube");
   const latestRow = metrics[0] ?? null;
   const prevRow = metrics[1] ?? null;
 
   let cache: YouTubeWidgetCache | null = null;
-  const rawCache = getStudioMeta("yt_widget_cache");
   if (rawCache) {
     try {
       cache = JSON.parse(rawCache) as YouTubeWidgetCache;
@@ -328,13 +347,13 @@ export function getYouTubeMetricsWidgetState(fallbackTimezone = "UTC"): YouTubeM
       totalViews: m.totalViews,
     }));
 
-  const lastSyncedAt = getStudioMeta("yt_metrics_last_sync_at") || cache?.syncedAt || latestRow?.createdAt || null;
+  const lastSyncedAt = lastSyncMeta || cache?.syncedAt || latestRow?.createdAt || null;
 
   return {
-    connected: Boolean(cache?.channelId || getStudioMeta("yt_channel_id") || latestRow),
+    connected: Boolean(cache?.channelId || channelIdMeta || latestRow),
     lastSyncedAt,
-    channelId: cache?.channelId || getStudioMeta("yt_channel_id") || null,
-    channelTitle: cache?.channelTitle || getStudioMeta("yt_channel_title") || "",
+    channelId: cache?.channelId || channelIdMeta || null,
+    channelTitle: cache?.channelTitle || channelTitleMeta || "",
     subscribers,
     totalViews,
     videoCount: cache?.videoCount ?? null,
@@ -345,12 +364,12 @@ export function getYouTubeMetricsWidgetState(fallbackTimezone = "UTC"): YouTubeM
     daysSinceLast: cache?.daysSinceLast ?? null,
     latestVideo: cache?.latestVideo ?? null,
     sparkline,
-    dailySync: getYouTubeDailyConfig(fallbackTimezone),
+    dailySync,
   };
 }
 
-export function shouldAutoSyncYouTubeMetrics(maxAgeMs = 6 * 60 * 60 * 1000): boolean {
-  const last = getStudioMeta("yt_metrics_last_sync_at");
+export async function shouldAutoSyncYouTubeMetrics(maxAgeMs = 6 * 60 * 60 * 1000): Promise<boolean> {
+  const last = await getStudioMeta("yt_metrics_last_sync_at");
   if (!last) return true;
   const ts = Date.parse(last);
   if (Number.isNaN(ts)) return true;
@@ -383,7 +402,7 @@ export async function syncYouTubeMetrics(opts?: {
       };
       if (ch.snippet?.title) {
         channelTitle = ch.snippet.title;
-        setStudioMeta("yt_channel_title", channelTitle);
+        await setStudioMeta("yt_channel_title", channelTitle);
       }
 
       const subscribers = toFiniteInt(ch.statistics?.subscriberCount);
@@ -433,7 +452,7 @@ export async function syncYouTubeMetrics(opts?: {
               if (!item.id) continue;
               if (item.snippet?.channelTitle && !channelTitle) {
                 channelTitle = item.snippet.channelTitle;
-                setStudioMeta("yt_channel_title", channelTitle);
+                await setStudioMeta("yt_channel_title", channelTitle);
               }
               detailsById.set(item.id, {
                 title: item.snippet?.title,
@@ -494,7 +513,7 @@ export async function syncYouTubeMetrics(opts?: {
       if (avgViewsRecent !== null) noteParts.push(`avg5: ${avgViewsRecent.toLocaleString()}`);
 
       // Single source of truth: upsert today's snapshot into `channel_metrics`
-      const metric = upsertDailyChannelMetric({
+      const metric = await upsertDailyChannelMetric({
         recordedAt,
         platform: "youtube",
         subscribers,
@@ -514,20 +533,20 @@ export async function syncYouTubeMetrics(opts?: {
         latestVideo,
         syncedAt,
       };
-      setStudioMeta("yt_widget_cache", JSON.stringify(cache));
-      setStudioMeta("yt_metrics_last_sync_at", syncedAt);
+      await setStudioMeta("yt_widget_cache", JSON.stringify(cache));
+      await setStudioMeta("yt_metrics_last_sync_at", syncedAt);
 
       return {
         ok: true,
         metric,
-        state: getYouTubeMetricsWidgetState(opts?.timezone),
+        state: await getYouTubeMetricsWidgetState(opts?.timezone),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
         error: msg,
-        state: getYouTubeMetricsWidgetState(opts?.timezone),
+        state: await getYouTubeMetricsWidgetState(opts?.timezone),
       };
     } finally {
       syncInFlight = null;
@@ -549,12 +568,12 @@ export async function syncDailyMetricsQStashSchedule(opts: {
 }> {
   const tz = extractIanaTimezone(opts.timezone || "UTC");
   const cron = buildMidnightCronForTimezone(tz);
-  const existingId = getStudioMeta("yt_daily_qstash_schedule_id");
-  const existingCron = getStudioMeta("yt_daily_cron");
+  const existingId = await getStudioMeta("yt_daily_qstash_schedule_id");
+  const existingCron = await getStudioMeta("yt_daily_cron");
 
-  setStudioMeta("yt_daily_enabled", opts.enabled ? "1" : "0");
-  setStudioMeta("yt_daily_timezone", tz);
-  setStudioMeta("yt_daily_cron", cron);
+  await setStudioMeta("yt_daily_enabled", opts.enabled ? "1" : "0");
+  await setStudioMeta("yt_daily_timezone", tz);
+  await setStudioMeta("yt_daily_cron", cron);
 
   const gw = await resolveQStashGatewayUrl();
   const publicBase = process.env.LMA_PUBLIC_URL?.trim();
@@ -566,7 +585,7 @@ export async function syncDailyMetricsQStashSchedule(opts: {
         signal: AbortSignal.timeout(10_000),
       }).catch(() => {});
     }
-    deleteStudioMeta("yt_daily_qstash_schedule_id");
+    await deleteStudioMeta("yt_daily_qstash_schedule_id");
     return { ok: true, armed: false, cron, scheduleId: null, note: "Daily metrics snapshot paused." };
   }
 
@@ -591,7 +610,7 @@ export async function syncDailyMetricsQStashSchedule(opts: {
       method: "DELETE",
       signal: AbortSignal.timeout(10_000),
     }).catch(() => {});
-    deleteStudioMeta("yt_daily_qstash_schedule_id");
+    await deleteStudioMeta("yt_daily_qstash_schedule_id");
   }
 
   const targetUrl = `${publicBase.replace(/\/$/, "")}/api/wakeup`;
@@ -625,7 +644,7 @@ export async function syncDailyMetricsQStashSchedule(opts: {
   const raw = (await res.json().catch(() => ({}))) as { scheduleId?: string };
   const scheduleId = typeof raw.scheduleId === "string" ? raw.scheduleId : null;
   if (scheduleId) {
-    setStudioMeta("yt_daily_qstash_schedule_id", scheduleId);
+    await setStudioMeta("yt_daily_qstash_schedule_id", scheduleId);
   }
   return {
     ok: true,

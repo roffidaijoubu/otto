@@ -19,7 +19,7 @@ import {
 
 export async function handleClipsRoutes(req: Request, url: URL): Promise<Response | null> {
   if (req.method === "GET" && url.pathname === "/api/clips/ecosystem") {
-    return Response.json(listClipEcosystem());
+    return Response.json(await listClipEcosystem());
   }
 
   if (req.method === "POST" && url.pathname === "/api/clips/jobs") {
@@ -33,7 +33,7 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
       if (!body.vodUrl || !String(body.vodUrl).trim()) {
         return Response.json({ error: "YouTube VOD URL is required" }, { status: 400 });
       }
-      const job = startClipJob(
+      const job = await startClipJob(
         {
           vodUrl: String(body.vodUrl),
           title: body.title ? String(body.title) : undefined,
@@ -55,7 +55,7 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
     const id = decodeURIComponent(
       url.pathname.slice("/api/clips/jobs/".length, -"/cancel".length)
     );
-    const job = cancelBackgroundClipJob(id, broadcast, (busy) => {
+    const job = await cancelBackgroundClipJob(id, broadcast, (busy) => {
       if (!busy) rpc.releaseSpriteHold();
     });
     if (!job) return Response.json({ error: "Clip job not found" }, { status: 404 });
@@ -64,7 +64,7 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
 
   if (req.method === "DELETE" && url.pathname.startsWith("/api/clips/jobs/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/clips/jobs/".length));
-    const ok = deleteClipJob(id);
+    const ok = await deleteClipJob(id);
     if (ok) broadcast({ type: "clips_changed" });
     return Response.json({ ok });
   }
@@ -73,13 +73,13 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
     const id = decodeURIComponent(
       url.pathname.slice("/api/clips/records/".length, -"/box".length)
     );
-    const all = listClipRecords({ limit: 200 });
+    const all = await listClipRecords({ limit: 200 });
     const rec = all.find((c) => c.id === id);
     if (!rec) return Response.json({ error: "Clip record not found" }, { status: 404 });
     try {
       const resolved = resolveSafeWorkspacePath(rec.filePath, { allowMissing: false });
       const uploaded = await exportWorkspaceEntryToBox(resolved.absPath, resolved.relPath);
-      const updated = updateClipBoxUrl(rec.id, uploaded.url);
+      const updated = await updateClipBoxUrl(rec.id, uploaded.url);
       broadcast({ type: "clips_changed" });
       return Response.json({ ok: true, clip: updated, boxUrl: uploaded.url });
     } catch (err) {
@@ -92,7 +92,7 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
 
   if (req.method === "DELETE" && url.pathname.startsWith("/api/clips/records/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/clips/records/".length));
-    const ok = deleteClipRecord(id);
+    const ok = await deleteClipRecord(id);
     if (ok) broadcast({ type: "clips_changed" });
     return Response.json({ ok });
   }

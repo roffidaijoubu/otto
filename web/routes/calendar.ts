@@ -14,14 +14,14 @@ export async function handleCalendarRoutes(
   url: URL
 ): Promise<Response | null> {
   if (req.method === "GET" && url.pathname === "/api/calendar") {
-    const events = readCalendarEvents().sort(
+    const events = (await readCalendarEvents()).sort(
       (a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)
     );
     return Response.json({ events });
   }
 
   if (req.method === "GET" && url.pathname === "/api/calendar/export.ics") {
-    const events = readCalendarEvents().sort(
+    const events = (await readCalendarEvents()).sort(
       (a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)
     );
     const ics = buildCalendarIcs(events);
@@ -65,7 +65,7 @@ export async function handleCalendarRoutes(
         end?: { dateTime?: string; date?: string };
       }>;
 
-      const events = readCalendarEvents();
+      const events = await readCalendarEvents();
       const nowIso = new Date().toISOString();
       let added = 0;
       let updated = 0;
@@ -116,7 +116,7 @@ export async function handleCalendarRoutes(
           added++;
         }
       }
-      writeCalendarEvents(events);
+      await writeCalendarEvents(events);
       return Response.json({
         ok: true,
         connected: true,
@@ -176,9 +176,9 @@ export async function handleCalendarRoutes(
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    const events = readCalendarEvents();
+    const events = await readCalendarEvents();
     events.push(newEvent);
-    writeCalendarEvents(events);
+    await writeCalendarEvents(events);
     return Response.json({ ok: true, event: newEvent });
   }
 
@@ -194,7 +194,7 @@ export async function handleCalendarRoutes(
       type?: string;
       startAt?: string;
     };
-    const events = readCalendarEvents();
+    const events = await readCalendarEvents();
     const evt = events.find((e) => e.id === eventId);
     if (!evt) {
       return Response.json({ error: "Calendar event not found" }, { status: 404 });
@@ -221,7 +221,7 @@ export async function handleCalendarRoutes(
       evt.startAt = new Date(Date.parse(body.startAt)).toISOString();
     }
     evt.updatedAt = new Date().toISOString();
-    writeCalendarEvents(events);
+    await writeCalendarEvents(events);
     return Response.json({ ok: true, event: evt });
   }
 
@@ -230,7 +230,7 @@ export async function handleCalendarRoutes(
     if (!/^[A-Za-z0-9_-]{4,64}$/.test(eventId)) {
       return Response.json({ error: "Invalid event ID" }, { status: 400 });
     }
-    const events = readCalendarEvents();
+    const events = await readCalendarEvents();
     const evt = events.find((e) => e.id === eventId);
     if (!evt) {
       return Response.json({ error: "Calendar event not found" }, { status: 404 });
@@ -265,7 +265,7 @@ export async function handleCalendarRoutes(
     }
     evt.status = "cancelled";
     evt.updatedAt = new Date().toISOString();
-    writeCalendarEvents(events);
+    await writeCalendarEvents(events);
     return Response.json({ ok: true, event: evt, revokedQStashIds: revoked, googleDeleted });
   }
 

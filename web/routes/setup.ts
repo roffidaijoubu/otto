@@ -24,7 +24,7 @@ export async function handleSetupRoutes(req: Request, url: URL): Promise<Respons
 
   if (req.method === "GET" && url.pathname === "/api/setup/status") {
     const identity = readSetupIdentity();
-    const metaDone = getStudioMeta("setup_completed") === "1";
+    const metaDone = (await getStudioMeta("setup_completed")) === "1";
     const completed = metaDone || Boolean(identity.creatorName && identity.timezone);
     return Response.json({
       completed,
@@ -70,7 +70,7 @@ export async function handleSetupRoutes(req: Request, url: URL): Promise<Respons
         }
       }
 
-      setStudioMeta("setup_completed", "1");
+      await setStudioMeta("setup_completed", "1");
       broadcast({ type: "db_changed" });
       return new Response(
         JSON.stringify({ ok: true, completed: true, passwordChanged }),

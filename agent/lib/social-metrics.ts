@@ -58,8 +58,8 @@ const PLATFORM_LABELS: Record<SocialPlatform, string> = {
   x: "X (Twitter)",
 };
 
-function readCache(): SocialCacheMap {
-  const raw = getStudioMeta(SOCIAL_CACHE_KEY);
+async function readCache(): Promise<SocialCacheMap> {
+  const raw = await getStudioMeta(SOCIAL_CACHE_KEY);
   if (!raw) return {};
   try {
     return JSON.parse(raw) as SocialCacheMap;
@@ -68,14 +68,14 @@ function readCache(): SocialCacheMap {
   }
 }
 
-function writeCache(map: SocialCacheMap): void {
-  setStudioMeta(SOCIAL_CACHE_KEY, JSON.stringify(map));
+async function writeCache(map: SocialCacheMap): Promise<void> {
+  await setStudioMeta(SOCIAL_CACHE_KEY, JSON.stringify(map));
 }
 
-function patchCache(platform: SocialPlatform, entry: CachedPlatformMeta): void {
-  const fresh = readCache();
+async function patchCache(platform: SocialPlatform, entry: CachedPlatformMeta): Promise<void> {
+  const fresh = await readCache();
   fresh[platform] = entry;
-  writeCache(fresh);
+  await writeCache(fresh);
 }
 
 function cleanHandle(raw: string): string {
@@ -159,14 +159,14 @@ export async function syncSocialPlatform(
       const followers = typeof author.fans === "number" ? author.fans : null;
       const totalLikes = typeof author.heart === "number" ? author.heart : null;
       const videoCount = typeof author.video === "number" ? author.video : null;
-      const metric = upsertDailyChannelMetric({
+      const metric = await upsertDailyChannelMetric({
         recordedAt: todayDateStr(),
         platform: "tiktok",
         subscribers: followers,
         totalViews: totalLikes,
         notes: `Auto-sync @${handle}${videoCount !== null ? ` · ${videoCount} videos` : ""}`,
       });
-      patchCache("tiktok", {
+      await patchCache("tiktok", {
         handle,
         displayName: author.nickName || `@${handle}`,
         followers,
@@ -199,14 +199,14 @@ export async function syncSocialPlatform(
       if (!p) throw new Error(`Instagram profile @${handle} returned no profile details.`);
       const followers = typeof p.followersCount === "number" ? p.followersCount : null;
       const postsCount = typeof p.postsCount === "number" ? p.postsCount : null;
-      const metric = upsertDailyChannelMetric({
+      const metric = await upsertDailyChannelMetric({
         recordedAt: todayDateStr(),
         platform: "instagram",
         subscribers: followers,
         totalViews: postsCount,
         notes: `Auto-sync @${handle}${postsCount !== null ? ` · ${postsCount} posts` : ""}`,
       });
-      patchCache("instagram", {
+      await patchCache("instagram", {
         handle,
         displayName: p.fullName || `@${handle}`,
         followers,
@@ -241,14 +241,14 @@ export async function syncSocialPlatform(
     if (!author) throw new Error(`X profile @${handle} returned no recent posts/author data.`);
     const followers = typeof author.followers === "number" ? author.followers : null;
     const postsCount = typeof author.statusesCount === "number" ? author.statusesCount : null;
-    const metric = upsertDailyChannelMetric({
+    const metric = await upsertDailyChannelMetric({
       recordedAt: todayDateStr(),
       platform: "x",
       subscribers: followers,
       totalViews: postsCount,
       notes: `Auto-sync @${handle}${postsCount !== null ? ` · ${postsCount} posts` : ""}`,
     });
-    patchCache("x", {
+    await patchCache("x", {
       handle,
       displayName: author.name || `@${handle}`,
       followers,
@@ -261,8 +261,8 @@ export async function syncSocialPlatform(
     return { ok: true, platform, metric };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const prev = readCache()[platform];
-    patchCache(platform, {
+    const prev = (await readCache())[platform];
+    await patchCache(platform, {
       handle,
       displayName: prev?.displayName || `@${handle}`,
       followers: prev?.followers ?? null,
@@ -306,9 +306,9 @@ let socialSyncInFlight: Promise<
   Array<{ ok: boolean; platform: SocialPlatform; metric?: ChannelMetric; error?: string }>
 > | null = null;
 
-export function shouldAutoSyncSocialMetrics(): boolean {
+export async function shouldAutoSyncSocialMetrics(): Promise<boolean> {
   if (socialSyncInFlight) return false;
-  const cache = readCache();
+  const cache = await readCache();
   const platforms: SocialPlatform[] = ["tiktok", "instagram", "x"];
   const now = Date.now();
   // Trigger auto-sync if any platform has never synced or is older than 6 hours
@@ -320,9 +320,8 @@ export function shouldAutoSyncSocialMetrics(): boolean {
   });
 }
 
-export function getSocialMetricsOverview(): SocialPlatformSummary[] {
-  const cache = readCache();
-  const allMetrics = listChannelMetrics(120);
+export async function getSocialMetricsOverview(): Promise<SocialPlatformSummary[]> {
+  const [cache, allMetrics] = await Promise.all([readCache(), listChannelMetrics(120)]);
   const platforms: SocialPlatform[] = ["tiktok", "instagram", "x"];
 
   return platforms.map((platform) => {

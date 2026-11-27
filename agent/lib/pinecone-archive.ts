@@ -424,9 +424,9 @@ export async function searchCreatorArchive(opts: {
   return rawMatches.slice(0, topK).map((m) => toMatch(m));
 }
 
-export function resolveCreatorChannelUrl(): string | null {
+export async function resolveCreatorChannelUrl(): Promise<string | null> {
   // 1. Check cached YouTube widget metadata in studio_meta
-  const ytMetaRaw = getStudioMeta("yt_metrics_widget_v1");
+  const ytMetaRaw = await getStudioMeta("yt_metrics_widget_v1");
   if (ytMetaRaw) {
     try {
       const parsed = JSON.parse(ytMetaRaw) as { channelId?: string };
@@ -608,7 +608,7 @@ export async function indexSingleVideo(
   let durationSec = typeof input === "string" ? 0 : input.durationSec;
   let contentType: ArchiveContentType = typeof input === "string" ? "video" : input.contentType;
 
-  upsertArchiveVideo({
+  await upsertArchiveVideo({
     videoId,
     title,
     publishedAt,
@@ -678,7 +678,7 @@ export async function indexSingleVideo(
 
     const chunks = chunkTranscriptSegments(segments);
     if (chunks.length === 0) {
-      upsertArchiveVideo({
+      await upsertArchiveVideo({
         videoId,
         title,
         publishedAt,
@@ -724,7 +724,7 @@ export async function indexSingleVideo(
       });
     }
 
-    upsertArchiveVideo({
+    await upsertArchiveVideo({
       videoId,
       title,
       publishedAt,
@@ -746,7 +746,7 @@ export async function indexSingleVideo(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    upsertArchiveVideo({
+    await upsertArchiveVideo({
       videoId,
       title,
       publishedAt,
@@ -766,13 +766,14 @@ export async function getCombinedArchiveOverview(): Promise<{
   local: ArchiveStats;
   channelUrl: string | null;
 }> {
-  const [pinecone, local] = await Promise.all([
+  const [pinecone, local, channelUrl] = await Promise.all([
     getPineconeIndexInfo(),
-    Promise.resolve(getArchiveStats()),
+    getArchiveStats(),
+    resolveCreatorChannelUrl(),
   ]);
   return {
     pinecone,
     local,
-    channelUrl: resolveCreatorChannelUrl(),
+    channelUrl,
   };
 }

@@ -25,7 +25,7 @@ export default function (pi: ExtensionAPI) {
       "Inspect the unified Studio SQLite database (~/.omp/agent/studio.db) shared with Otto Studio OS: returns row counts for calendar_events, content_pipeline, contacts, and channel_metrics.",
     parameters: Type.Object({}),
     async execute() {
-      const overview = getStudioDbOverview();
+      const overview = await getStudioDbOverview();
       return {
         content: [{ type: "text", text: JSON.stringify(overview, null, 2) }],
         details: overview,
@@ -37,7 +37,7 @@ export default function (pi: ExtensionAPI) {
     name: "studio_db_query",
     label: "Query Studio Database (Read-Only)",
     description:
-      "Run a read-only SELECT, WITH, or PRAGMA table_info SQL query against the unified Studio SQLite database (~/.omp/agent/studio.db). Useful for cross-table analysis across calendar_events, content_pipeline, contacts, and channel_metrics.",
+      "Run a read-only SELECT or WITH SQL query against the unified Studio database (Neon Postgres / SQLite). Useful for cross-table analysis across calendar_events, content_pipeline, contacts, and channel_metrics.",
     parameters: Type.Object({
       sql: Type.String({ description: "Read-only SQL SELECT/WITH query" }),
       params: Type.Optional(
@@ -47,7 +47,7 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_id, params) {
-      const res = runReadOnlySql(params.sql, params.params || []);
+      const res = await runReadOnlySql(params.sql, params.params || []);
       return {
         content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
         details: { rowCount: res.rows.length, truncated: res.truncated },
@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
       format: Type.Optional(Type.String({ description: "Optional format filter: stream|video|short|collab" })),
     }),
     async execute(_id, params) {
-      const items = listPipelineItems(params);
+      const items = await listPipelineItems(params);
       return {
         content: [{ type: "text", text: JSON.stringify({ count: items.length, items }, null, 2) }],
         details: { count: items.length },
@@ -109,7 +109,7 @@ export default function (pi: ExtensionAPI) {
       notes: Type.Optional(Type.String({ description: "Production notes, packaging feedback, or segment breakdown." })),
     }),
     async execute(_id, params) {
-      const item = upsertPipelineItem({
+      const item = await upsertPipelineItem({
         id: params.id,
         title: params.title,
         format: params.format as PipelineFormat | undefined,
@@ -135,7 +135,7 @@ export default function (pi: ExtensionAPI) {
       id: Type.String({ description: "Pipeline item ID to delete." }),
     }),
     async execute(_id, params) {
-      const deleted = deletePipelineItem(params.id);
+      const deleted = await deletePipelineItem(params.id);
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: deleted, id: params.id }) }],
         details: { deleted },
@@ -155,7 +155,7 @@ export default function (pi: ExtensionAPI) {
       status: Type.Optional(Type.String({ description: "Optional status filter: prospect|pitched|active|paused" })),
     }),
     async execute(_id, params) {
-      const contacts = listContacts(params);
+      const contacts = await listContacts(params);
       return {
         content: [{ type: "text", text: JSON.stringify({ count: contacts.length, contacts }, null, 2) }],
         details: { count: contacts.length },
@@ -195,7 +195,7 @@ export default function (pi: ExtensionAPI) {
       notes: Type.Optional(Type.String({ description: "Rates, art style, timezone, collab vibe, or pitch notes." })),
     }),
     async execute(_id, params) {
-      const contact = upsertContact({
+      const contact = await upsertContact({
         id: params.id,
         name: params.name,
         role: params.role as ContactRole | undefined,
@@ -219,7 +219,7 @@ export default function (pi: ExtensionAPI) {
       id: Type.String({ description: "Contact ID to delete." }),
     }),
     async execute(_id, params) {
-      const deleted = deleteContact(params.id);
+      const deleted = await deleteContact(params.id);
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: deleted, id: params.id }) }],
         details: { deleted },
@@ -244,7 +244,7 @@ export default function (pi: ExtensionAPI) {
       notes: Type.Optional(Type.String({ description: "Context for this snapshot (e.g. post-collab spike, packaging experiment)." })),
     }),
     async execute(_id, params) {
-      const metric = addChannelMetric(params);
+      const metric = await addChannelMetric(params);
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, metric }, null, 2) }],
         details: { id: metric.id },
@@ -260,7 +260,7 @@ export default function (pi: ExtensionAPI) {
       limit: Type.Optional(Type.Number({ description: "Max snapshots to return (default 25)." })),
     }),
     async execute(_id, params) {
-      const metrics = listChannelMetrics(params.limit ?? 25);
+      const metrics = await listChannelMetrics(params.limit ?? 25);
       return {
         content: [{ type: "text", text: JSON.stringify({ count: metrics.length, metrics }, null, 2) }],
         details: { count: metrics.length },

@@ -364,7 +364,7 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_id, params) {
       const isFailureStage = /^(failed|blocked|error)/i.test(params.stage.trim());
-      const updated = updateClipJob(params.jobId, {
+      const updated = await updateClipJob(params.jobId, {
         stage: params.stage,
         logMessage: params.message,
         ...(isFailureStage ? { status: "failed", error: params.message } : {}),
@@ -402,7 +402,7 @@ export default function (pi: ExtensionAPI) {
       youtubeUrl: Type.Optional(Type.String({ description: "Timestamped YouTube jump URL (https://youtu.be/<id>?t=...)" })),
     }),
     async execute(_id, params) {
-      const clip = upsertClipRecord({
+      const clip = await upsertClipRecord({
         jobId: params.jobId ?? null,
         videoId: params.videoId,
         title: params.title,
@@ -429,7 +429,7 @@ export default function (pi: ExtensionAPI) {
       limit: Type.Optional(Type.Number({ description: "Max jobs to return (default: 10)" })),
     }),
     async execute(_id, params) {
-      const jobs = listClipJobs(params.limit ?? 10);
+      const jobs = await listClipJobs(params.limit ?? 10);
       return {
         content: [{ type: "text", text: JSON.stringify({ jobs }, null, 2) }],
         details: { count: jobs.length },

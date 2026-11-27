@@ -78,11 +78,11 @@ export function cancelArchiveSync(): boolean {
   return true;
 }
 
-export function startBackgroundArchiveSync(opts: {
+export async function startBackgroundArchiveSync(opts: {
   channelUrl?: string;
   includeShorts?: boolean;
   limit?: number;
-} = {}): { ok: boolean; message: string; state: ArchiveSyncState } {
+} = {}): Promise<{ ok: boolean; message: string; state: ArchiveSyncState }> {
   if (syncState.running) {
     return {
       ok: true,
@@ -91,7 +91,7 @@ export function startBackgroundArchiveSync(opts: {
     };
   }
 
-  const channelUrl = opts.channelUrl?.trim() || resolveCreatorChannelUrl() || "";
+  const channelUrl = opts.channelUrl?.trim() || (await resolveCreatorChannelUrl()) || "";
   if (!channelUrl) {
     throw new Error("Could not detect YouTube channel URL. Connect YouTube or pass channelUrl.");
   }
@@ -136,7 +136,7 @@ export function startBackgroundArchiveSync(opts: {
       // Hydrate local SQLite cache for videos already living in Pinecone
       for (const v of discovered) {
         if (existingIds.has(v.videoId)) {
-          upsertArchiveVideo({
+          await upsertArchiveVideo({
             videoId: v.videoId,
             title: v.title,
             publishedAt: v.publishedAt,

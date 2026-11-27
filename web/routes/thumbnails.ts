@@ -4,14 +4,110 @@ import { runThumbnailWorker } from "../lib/background-job.ts";
 import { errorMessage } from "../lib/http.ts";
 import { broadcast } from "../lib/sse.ts";
 import {
+  WORKSPACE_ROOT,
   deleteThumbnailProject,
   getThumbnailAssetPath,
   getThumbnailProject,
   getThumbnailProjectDir,
   listThumbnailProjects,
+  sanitizeThumbnailAssetName,
   saveThumbnailExportBytes,
 } from "../../agent/lib/thumbnails.ts";
 import { exportWorkspaceEntryToBox } from "../../agent/lib/box.ts";
+
+export function dispatchThumbnailBackgroundJob(opts: {
+  prompt: string;
+  attachedImages?: string[];
+  slug?: string;
+  label?: string;
+}): { jobId: string } {
+  const jobId = `thumb_${Date.now().toString(36)}`;
+  const targetSlug = (opts.slug || "").trim();
+  const label = (opts.label || (targetSlug ? `Refining ${targetSlug}...` : "Composing 1280×720 thumbnail...")).trim();
+  const attached = (opts.attachedImages || []).map((s) => String(s || "").trim()).filter(Boolean);
+
+  broadcast({
+    type: "thumbnail_job_started",
+    jobId,
+    slug: targetSlug,
+    label,
+  });
+
+  void (async () => {
+    try {
+      const beforeSlugs = targetSlug ? new Set<string>() : new Set(listThumbnailProjects().map((t) => t.slug));
+      const workerPrompt = targetSlug
+        ? [
+            `ISOLATED NON-AI THUMBNAIL REFINEMENT TASK (never asks unnecessary questions; executes directly).`,
+            `Target thumbnail slug: "${targetSlug}".`,
+            attached.length > 0
+              ? `\nCreator uploaded image attachment(s) in /home/sprite/workspace/:\n${attached.map((p) => `- ${p}`).join("\n")}\nIMPORTANT: Inspect each uploaded image with read, pass its workspace path in assets: [...] when calling thumbnail_save, and reference it in HTML as <img src="/assets/<basename>" />.`
+              : "",
+            `Creator request: ${opts.prompt}`,
+            ``,
+            `Instructions:`,
+            `1. Call thumbnail_get(slug="${targetSlug}") first to inspect the current 1280x720 HTML and assets.`,
+            `2. If needed, fetch assets from box_list_assets + box_download_file or pixabay_search_backgrounds + pixabay_download_image and inspect with read.`,
+            `3. Update the 1280x720 HTML/CSS (strictly NO AI-generated images) and call thumbnail_save with the EXACT same slug "${targetSlug}" and any newly added workspace asset paths in assets.`,
+            `4. Reply concisely (1-2 plain sentences) summarizing what you refined.`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : [
+            `ISOLATED NON-AI THUMBNAIL CREATION TASK (never asks questions; builds and saves directly).`,
+            `Creator request: ${opts.prompt}`,
+            attached.length > 0
+              ? `\nCreator uploaded image attachment(s) in /home/sprite/workspace/:\n${attached.map((p) => `- ${p}`).join("\n")}\nIMPORTANT: Inspect each uploaded image with read, include them in assets: [...] when calling thumbnail_save, and use them in HTML via <img src="/assets/<basename>" />.`
+              : "",
+            ``,
+            `Instructions:`,
+            `1. STRICTLY ZERO AI-GENERATED IMAGES. Follow the thumbnail-craft skill.`,
+            `2. Discover real creator cutouts & logos in Box using box_list_assets and download with box_download_file into "assets/..." (unless the creator already provided replacement images above).`,
+            `3. If a photographic background fits, call pixabay_search_backgrounds (isAiGenerated=false) and pixabay_download_image into "assets/backgrounds/...".`,
+            `4. Inspect downloaded/uploaded images with read before styling.`,
+            `5. Compose a punchy 1280x720 HTML/CSS thumbnail (2-4 word bold hook, keep bottom-right YouTube duration corner clear) referencing assets via <img src="/assets/<basename>" />.`,
+            `6. Call thumbnail_save with a clean lowercase kebab-case slug, title, description, html, and assets.`,
+            `7. Reply concisely (1-2 plain sentences) summarizing the thumbnail and its slug.`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+      const res = await runThumbnailWorker(targetSlug || "new", workerPrompt);
+      const data = (await res.json().catch(() => ({}))) as { reply?: string; error?: string };
+
+      let resolvedSlug = targetSlug;
+      if (!resolvedSlug) {
+        const after = listThumbnailProjects();
+        const created =
+          after.find((t) => !beforeSlugs.has(t.slug)) ||
+          after.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0];
+        resolvedSlug = created?.slug || "";
+      }
+
+      broadcast({
+        type: "thumbnail_job_finished",
+        jobId,
+        slug: resolvedSlug,
+        ok: res.ok,
+        reply: data.reply || "",
+        error: res.ok ? "" : data.error || "Thumbnail job failed",
+      });
+      if (resolvedSlug) {
+        broadcast({ type: "thumbnails_changed", slug: resolvedSlug });
+      }
+    } catch (err: unknown) {
+      broadcast({
+        type: "thumbnail_job_finished",
+        jobId,
+        slug: targetSlug,
+        ok: false,
+        error: errorMessage(err),
+      });
+    }
+  })();
+
+  return { jobId };
+}
 
 export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Response | null> {
   if (req.method === "GET" && url.pathname === "/api/thumbnails") {
@@ -19,30 +115,72 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
     return Response.json({ ok: true, thumbnails });
   }
 
+  // Upload local image attachment for Create or Refine ("ganti sama gambar ini")
+  if (req.method === "POST" && url.pathname === "/api/thumbnails/upload") {
+    try {
+      const form = await req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) {
+        return Response.json({ error: "Image file is required" }, { status: 400 });
+      }
+      if (file.size === 0 || file.size > 10 * 1024 * 1024) {
+        return Response.json({ error: "Image must be between 1 B and 10 MiB" }, { status: 400 });
+      }
+      const cleanOrig = sanitizeThumbnailAssetName(file.name || "upload.png");
+      const uniqueName = `thumb-${Date.now()}-${cleanOrig}`;
+      const uploadsDir = path.join(WORKSPACE_ROOT, "uploads");
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      const destAbs = path.join(uploadsDir, uniqueName);
+      const bytes = Buffer.from(await file.arrayBuffer());
+      fs.writeFileSync(destAbs, bytes);
+      const workspacePath = `uploads/${uniqueName}`;
+      return Response.json({
+        ok: true,
+        name: uniqueName,
+        originalName: cleanOrig,
+        workspacePath,
+        size: bytes.length,
+      });
+    } catch (err: unknown) {
+      return Response.json({ error: errorMessage(err) }, { status: 400 });
+    }
+  }
+
   // Isolated background creation of a new non-AI 1280x720 thumbnail (never clutters main Otto Chat)
   if (req.method === "POST" && url.pathname === "/api/thumbnails/create") {
     try {
-      const body = (await req.json().catch(() => ({}))) as { prompt?: string };
+      const body = (await req.json().catch(() => ({}))) as {
+        prompt?: string;
+        attachedImages?: string[];
+      };
       const userPrompt = String(body.prompt || "").trim();
       if (!userPrompt) {
         return Response.json({ error: "Thumbnail prompt is required" }, { status: 400 });
       }
+      const attached = Array.isArray(body.attachedImages)
+        ? body.attachedImages.map((s) => String(s || "").trim()).filter(Boolean)
+        : [];
 
       const beforeSlugs = new Set(listThumbnailProjects().map((t) => t.slug));
 
       const prompt = [
         `ISOLATED NON-AI THUMBNAIL CREATION TASK (never asks questions; builds and saves directly).`,
         `Creator request: ${userPrompt}`,
+        attached.length > 0
+          ? `\nCreator uploaded image attachment(s) in /home/sprite/workspace/:\n${attached.map((p) => `- ${p}`).join("\n")}\nIMPORTANT: Inspect each uploaded image with read, include them in assets: [...] when calling thumbnail_save, and use them in HTML via <img src="/assets/<basename>" />.`
+          : "",
         ``,
         `Instructions:`,
         `1. STRICTLY ZERO AI-GENERATED IMAGES. Follow the thumbnail-craft skill.`,
-        `2. Discover real creator cutouts & logos in Box using box_list_assets (e.g. subpath "Characters", "Characters/White_Light", "Characters/Black_Dark", "Logos") and download the best matching PNG(s) with box_download_file into "assets/..." inside /home/sprite/workspace/.`,
+        `2. Discover real creator cutouts & logos in Box using box_list_assets (e.g. subpath "Characters", "Characters/White_Light", "Characters/Black_Dark", "Logos") and download the best matching PNG(s) with box_download_file into "assets/..." inside /home/sprite/workspace/ (unless the creator already uploaded their own replacement image above).`,
         `3. If a photographic background fits the concept, call pixabay_search_backgrounds (already hard-filtered to isAiGenerated=false) and download a clean horizontal photo with pixabay_download_image into "assets/backgrounds/...".`,
-        `4. Call read on your downloaded PNG/photo assets so you visually confirm expression, framing, and brand colors before styling.`,
+        `4. Call read on your downloaded/uploaded PNG & photo assets so you visually confirm expression, framing, and brand colors before styling.`,
         `5. Compose a punchy 1280x720 HTML/CSS thumbnail (2-4 word bold hook text, large expressive character cutout, high-contrast scrim, keep bottom-right YouTube duration corner clear) referencing assets via <img src="/assets/<basename>" />.`,
-        `6. Call thumbnail_save with a clean lowercase kebab-case slug, title, description, html, and assets (array of downloaded workspace-relative paths).`,
+        `6. Call thumbnail_save with a clean lowercase kebab-case slug, title, description, html, and assets (array of downloaded/uploaded workspace-relative paths).`,
         `7. Reply concisely (1-2 plain sentences) summarizing the thumbnail concept and its slug.`,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
 
       const workerRes = await runThumbnailWorker("new", prompt);
       if (!workerRes.ok) return workerRes;
@@ -138,12 +276,16 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
         const body = (await req.json().catch(() => ({}))) as {
           instruction?: string;
           title?: string;
+          attachedImages?: string[];
           history?: Array<{ role: "user" | "assistant"; text: string }>;
         };
         const instruction = String(body.instruction || "").trim();
         if (!instruction) {
           return Response.json({ error: "Refinement instruction is required" }, { status: 400 });
         }
+        const attached = Array.isArray(body.attachedImages)
+          ? body.attachedImages.map((s) => String(s || "").trim()).filter(Boolean)
+          : [];
         const historyLines = Array.isArray(body.history)
           ? body.history
               .slice(-6)
@@ -155,6 +297,9 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
           `ISOLATED NON-AI THUMBNAIL REFINEMENT TASK (never asks unnecessary questions; executes directly).`,
           `Target thumbnail slug: "${slug}"${body.title ? ` (title: "${body.title}")` : ""}.`,
           historyLines ? `\nRecent refinement context for this thumbnail:\n${historyLines}\n` : "",
+          attached.length > 0
+            ? `\nCreator uploaded image attachment(s) in /home/sprite/workspace/:\n${attached.map((p) => `- ${p}`).join("\n")}\nIMPORTANT: Inspect each uploaded image with read, pass its workspace path in assets: [...] when calling thumbnail_save, and reference it in HTML as <img src="/assets/<basename>" />.`
+            : "",
           `Creator request: ${instruction}`,
           ``,
           `Instructions:`,

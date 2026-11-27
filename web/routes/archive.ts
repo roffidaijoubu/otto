@@ -14,8 +14,10 @@ import { broadcast } from "../lib/sse.ts";
 export async function handleArchiveRoutes(req: Request, url: URL): Promise<Response | null> {
   if (req.method === "GET" && url.pathname === "/api/archive/status") {
     try {
-      const overview = await getCombinedArchiveOverview();
-      const videos = listArchiveVideos({ limit: 150 });
+      const [overview, videos] = await Promise.all([
+        getCombinedArchiveOverview(),
+        listArchiveVideos({ limit: 150 }),
+      ]);
       return Response.json({
         ok: true,
         pinecone: overview.pinecone,
@@ -68,7 +70,7 @@ export async function handleArchiveRoutes(req: Request, url: URL): Promise<Respo
         includeShorts?: boolean;
         limit?: number;
       };
-      const result = startBackgroundArchiveSync({
+      const result = await startBackgroundArchiveSync({
         channelUrl: body.channelUrl,
         includeShorts: body.includeShorts !== false,
         limit: typeof body.limit === "number" ? body.limit : undefined,

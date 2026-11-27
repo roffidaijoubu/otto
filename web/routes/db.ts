@@ -33,13 +33,13 @@ import { broadcast } from "../lib/sse.ts";
 
 export async function handleDbRoutes(req: Request, url: URL): Promise<Response | null> {
   if (req.method === "GET" && url.pathname === "/api/db/overview") {
-    return Response.json(getStudioDbOverview());
+    return Response.json(await getStudioDbOverview());
   }
 
   if (req.method === "GET" && url.pathname === "/api/db/pipeline") {
     const status = url.searchParams.get("status") || undefined;
     const format = url.searchParams.get("format") || undefined;
-    return Response.json({ items: listPipelineItems({ status, format }) });
+    return Response.json({ items: await listPipelineItems({ status, format }) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/db/pipeline") {
@@ -55,7 +55,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
         scheduledFor?: string | null;
         notes?: string;
       };
-      const item = upsertPipelineItem(body || {});
+      const item = await upsertPipelineItem(body || {});
       broadcast({ type: "db_changed" });
       return Response.json({ ok: true, item });
     } catch (err: unknown) {
@@ -67,7 +67,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
     try {
       const id = decodeURIComponent(url.pathname.slice("/api/db/pipeline/".length)).trim();
       const body = (await req.json()) as Record<string, unknown>;
-      const item = upsertPipelineItem({ ...(body as Record<string, never>), id });
+      const item = await upsertPipelineItem({ ...(body as Record<string, never>), id });
       broadcast({ type: "db_changed" });
       return Response.json({ ok: true, item });
     } catch (err: unknown) {
@@ -77,7 +77,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
 
   if (req.method === "DELETE" && url.pathname.startsWith("/api/db/pipeline/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/db/pipeline/".length)).trim();
-    const deleted = deletePipelineItem(id);
+    const deleted = await deletePipelineItem(id);
     if (deleted) broadcast({ type: "db_changed" });
     return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
   }
@@ -85,7 +85,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
   if (req.method === "GET" && url.pathname === "/api/db/contacts") {
     const role = url.searchParams.get("role") || undefined;
     const status = url.searchParams.get("status") || undefined;
-    return Response.json({ contacts: listContacts({ role, status }) });
+    return Response.json({ contacts: await listContacts({ role, status }) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/db/contacts") {
@@ -99,7 +99,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
         status?: ContactStatus;
         notes?: string;
       };
-      const contact = upsertContact(body || {});
+      const contact = await upsertContact(body || {});
       broadcast({ type: "db_changed" });
       return Response.json({ ok: true, contact });
     } catch (err: unknown) {
@@ -111,7 +111,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
     try {
       const id = decodeURIComponent(url.pathname.slice("/api/db/contacts/".length)).trim();
       const body = (await req.json()) as Record<string, unknown>;
-      const contact = upsertContact({ ...(body as Record<string, never>), id });
+      const contact = await upsertContact({ ...(body as Record<string, never>), id });
       broadcast({ type: "db_changed" });
       return Response.json({ ok: true, contact });
     } catch (err: unknown) {
@@ -121,29 +121,29 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
 
   if (req.method === "DELETE" && url.pathname.startsWith("/api/db/contacts/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/db/contacts/".length)).trim();
-    const deleted = deleteContact(id);
+    const deleted = await deleteContact(id);
     if (deleted) broadcast({ type: "db_changed" });
     return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
   }
 
   if (req.method === "GET" && url.pathname === "/api/db/metrics") {
     const limit = Number(url.searchParams.get("limit") || 50);
-    return Response.json({ metrics: listChannelMetrics(Number.isFinite(limit) ? limit : 50) });
+    return Response.json({ metrics: await listChannelMetrics(Number.isFinite(limit) ? limit : 50) });
   }
 
   if (req.method === "GET" && url.pathname === "/api/db/metrics/widget") {
     const identity = readSetupIdentity();
     const tz = identity.timezone || "UTC";
-    const state = getYouTubeMetricsWidgetState(tz);
+    const state = await getYouTubeMetricsWidgetState(tz);
     let autoSyncStarted = false;
     if (url.searchParams.get("auto") === "1") {
-      if (shouldAutoSyncYouTubeMetrics()) {
+      if (await shouldAutoSyncYouTubeMetrics()) {
         autoSyncStarted = true;
         void syncYouTubeMetrics({ timezone: tz }).then((res: { ok: boolean }) => {
           if (res.ok) broadcast({ type: "db_changed" });
         });
       }
-      if (shouldAutoSyncSocialMetrics()) {
+      if (await shouldAutoSyncSocialMetrics()) {
         autoSyncStarted = true;
         void syncAllSocialMetrics()
           .then((results: Array<{ ok: boolean }>) => {
@@ -156,7 +156,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
   }
 
   if (req.method === "GET" && url.pathname === "/api/db/metrics/platforms") {
-    return Response.json({ socials: getSocialMetricsOverview() });
+    return Response.json({ socials: await getSocialMetricsOverview() });
   }
 
   if (req.method === "POST" && url.pathname === "/api/db/metrics/sync") {
@@ -176,7 +176,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
         {
           ok: anyOk,
           state: ytRes.state,
-          socials: getSocialMetricsOverview(),
+          socials: await getSocialMetricsOverview(),
           results: {
             youtube: { ok: ytRes.ok, error: ytRes.error },
             ...Object.fromEntries(socialRes.map((r: { platform: string; ok: boolean; error?: string }) => [r.platform, { ok: r.ok, error: r.error }])),
@@ -193,7 +193,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
         {
           ok: sRes.ok,
           result: sRes,
-          socials: getSocialMetricsOverview(),
+          socials: await getSocialMetricsOverview(),
           error: sRes.error,
         },
         { status: sRes.ok ? 200 : 502 }
@@ -221,7 +221,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
       broadcast({ type: "db_changed" });
       return Response.json({
         ...result,
-        state: getYouTubeMetricsWidgetState(tz),
+        state: await getYouTubeMetricsWidgetState(tz),
       });
     } catch (err: unknown) {
       return Response.json({ error: errorMessage(err) }, { status: 400 });
@@ -239,7 +239,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
         avgCtr?: number | null;
         notes?: string;
       };
-      const metric = addChannelMetric(body || {});
+      const metric = await addChannelMetric(body || {});
       broadcast({ type: "db_changed" });
       return Response.json({ ok: true, metric });
     } catch (err: unknown) {
@@ -249,7 +249,7 @@ export async function handleDbRoutes(req: Request, url: URL): Promise<Response |
 
   if (req.method === "DELETE" && url.pathname.startsWith("/api/db/metrics/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/db/metrics/".length)).trim();
-    const deleted = deleteChannelMetric(id);
+    const deleted = await deleteChannelMetric(id);
     if (deleted) broadcast({ type: "db_changed" });
     return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
   }

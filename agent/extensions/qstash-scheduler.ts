@@ -26,12 +26,12 @@ interface GoogleCalComposioCtx {
 let cachedGatewayUrl: string | null = null;
 let cachedGCalCtx: GoogleCalComposioCtx | null | undefined = undefined;
 
-function loadCalendar(): CalendarStore {
-  return { version: 1, events: listCalendarEvents() };
+async function loadCalendar(): Promise<CalendarStore> {
+  return { version: 1, events: await listCalendarEvents() };
 }
 
-function saveCalendar(store: CalendarStore): void {
-  saveCalendarEventsBatch(store.events);
+async function saveCalendar(store: CalendarStore): Promise<void> {
+  await saveCalendarEventsBatch(store.events);
 }
 async function getGoogleCalendarContext(): Promise<GoogleCalComposioCtx | null> {
   if (cachedGCalCtx !== undefined) return cachedGCalCtx;
@@ -438,7 +438,7 @@ export default function (pi: ExtensionAPI) {
         silent: params.silent,
       });
       const nowIso = new Date().toISOString();
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const evt: CalendarEvent = {
         id: eventId,
         title: params.label,
@@ -464,7 +464,7 @@ export default function (pi: ExtensionAPI) {
         updatedAt: nowIso,
       };
       store.events.push(evt);
-      saveCalendar(store);
+      await saveCalendar(store);
 
       return {
         content: [
@@ -509,7 +509,7 @@ export default function (pi: ExtensionAPI) {
         throw new Error(`QStash list schedules error (${res.status}): ${err}`);
       }
       const recurringSchedules = await res.json();
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const nowMs = Date.now();
       const armedOneShots = store.events
         .filter((e) => e.status === "planned")
@@ -563,7 +563,7 @@ export default function (pi: ExtensionAPI) {
     },
     async execute(_toolCallId, params: { id: string; kind: "one_shot" | "recurring_cron" }) {
       await cancelQStashJob(params.id, params.kind);
-      const store = loadCalendar();
+      const store = await loadCalendar();
       let touched = false;
       for (const evt of store.events) {
         for (const w of evt.wakeups) {
@@ -581,7 +581,7 @@ export default function (pi: ExtensionAPI) {
           evt.status = "cancelled";
         }
       }
-      if (touched) saveCalendar(store);
+      if (touched) await saveCalendar(store);
 
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, cancelled: params.id }) }],
@@ -726,9 +726,9 @@ export default function (pi: ExtensionAPI) {
         createdAt: nowIso,
         updatedAt: nowIso,
       };
-      const store = loadCalendar();
+      const store = await loadCalendar();
       store.events.push(evt);
-      saveCalendar(store);
+      await saveCalendar(store);
 
       return {
         content: [
@@ -789,7 +789,7 @@ export default function (pi: ExtensionAPI) {
         includeCancelled?: boolean;
       }
     ) {
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const fromMs = params.from ? Date.parse(params.from) : null;
       const toMs = params.to ? Date.parse(params.to) : null;
 
@@ -854,7 +854,7 @@ export default function (pi: ExtensionAPI) {
         status?: "planned" | "done" | "cancelled";
       }
     ) {
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const evt = store.events.find((e) => e.id === params.eventId);
       if (!evt) {
         throw new Error(`Calendar event not found: ${params.eventId}`);
@@ -919,7 +919,7 @@ export default function (pi: ExtensionAPI) {
         await patchGoogleCalendarEvent(evt);
       }
       evt.updatedAt = new Date().toISOString();
-      saveCalendar(store);
+      await saveCalendar(store);
 
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, event: evt }, null, 2) }],
@@ -945,7 +945,7 @@ export default function (pi: ExtensionAPI) {
       required: ["eventId"],
     },
     async execute(_toolCallId, params: { eventId: string }) {
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const evt = store.events.find((e) => e.id === params.eventId);
       if (!evt) {
         throw new Error(`Calendar event not found: ${params.eventId}`);
@@ -961,7 +961,7 @@ export default function (pi: ExtensionAPI) {
       const googleDeleted = await deleteGoogleCalendarEvent(evt.googleEventId);
       evt.status = "cancelled";
       evt.updatedAt = new Date().toISOString();
-      saveCalendar(store);
+      await saveCalendar(store);
 
       return {
         content: [
@@ -1040,7 +1040,7 @@ export default function (pi: ExtensionAPI) {
         end?: { dateTime?: string; date?: string };
       }>;
 
-      const store = loadCalendar();
+      const store = await loadCalendar();
       const nowIso = new Date().toISOString();
       let added = 0;
       let updated = 0;
@@ -1082,7 +1082,7 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      saveCalendar(store);
+      await saveCalendar(store);
       return {
         content: [
           {

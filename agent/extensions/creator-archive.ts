@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({}),
     async execute() {
       const overview = await getCombinedArchiveOverview();
-      const recent = listArchiveVideos({ limit: 8 });
+      const recent = await listArchiveVideos({ limit: 8 });
       return {
         content: [
           {
@@ -155,7 +155,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, params) {
       const port = process.env.LMA_WEB_PORT || "8080";
       const secret = process.env.LMA_INTERNAL_SECRET || "";
-      const channelUrl = params.channelUrl?.trim() || resolveCreatorChannelUrl() || undefined;
+      const channelUrl = params.channelUrl?.trim() || (await resolveCreatorChannelUrl()) || undefined;
 
       const res = await fetch(`http://127.0.0.1:${port}/api/internal/archive/sync`, {
         method: "POST",

@@ -6,12 +6,14 @@ import {
   EyeIcon,
   ImageIcon,
   Loader2Icon,
+  PaperclipIcon,
   PlusIcon,
   RefreshCwIcon,
   SendIcon,
   SparklesIcon,
   Trash2Icon,
   UploadCloudIcon,
+  XIcon,
 } from "@lucide/vue";
 import { toast } from "vue-sonner";
 import {
@@ -78,14 +80,25 @@ const deleting = ref(false);
 const exporting = ref(false);
 const handingOffBox = ref(false);
 
+interface UploadedAttachment {
+  workspacePath: string;
+  originalName: string;
+  previewUrl: string;
+}
+
 const showCreateDialog = ref(false);
 const customPrompt = ref("");
 const creating = ref(false);
 const creatingLabel = ref("");
+const createAttachments = ref<UploadedAttachment[]>([]);
+const createFileInputRef = ref<HTMLInputElement | null>(null);
 
 // Isolated per-thumbnail Refine with Otto chat state
 const refineInput = ref("");
 const refining = ref(false);
+const refineAttachments = ref<UploadedAttachment[]>([]);
+const refineFileInputRef = ref<HTMLInputElement | null>(null);
+const uploadingImage = ref(false);
 const refineThreads = ref<Record<string, RefineMessage[]>>({});
 const refineScrollRef = ref<HTMLElement | null>(null);
 
@@ -230,6 +243,66 @@ function selectThumbnail(slug: string) {
   }
 }
 
+async function uploadImageFiles(files: FileList | File[], target: "create" | "refine") {
+  const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+  if (list.length === 0) return;
+  uploadingImage.value = true;
+  try {
+    for (const file of list) {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/thumbnails/upload", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        workspacePath?: string;
+        originalName?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.workspacePath) {
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      const item: UploadedAttachment = {
+        workspacePath: data.workspacePath,
+        originalName: data.originalName || file.name,
+        previewUrl: URL.createObjectURL(file),
+      };
+      if (target === "create") {
+        createAttachments.value.push(item);
+      } else {
+        refineAttachments.value.push(item);
+      }
+    }
+    playSound("complete");
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Could not upload image");
+  } finally {
+    uploadingImage.value = false;
+  }
+}
+
+function removeAttachment(target: "create" | "refine", idx: number) {
+  const list = target === "create" ? createAttachments.value : refineAttachments.value;
+  const removed = list.splice(idx, 1)[0];
+  if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+}
+
+function handlePasteImage(e: ClipboardEvent, target: "create" | "refine") {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const imgs: File[] = [];
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith("image/")) {
+      const f = item.getAsFile();
+      if (f) imgs.push(f);
+    }
+  }
+  if (imgs.length > 0) {
+    e.preventDefault();
+    void uploadImageFiles(imgs, target);
+  }
+}
+
 async function submitCreate(promptText: string, label?: string) {
   const prompt = promptText.trim();
   if (!prompt || creating.value) return;
@@ -237,12 +310,13 @@ async function submitCreate(promptText: string, label?: string) {
   creating.value = true;
   creatingLabel.value = label || "Composing 1280×720 thumbnail with Otto Assets & Pixabay...";
   showCreateDialog.value = false;
+  const attachedPaths = createAttachments.value.map((a) => a.workspacePath);
 
   try {
     const res = await fetch("/api/thumbnails/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, attachedImages: attachedPaths }),
     });
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -254,6 +328,8 @@ async function submitCreate(promptText: string, label?: string) {
       throw new Error(data.error || `Creation failed (${res.status})`);
     }
     customPrompt.value = "";
+    createAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    createAttachments.value = [];
     playSound("complete");
     toast.success(data.reply || "Thumbnail ready!");
     await fetchThumbnails(data.slug || undefined);
@@ -276,10 +352,18 @@ async function sendRefine(instructionOverride?: string) {
   playSound("send");
 
   const slug = thumb.slug;
+  const attachedPaths = instructionOverride ? [] : refineAttachments.value.map((a) => a.workspacePath);
+  const attachNote =
+    attachedPaths.length > 0 ? ` [${attachedPaths.length} image${attachedPaths.length > 1 ? "s" : ""} attached]` : "";
+
   if (!refineThreads.value[slug]) refineThreads.value[slug] = [];
   const history = refineThreads.value[slug].map((m) => ({ role: m.role, text: m.text }));
-  refineThreads.value[slug].push({ id: `${Date.now()}-u`, role: "user", text });
-  if (!instructionOverride) refineInput.value = "";
+  refineThreads.value[slug].push({ id: `${Date.now()}-u`, role: "user", text: text + attachNote });
+  if (!instructionOverride) {
+    refineInput.value = "";
+    refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    refineAttachments.value = [];
+  }
   refining.value = true;
   await nextTick();
   refineScrollRef.value?.scrollTo({ top: refineScrollRef.value.scrollHeight, behavior: "smooth" });
@@ -288,7 +372,12 @@ async function sendRefine(instructionOverride?: string) {
     const res = await fetch(`/api/thumbnails/${encodeURIComponent(slug)}/refine`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instruction: text, title: thumb.title, history }),
+      body: JSON.stringify({
+        instruction: text,
+        title: thumb.title,
+        attachedImages: attachedPaths,
+        history,
+      }),
     });
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -494,7 +583,20 @@ onBeforeUnmount(() => {
   stageObserver?.disconnect();
 });
 
-defineExpose({ selectThumbnail, refresh: fetchThumbnails });
+function notifyExternalJob(state: { running: boolean; label?: string; slug?: string }) {
+  creating.value = state.running;
+  creatingLabel.value = state.running ? state.label || "Composing thumbnail..." : "";
+  if (!state.running) {
+    frameKey.value += 1;
+    void fetchThumbnails(state.slug || undefined).then(() => {
+      if (state.slug && thumbnails.value.some((t) => t.slug === state.slug)) {
+        openDetail(state.slug);
+      }
+    });
+  }
+}
+
+defineExpose({ selectThumbnail, notifyExternalJob, refresh: fetchThumbnails });
 </script>
 
 <template>
@@ -595,24 +697,14 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
       </div>
     </div>
 
-    <!-- CREATING BANNER -->
-    <div
-      v-if="creating"
-      class="flex shrink-0 items-center gap-2.5 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900"
-    >
-      <Loader2Icon class="size-3.5 animate-spin" />
-      <span class="font-medium">{{ creatingLabel }}</span>
-      <span class="text-amber-700/80">(Isolated worker — Otto Chat stays free)</span>
-    </div>
-
     <!-- GALLERY VIEW -->
     <div v-if="viewMode === 'list'" class="min-h-0 flex-1 overflow-y-auto p-4">
-      <div v-if="loading && thumbnails.length === 0" class="flex h-full items-center justify-center">
+      <div v-if="loading && thumbnails.length === 0 && !creating" class="flex h-full items-center justify-center">
         <Spinner class="size-5" />
       </div>
 
       <div
-        v-else-if="thumbnails.length === 0"
+        v-else-if="thumbnails.length === 0 && !creating"
         class="mx-auto flex max-w-lg flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-white p-8 text-center"
       >
         <div class="mb-3 flex size-11 items-center justify-center rounded-xl bg-black/5">
@@ -634,6 +726,33 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
       </div>
 
       <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- IN-PROGRESS GENERATION CARD -->
+        <div
+          v-if="creating"
+          class="flex flex-col overflow-hidden rounded-xl border border-amber-300/80 bg-white shadow-xs"
+        >
+          <div class="relative flex aspect-video w-full flex-col items-center justify-center gap-2 overflow-hidden bg-neutral-100">
+            <div class="absolute inset-0 animate-pulse bg-gradient-to-br from-neutral-200/70 via-neutral-100 to-amber-100/50" />
+            <Loader2Icon class="relative z-10 size-6 animate-spin text-amber-700" />
+            <span class="relative z-10 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 font-mono text-[10px] font-medium text-amber-800">
+              In progress · 1280×720
+            </span>
+          </div>
+          <div class="flex flex-col gap-1 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="truncate text-xs font-semibold text-[#171717]">
+                {{ creatingLabel || "Composing thumbnail..." }}
+              </div>
+              <Badge variant="outline" class="shrink-0 border-amber-300 bg-amber-50 font-mono text-[9.5px] text-amber-800">
+                In progress
+              </Badge>
+            </div>
+            <div class="text-[11px] text-[#737373]">
+              Isolated worker pulling Box Otto Assets &amp; Pixabay photo...
+            </div>
+          </div>
+        </div>
+
         <div
           v-for="item in thumbnails"
           :key="item.slug"
@@ -643,7 +762,7 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
           <div class="relative aspect-video w-full overflow-hidden bg-neutral-900">
             <iframe
               :src="`${item.previewUrl}?k=${frameKey}`"
-              class="pointer-events-none h-[720px] w-[1280px] origin-top-left border-0"
+              class="pointer-events-none absolute left-0 top-0 h-[720px] w-[1280px] origin-top-left border-0"
               style="transform: scale(0.26)"
               sandbox="allow-same-origin"
             />
@@ -677,6 +796,22 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
             </Button>
           </div>
         </div>
+
+        <!-- UNIFORM DASHED CREATE CARD (matches OBS Overlays gallery) -->
+        <button
+          type="button"
+          class="flex min-h-[210px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#D4D4D4] bg-white/60 p-6 text-center transition-colors hover:border-[#171717] hover:bg-white"
+          :disabled="creating"
+          @click="showCreateDialog = true"
+        >
+          <span class="flex size-9 items-center justify-center rounded-full border border-[#E5E5E5] bg-[#FAFAFA] text-[#171717]">
+            <PlusIcon class="size-4" />
+          </span>
+          <span class="font-mono text-xs font-semibold text-[#171717]">Create New Thumbnail</span>
+          <span class="max-w-[200px] text-[11px] text-neutral-500">
+            Reaction Split, Commentary, Zatsudan, Hot Take, or custom design
+          </span>
+        </button>
       </div>
     </div>
 
@@ -807,13 +942,53 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
         </div>
 
         <div class="border-t border-black/8 p-2.5">
+          <div v-if="refineAttachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
+            <div
+              v-for="(att, idx) in refineAttachments"
+              :key="att.workspacePath"
+              class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-[#FAFAF9] py-1 pl-1 pr-1.5"
+            >
+              <img :src="att.previewUrl" :alt="att.originalName" class="size-6 rounded object-cover" />
+              <span class="max-w-[110px] truncate font-mono text-[10px] text-[#262626]">
+                {{ att.originalName }}
+              </span>
+              <button
+                type="button"
+                class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
+                @click="removeAttachment('refine', idx)"
+              >
+                <XIcon class="size-3" />
+              </button>
+            </div>
+          </div>
+          <input
+            ref="refineFileInputRef"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+            multiple
+            class="hidden"
+            @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadImageFiles(f, 'refine'); (e.target as HTMLInputElement).value = ''; }"
+          />
           <div class="flex items-end gap-1.5 rounded-lg border border-black/15 bg-[#FAFAF9] p-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="size-7 shrink-0 text-neutral-600 hover:text-black"
+              title="Upload image (or paste with Ctrl+V)"
+              :disabled="refining || uploadingImage"
+              @click="refineFileInputRef?.click()"
+            >
+              <Loader2Icon v-if="uploadingImage" class="size-3.5 animate-spin" />
+              <PaperclipIcon v-else class="size-3.5" />
+            </Button>
             <textarea
               v-model="refineInput"
               rows="2"
-              placeholder="e.g. Swap to gloom-horrified pose & make text red..."
+              placeholder="e.g. Ganti background sama gambar ini, atau swap pose..."
               class="min-h-[42px] flex-1 resize-none bg-transparent px-1 text-xs outline-none placeholder:text-[#A3A3A3]"
               :disabled="refining"
+              @paste="(e) => handlePasteImage(e, 'refine')"
               @keydown.enter.exact.prevent="sendRefine()"
             />
             <Button
@@ -831,9 +1006,9 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
 
     <!-- CREATE NEW THUMBNAIL MODAL -->
     <Dialog v-model:open="showCreateDialog">
-      <DialogContent class="max-w-lg bg-white">
+      <DialogContent class="sm:max-w-3xl bg-white p-6">
         <DialogHeader>
-          <div class="flex items-center justify-between gap-2 pr-6">
+          <div class="flex items-center justify-between gap-3 pr-7">
             <DialogTitle class="text-base">Create New Thumbnail</DialogTitle>
             <Badge variant="outline" class="font-mono text-[10px]">
               Isolated worker · 1280×720
@@ -848,15 +1023,57 @@ defineExpose({ selectThumbnail, refresh: fetchThumbnails });
 
         <div class="space-y-3">
           <div class="rounded-xl border border-black/15 bg-[#FAFAF9] p-2.5">
+            <div v-if="createAttachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
+              <div
+                v-for="(att, idx) in createAttachments"
+                :key="att.workspacePath"
+                class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white py-1 pl-1 pr-1.5"
+              >
+                <img :src="att.previewUrl" :alt="att.originalName" class="size-7 rounded object-cover" />
+                <span class="max-w-[140px] truncate font-mono text-[10px] text-[#262626]">
+                  {{ att.originalName }}
+                </span>
+                <button
+                  type="button"
+                  class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
+                  @click="removeAttachment('create', idx)"
+                >
+                  <XIcon class="size-3" />
+                </button>
+              </div>
+            </div>
+            <input
+              ref="createFileInputRef"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              multiple
+              class="hidden"
+              @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadImageFiles(f, 'create'); (e.target as HTMLInputElement).value = ''; }"
+            />
             <textarea
               v-model="customPrompt"
               rows="4"
-              placeholder="e.g. Thumbnail for my late-night horror stream, shocked expression from White_Light, dark abandoned hallway background from Pixabay, huge bold hook 'DON'T TURN AROUND'"
+              placeholder="e.g. Thumbnail for my late-night horror stream, shocked expression from White_Light, dark abandoned hallway background from Pixabay (or paste/upload an image), huge bold hook 'DON'T TURN AROUND'"
               class="w-full resize-none bg-transparent text-xs outline-none placeholder:text-[#A3A3A3]"
+              @paste="(e) => handlePasteImage(e, 'create')"
               @keydown.enter.exact.prevent="submitCreate(customPrompt)"
             />
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-[10px] text-[#737373]">Enter to build · Shift+Enter for new line</span>
+            <div class="mt-2 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 gap-1 bg-white px-2 text-[11px]"
+                  :disabled="uploadingImage"
+                  @click="createFileInputRef?.click()"
+                >
+                  <Loader2Icon v-if="uploadingImage" class="size-3 animate-spin" />
+                  <PaperclipIcon v-else class="size-3" />
+                  Upload Image
+                </Button>
+                <span class="text-[10px] text-[#737373]">Enter to build · Ctrl+V to paste image</span>
+              </div>
               <Button
                 size="sm"
                 class="h-7 gap-1.5 bg-[#171717] text-xs text-white hover:bg-[#303030]"

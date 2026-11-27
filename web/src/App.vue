@@ -388,6 +388,21 @@ function connectEvents() {
         typeof msg.title === "string" ? msg.title : undefined,
         msg.autoFocus !== false
       );
+    } else if (type === "obs_overlay_job_started") {
+      openObsOverlayWindow(undefined, undefined, false);
+      nextTick(() => {
+        obsOverlaysRef.value?.notifyExternalJob({
+          running: true,
+          label: typeof msg.label === "string" ? msg.label : "Building OBS overlay...",
+          slug: typeof msg.slug === "string" ? msg.slug : undefined,
+        });
+      });
+    } else if (type === "obs_overlay_job_finished") {
+      obsOverlaysRef.value?.notifyExternalJob({
+        running: false,
+        slug: typeof msg.slug === "string" ? msg.slug : undefined,
+      });
+      obsOverlaysRefreshTick.value += 1;
     } else if (type === "thumbnails_changed") {
       thumbnailsRefreshTick.value += 1;
     } else if (type === "thumbnail_open") {
@@ -396,6 +411,21 @@ function connectEvents() {
         typeof msg.title === "string" ? msg.title : undefined,
         msg.autoFocus !== false
       );
+    } else if (type === "thumbnail_job_started") {
+      openThumbnailWindow(undefined, undefined, false);
+      nextTick(() => {
+        thumbnailsRef.value?.notifyExternalJob({
+          running: true,
+          label: typeof msg.label === "string" ? msg.label : "Composing thumbnail...",
+          slug: typeof msg.slug === "string" ? msg.slug : undefined,
+        });
+      });
+    } else if (type === "thumbnail_job_finished") {
+      thumbnailsRef.value?.notifyExternalJob({
+        running: false,
+        slug: typeof msg.slug === "string" ? msg.slug : undefined,
+      });
+      thumbnailsRefreshTick.value += 1;
     } else if (type === "db_changed") {
       dbRefreshTick.value += 1;
       if (wm && wm.focusedWindowId.value !== "ideas") {

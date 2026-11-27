@@ -1,7 +1,9 @@
 import { Database } from "bun:sqlite";
+import type { SQL } from "bun";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { getNeonRuntimeInfo, getNeonSql, type NeonRuntimeInfo } from "./neon-db.ts";
 
 export type CalendarEventType = "stream" | "collab" | "upload" | "reminder" | "deadline";
 
@@ -136,12 +138,277 @@ export interface ClipRecord {
   updatedAt: string;
 }
 
-let dbInstance: Database | null = null;
-let dbInstancePath: string | null = null;
+export type ArchiveVideoStatus = "pending" | "indexing" | "indexed" | "no_captions" | "failed";
+export type ArchiveContentType = "video" | "live" | "short";
+
+export interface ArchiveVideoRecord {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  durationSec: number;
+  contentType: ArchiveContentType;
+  status: ArchiveVideoStatus;
+  chunkCount: number;
+  lang: string;
+  error: string;
+  indexedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ArchiveStats {
+  totalTracked: number;
+  indexedVideos: number;
+  noCaptionsVideos: number;
+  failedVideos: number;
+  pendingVideos: number;
+  totalChunks: number;
+}
+
+// ---------- Dual Backend Driver (Neon Serverless Postgres Primary + SQLite Fallback) ----------
+
+type SqlParam = string | number | boolean | null;
+
+interface DbDriver {
+  backend: "neon" | "sqlite";
+  all<T = Record<string, unknown>>(sql: string, ...params: SqlParam[]): Promise<T[]>;
+  get<T = Record<string, unknown>>(sql: string, ...params: SqlParam[]): Promise<T | null>;
+  run(sql: string, ...params: SqlParam[]): Promise<{ changes: number }>;
+}
+
+const SCHEMA_STATEMENTS: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'stream',
+    start_at TEXT NOT NULL,
+    end_at TEXT,
+    cron TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'planned',
+    source TEXT NOT NULL DEFAULT 'local',
+    google_event_id TEXT,
+    google_html_link TEXT,
+    wakeups_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_calendar_google ON calendar_events(google_event_id)`,
+  `CREATE TABLE IF NOT EXISTS content_pipeline (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL DEFAULT 'stream',
+    status TEXT NOT NULL DEFAULT 'idea',
+    hook TEXT NOT NULL DEFAULT '',
+    thumbnail_path TEXT NOT NULL DEFAULT '',
+    script_path TEXT NOT NULL DEFAULT '',
+    scheduled_for TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pipeline_status ON content_pipeline(status)`,
+  `CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'collab',
+    handle TEXT NOT NULL DEFAULT '',
+    platform TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS channel_metrics (
+    id TEXT PRIMARY KEY,
+    recorded_at TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'youtube',
+    subscribers INTEGER,
+    total_views INTEGER,
+    avg_ccv INTEGER,
+    avg_ctr DOUBLE PRECISION,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_metrics_recorded ON channel_metrics(recorded_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS studio_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS clip_jobs (
+    id TEXT PRIMARY KEY,
+    vod_url TEXT NOT NULL,
+    video_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    max_clips INTEGER NOT NULL DEFAULT 3,
+    focus_notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued',
+    stage TEXT NOT NULL DEFAULT 'Queued',
+    progress_log TEXT NOT NULL DEFAULT '[]',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_clip_jobs_created ON clip_jobs(created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS archive_videos (
+    video_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    published_at TEXT NOT NULL DEFAULT '',
+    duration_sec INTEGER NOT NULL DEFAULT 0,
+    content_type TEXT NOT NULL DEFAULT 'video',
+    status TEXT NOT NULL DEFAULT 'pending',
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    lang TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    indexed_at TEXT,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_archive_videos_status ON archive_videos(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_archive_videos_published ON archive_videos(published_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS clips (
+    id TEXT PRIMARY KEY,
+    job_id TEXT,
+    video_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    srt_path TEXT NOT NULL DEFAULT '',
+    start_sec INTEGER,
+    end_sec INTEGER,
+    duration_sec INTEGER,
+    hook_score INTEGER,
+    editor_notes TEXT NOT NULL DEFAULT '',
+    youtube_url TEXT NOT NULL DEFAULT '',
+    box_url TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'ready',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_clips_job ON clips(job_id)`,
+];
+
+function convertPlaceholdersToPg(sql: string): string {
+  let out = "";
+  let idx = 1;
+  let inSingle = false;
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    if (ch === "'") {
+      out += ch;
+      if (inSingle && sql[i + 1] === "'") {
+        out += "'";
+        i += 1;
+      } else {
+        inSingle = !inSingle;
+      }
+      continue;
+    }
+    if (!inSingle && ch === "?") {
+      out += `$${idx++}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function createPgDriver(pg: SQL): DbDriver {
+  return {
+    backend: "neon",
+    async all<T>(sql: string, ...params: SqlParam[]): Promise<T[]> {
+      const rows = await pg.unsafe(convertPlaceholdersToPg(sql), params);
+      return Array.from(rows) as T[];
+    },
+    async get<T>(sql: string, ...params: SqlParam[]): Promise<T | null> {
+      const rows = await pg.unsafe(convertPlaceholdersToPg(sql), params);
+      return rows.length > 0 ? (rows[0] as T) : null;
+    },
+    async run(sql: string, ...params: SqlParam[]): Promise<{ changes: number }> {
+      const res = (await pg.unsafe(convertPlaceholdersToPg(sql), params)) as unknown as {
+        count?: number;
+        length?: number;
+      };
+      const changes = typeof res.count === "number" ? res.count : Number(res.length ?? 0);
+      return { changes };
+    },
+  };
+}
+
+let sqliteInstance: Database | null = null;
+let sqliteInstancePath: string | null = null;
 
 export function getStudioDbPath(): string {
   const home = process.env.HOME || "/home/sprite";
   return path.join(home, ".omp", "agent", "studio.db");
+}
+
+function getSqliteFallback(): Database {
+  const dbPath = getStudioDbPath();
+  if (sqliteInstance && sqliteInstancePath === dbPath && fs.existsSync(dbPath)) {
+    return sqliteInstance;
+  }
+  if (sqliteInstance) {
+    try {
+      sqliteInstance.close();
+    } catch {
+      // ignore
+    }
+    sqliteInstance = null;
+  }
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const db = new Database(dbPath, { create: true });
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
+  for (const stmt of SCHEMA_STATEMENTS) {
+    db.exec(stmt.replace(/DOUBLE PRECISION/g, "REAL"));
+  }
+  sqliteInstance = db;
+  sqliteInstancePath = dbPath;
+  return db;
+}
+
+function createSqliteDriver(db: Database): DbDriver {
+  return {
+    backend: "sqlite",
+    async all<T>(sql: string, ...params: SqlParam[]): Promise<T[]> {
+      return db.query(sql).all(...params) as T[];
+    },
+    async get<T>(sql: string, ...params: SqlParam[]): Promise<T | null> {
+      return (db.query(sql).get(...params) as T | null) ?? null;
+    },
+    async run(sql: string, ...params: SqlParam[]): Promise<{ changes: number }> {
+      const res = db.prepare(sql).run(...params);
+      return { changes: res.changes };
+    },
+  };
+}
+
+let driverPromise: Promise<DbDriver> | null = null;
+
+async function initDriver(): Promise<DbDriver> {
+  const pg = await getNeonSql();
+  if (pg) {
+    for (const stmt of SCHEMA_STATEMENTS) {
+      await pg.unsafe(stmt);
+    }
+    return createPgDriver(pg);
+  }
+  return createSqliteDriver(getSqliteFallback());
+}
+
+async function getDb(): Promise<DbDriver> {
+  if (!driverPromise) {
+    driverPromise = initDriver().catch((err) => {
+      driverPromise = null;
+      throw err;
+    });
+  }
+  return driverPromise;
+}
+
+export function getStudioDbBackendInfo(): NeonRuntimeInfo {
+  return getNeonRuntimeInfo();
 }
 
 function makeId(prefix: string): string {
@@ -157,223 +424,10 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-function initSchema(db: Database): void {
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA foreign_keys = ON;
-
-    CREATE TABLE IF NOT EXISTS calendar_events (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'stream',
-      start_at TEXT NOT NULL,
-      end_at TEXT,
-      cron TEXT,
-      notes TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'planned',
-      source TEXT NOT NULL DEFAULT 'local',
-      google_event_id TEXT,
-      google_html_link TEXT,
-      wakeups_json TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_at);
-    CREATE INDEX IF NOT EXISTS idx_calendar_google ON calendar_events(google_event_id);
-
-    CREATE TABLE IF NOT EXISTS content_pipeline (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      format TEXT NOT NULL DEFAULT 'stream',
-      status TEXT NOT NULL DEFAULT 'idea',
-      hook TEXT NOT NULL DEFAULT '',
-      thumbnail_path TEXT NOT NULL DEFAULT '',
-      script_path TEXT NOT NULL DEFAULT '',
-      scheduled_for TEXT,
-      notes TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_pipeline_status ON content_pipeline(status);
-
-    CREATE TABLE IF NOT EXISTS contacts (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'collab',
-      handle TEXT NOT NULL DEFAULT '',
-      platform TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'active',
-      notes TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS channel_metrics (
-      id TEXT PRIMARY KEY,
-      recorded_at TEXT NOT NULL,
-      platform TEXT NOT NULL DEFAULT 'youtube',
-      subscribers INTEGER,
-      total_views INTEGER,
-      avg_ccv INTEGER,
-      avg_ctr REAL,
-      notes TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_metrics_recorded ON channel_metrics(recorded_at DESC);
-
-    CREATE TABLE IF NOT EXISTS studio_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS clip_jobs (
-      id TEXT PRIMARY KEY,
-      vod_url TEXT NOT NULL,
-      video_id TEXT NOT NULL DEFAULT '',
-      title TEXT NOT NULL DEFAULT '',
-      max_clips INTEGER NOT NULL DEFAULT 3,
-      focus_notes TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'queued',
-      stage TEXT NOT NULL DEFAULT 'Queued',
-      progress_log TEXT NOT NULL DEFAULT '[]',
-      error TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      completed_at TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_clip_jobs_created ON clip_jobs(created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS archive_videos (
-      video_id TEXT PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT '',
-      published_at TEXT NOT NULL DEFAULT '',
-      duration_sec INTEGER NOT NULL DEFAULT 0,
-      content_type TEXT NOT NULL DEFAULT 'video',
-      status TEXT NOT NULL DEFAULT 'pending',
-      chunk_count INTEGER NOT NULL DEFAULT 0,
-      lang TEXT NOT NULL DEFAULT '',
-      error TEXT NOT NULL DEFAULT '',
-      indexed_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_archive_videos_status ON archive_videos(status);
-    CREATE INDEX IF NOT EXISTS idx_archive_videos_published ON archive_videos(published_at DESC);
-
-    CREATE TABLE IF NOT EXISTS clips (
-      id TEXT PRIMARY KEY,
-      job_id TEXT,
-      video_id TEXT NOT NULL DEFAULT '',
-      title TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      srt_path TEXT NOT NULL DEFAULT '',
-      start_sec INTEGER,
-      end_sec INTEGER,
-      duration_sec INTEGER,
-      hook_score INTEGER,
-      editor_notes TEXT NOT NULL DEFAULT '',
-      youtube_url TEXT NOT NULL DEFAULT '',
-      box_url TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'ready',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_clips_job ON clips(job_id);
-  `);
-
-  // Drop legacy 3+1 pillar column cleanly on existing databases
-  const pipeCols = db.query("PRAGMA table_info(content_pipeline)").all() as Array<{ name?: string }>;
-  if (pipeCols.some((c) => c.name === "pillar")) {
-    try {
-      db.exec("ALTER TABLE content_pipeline DROP COLUMN pillar;");
-    } catch {
-      // Older SQLite without DROP COLUMN; column remains unused with DEFAULT 'core'
-    }
-  }
-}
-
-function migrateLegacyCalendarJson(db: Database): void {
-  const home = process.env.HOME || "/home/sprite";
-  const legacyPath = path.join(home, ".omp", "agent", "calendar.json");
-  if (!fs.existsSync(legacyPath)) return;
-
-  try {
-    const countRow = db.query("SELECT COUNT(*) as c FROM calendar_events").get() as { c: number };
-    if (countRow && countRow.c > 0) return;
-
-    const parsed = JSON.parse(fs.readFileSync(legacyPath, "utf8")) as {
-      events?: Array<Partial<CalendarEvent>>;
-    };
-    const events = Array.isArray(parsed.events) ? parsed.events : [];
-    if (events.length === 0) return;
-
-    const stmt = db.prepare(`
-      INSERT OR IGNORE INTO calendar_events (
-        id, title, type, start_at, end_at, cron, notes, status, source,
-        google_event_id, google_html_link, wakeups_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const nowIso = new Date().toISOString();
-    const tx = db.transaction((list: Array<Partial<CalendarEvent>>) => {
-      for (const e of list) {
-        if (!e || !e.id || !e.title || !e.startAt) continue;
-        stmt.run(
-          String(e.id),
-          String(e.title),
-          String(e.type || "stream"),
-          String(e.startAt),
-          e.endAt ?? null,
-          e.cron ?? null,
-          String(e.notes || ""),
-          String(e.status || "planned"),
-          String(e.source || "local"),
-          e.googleEventId ?? null,
-          e.googleHtmlLink ?? null,
-          JSON.stringify(Array.isArray(e.wakeups) ? e.wakeups : []),
-          String(e.createdAt || nowIso),
-          String(e.updatedAt || nowIso)
-        );
-      }
-    });
-    tx(events);
-    try {
-      fs.renameSync(legacyPath, `${legacyPath}.migrated`);
-    } catch {
-      // non-fatal if rename fails
-    }
-  } catch {
-    // ignore malformed legacy json
-  }
-}
-
-export function getStudioDb(): Database {
-  const dbPath = getStudioDbPath();
-  if (dbInstance && dbInstancePath === dbPath && fs.existsSync(dbPath)) {
-    return dbInstance;
-  }
-  if (dbInstance) {
-    try {
-      dbInstance.close();
-    } catch {
-      // ignore
-    }
-    dbInstance = null;
-  }
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath, { create: true });
-  initSchema(db);
-  migrateLegacyCalendarJson(db);
-  dbInstance = db;
-  dbInstancePath = dbPath;
-  return db;
+function toNullableNumber(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 // ---------- Calendar Events ----------
@@ -414,28 +468,29 @@ function mapCalendarRow(r: CalendarRow): CalendarEvent {
   };
 }
 
-export function listCalendarEvents(): CalendarEvent[] {
-  const db = getStudioDb();
-  const rows = db.query("SELECT * FROM calendar_events ORDER BY start_at ASC").all() as CalendarRow[];
+export async function listCalendarEvents(): Promise<CalendarEvent[]> {
+  const db = await getDb();
+  const rows = await db.all<CalendarRow>("SELECT * FROM calendar_events ORDER BY start_at ASC");
   return rows.map(mapCalendarRow);
 }
 
-export function getCalendarEventById(id: string): CalendarEvent | null {
-  const db = getStudioDb();
-  const row = db.query("SELECT * FROM calendar_events WHERE id = ?").get(id) as CalendarRow | null;
+export async function getCalendarEventById(id: string): Promise<CalendarEvent | null> {
+  const db = await getDb();
+  const row = await db.get<CalendarRow>("SELECT * FROM calendar_events WHERE id = ?", id);
   return row ? mapCalendarRow(row) : null;
 }
 
-export function getCalendarEventByGoogleId(googleEventId: string): CalendarEvent | null {
-  const db = getStudioDb();
-  const row = db
-    .query("SELECT * FROM calendar_events WHERE google_event_id = ?")
-    .get(googleEventId) as CalendarRow | null;
+export async function getCalendarEventByGoogleId(googleEventId: string): Promise<CalendarEvent | null> {
+  const db = await getDb();
+  const row = await db.get<CalendarRow>(
+    "SELECT * FROM calendar_events WHERE google_event_id = ?",
+    googleEventId
+  );
   return row ? mapCalendarRow(row) : null;
 }
 
-export function upsertCalendarEvent(evt: CalendarEvent): CalendarEvent {
-  const db = getStudioDb();
+export async function upsertCalendarEvent(evt: CalendarEvent): Promise<CalendarEvent> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
   const normalized: CalendarEvent = {
     ...evt,
@@ -446,8 +501,8 @@ export function upsertCalendarEvent(evt: CalendarEvent): CalendarEvent {
     createdAt: evt.createdAt || nowIso,
     updatedAt: evt.updatedAt || nowIso,
   };
-  db.prepare(`
-    INSERT INTO calendar_events (
+  await db.run(
+    `INSERT INTO calendar_events (
       id, title, type, start_at, end_at, cron, notes, status, source,
       google_event_id, google_html_link, wakeups_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -463,8 +518,7 @@ export function upsertCalendarEvent(evt: CalendarEvent): CalendarEvent {
       google_event_id = excluded.google_event_id,
       google_html_link = excluded.google_html_link,
       wakeups_json = excluded.wakeups_json,
-      updated_at = excluded.updated_at
-  `).run(
+      updated_at = excluded.updated_at`,
     normalized.id,
     normalized.title,
     normalized.type,
@@ -483,14 +537,10 @@ export function upsertCalendarEvent(evt: CalendarEvent): CalendarEvent {
   return normalized;
 }
 
-export function saveCalendarEventsBatch(events: CalendarEvent[]): void {
-  const db = getStudioDb();
-  const tx = db.transaction((list: CalendarEvent[]) => {
-    for (const evt of list) {
-      upsertCalendarEvent(evt);
-    }
-  });
-  tx(events);
+export async function saveCalendarEventsBatch(events: CalendarEvent[]): Promise<void> {
+  for (const evt of events) {
+    await upsertCalendarEvent(evt);
+  }
 }
 
 // ---------- Content Pipeline ----------
@@ -525,11 +575,11 @@ function mapPipelineRow(r: PipelineRow): ContentPipelineItem {
   };
 }
 
-export function listPipelineItems(filters?: {
+export async function listPipelineItems(filters?: {
   status?: string;
   format?: string;
-}): ContentPipelineItem[] {
-  const db = getStudioDb();
+}): Promise<ContentPipelineItem[]> {
+  const db = await getDb();
   const clauses: string[] = [];
   const params: string[] = [];
   if (filters?.status) {
@@ -541,19 +591,20 @@ export function listPipelineItems(filters?: {
     params.push(filters.format);
   }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const rows = db
-    .query(`SELECT * FROM content_pipeline ${where} ORDER BY updated_at DESC`)
-    .all(...params) as PipelineRow[];
+  const rows = await db.all<PipelineRow>(
+    `SELECT * FROM content_pipeline ${where} ORDER BY updated_at DESC`,
+    ...params
+  );
   return rows.map(mapPipelineRow);
 }
 
-export function getPipelineItemById(id: string): ContentPipelineItem | null {
-  const db = getStudioDb();
-  const row = db.query("SELECT * FROM content_pipeline WHERE id = ?").get(id) as PipelineRow | null;
+export async function getPipelineItemById(id: string): Promise<ContentPipelineItem | null> {
+  const db = await getDb();
+  const row = await db.get<PipelineRow>("SELECT * FROM content_pipeline WHERE id = ?", id);
   return row ? mapPipelineRow(row) : null;
 }
 
-export function upsertPipelineItem(input: {
+export async function upsertPipelineItem(input: {
   id?: string;
   title?: string;
   format?: PipelineFormat;
@@ -563,9 +614,9 @@ export function upsertPipelineItem(input: {
   scriptPath?: string;
   scheduledFor?: string | null;
   notes?: string;
-}): ContentPipelineItem {
-  const db = getStudioDb();
-  const existing = input.id ? getPipelineItemById(input.id) : null;
+}): Promise<ContentPipelineItem> {
+  const db = await getDb();
+  const existing = input.id ? await getPipelineItemById(input.id) : null;
   const nowIso = new Date().toISOString();
   const title = (input.title ?? existing?.title ?? "").trim();
   if (!title) throw new Error("Pipeline item title is required");
@@ -584,8 +635,8 @@ export function upsertPipelineItem(input: {
     updatedAt: nowIso,
   };
 
-  db.prepare(`
-    INSERT INTO content_pipeline (
+  await db.run(
+    `INSERT INTO content_pipeline (
       id, title, format, status, hook, thumbnail_path, script_path,
       scheduled_for, notes, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -598,8 +649,7 @@ export function upsertPipelineItem(input: {
       script_path = excluded.script_path,
       scheduled_for = excluded.scheduled_for,
       notes = excluded.notes,
-      updated_at = excluded.updated_at
-  `).run(
+      updated_at = excluded.updated_at`,
     item.id,
     item.title,
     item.format,
@@ -615,9 +665,9 @@ export function upsertPipelineItem(input: {
   return item;
 }
 
-export function deletePipelineItem(id: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM content_pipeline WHERE id = ?").run(id);
+export async function deletePipelineItem(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM content_pipeline WHERE id = ?", id);
   return res.changes > 0;
 }
 
@@ -649,8 +699,8 @@ function mapContactRow(r: ContactRow): StudioContact {
   };
 }
 
-export function listContacts(filters?: { role?: string; status?: string }): StudioContact[] {
-  const db = getStudioDb();
+export async function listContacts(filters?: { role?: string; status?: string }): Promise<StudioContact[]> {
+  const db = await getDb();
   const clauses: string[] = [];
   const params: string[] = [];
   if (filters?.role) {
@@ -662,19 +712,20 @@ export function listContacts(filters?: { role?: string; status?: string }): Stud
     params.push(filters.status);
   }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const rows = db
-    .query(`SELECT * FROM contacts ${where} ORDER BY updated_at DESC`)
-    .all(...params) as ContactRow[];
+  const rows = await db.all<ContactRow>(
+    `SELECT * FROM contacts ${where} ORDER BY updated_at DESC`,
+    ...params
+  );
   return rows.map(mapContactRow);
 }
 
-export function getContactById(id: string): StudioContact | null {
-  const db = getStudioDb();
-  const row = db.query("SELECT * FROM contacts WHERE id = ?").get(id) as ContactRow | null;
+export async function getContactById(id: string): Promise<StudioContact | null> {
+  const db = await getDb();
+  const row = await db.get<ContactRow>("SELECT * FROM contacts WHERE id = ?", id);
   return row ? mapContactRow(row) : null;
 }
 
-export function upsertContact(input: {
+export async function upsertContact(input: {
   id?: string;
   name?: string;
   role?: ContactRole;
@@ -682,9 +733,9 @@ export function upsertContact(input: {
   platform?: string;
   status?: ContactStatus;
   notes?: string;
-}): StudioContact {
-  const db = getStudioDb();
-  const existing = input.id ? getContactById(input.id) : null;
+}): Promise<StudioContact> {
+  const db = await getDb();
+  const existing = input.id ? await getContactById(input.id) : null;
   const nowIso = new Date().toISOString();
   const name = (input.name ?? existing?.name ?? "").trim();
   if (!name) throw new Error("Contact name is required");
@@ -701,8 +752,8 @@ export function upsertContact(input: {
     updatedAt: nowIso,
   };
 
-  db.prepare(`
-    INSERT INTO contacts (
+  await db.run(
+    `INSERT INTO contacts (
       id, name, role, handle, platform, status, notes, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
@@ -712,8 +763,7 @@ export function upsertContact(input: {
       platform = excluded.platform,
       status = excluded.status,
       notes = excluded.notes,
-      updated_at = excluded.updated_at
-  `).run(
+      updated_at = excluded.updated_at`,
     item.id,
     item.name,
     item.role,
@@ -727,9 +777,9 @@ export function upsertContact(input: {
   return item;
 }
 
-export function deleteContact(id: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM contacts WHERE id = ?").run(id);
+export async function deleteContact(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM contacts WHERE id = ?", id);
   return res.changes > 0;
 }
 
@@ -739,10 +789,10 @@ interface MetricRow {
   id: string;
   recorded_at: string;
   platform: string;
-  subscribers: number | null;
-  total_views: number | null;
-  avg_ccv: number | null;
-  avg_ctr: number | null;
+  subscribers: number | string | null;
+  total_views: number | string | null;
+  avg_ccv: number | string | null;
+  avg_ctr: number | string | null;
   notes: string;
   created_at: string;
 }
@@ -752,24 +802,25 @@ function mapMetricRow(r: MetricRow): ChannelMetric {
     id: r.id,
     recordedAt: r.recorded_at,
     platform: r.platform,
-    subscribers: r.subscribers,
-    totalViews: r.total_views,
-    avgCcv: r.avg_ccv,
-    avgCtr: r.avg_ctr,
+    subscribers: toNullableNumber(r.subscribers),
+    totalViews: toNullableNumber(r.total_views),
+    avgCcv: toNullableNumber(r.avg_ccv),
+    avgCtr: toNullableNumber(r.avg_ctr),
     notes: r.notes,
     createdAt: r.created_at,
   };
 }
 
-export function listChannelMetrics(limit = 50): ChannelMetric[] {
-  const db = getStudioDb();
-  const rows = db
-    .query("SELECT * FROM channel_metrics ORDER BY recorded_at DESC, created_at DESC LIMIT ?")
-    .all(Math.max(1, Math.min(200, limit))) as MetricRow[];
+export async function listChannelMetrics(limit = 50): Promise<ChannelMetric[]> {
+  const db = await getDb();
+  const rows = await db.all<MetricRow>(
+    "SELECT * FROM channel_metrics ORDER BY recorded_at DESC, created_at DESC LIMIT ?",
+    Math.max(1, Math.min(200, limit))
+  );
   return rows.map(mapMetricRow);
 }
 
-export function addChannelMetric(input: {
+export async function addChannelMetric(input: {
   recordedAt?: string;
   platform?: string;
   subscribers?: number | null;
@@ -777,8 +828,8 @@ export function addChannelMetric(input: {
   avgCcv?: number | null;
   avgCtr?: number | null;
   notes?: string;
-}): ChannelMetric {
-  const db = getStudioDb();
+}): Promise<ChannelMetric> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
   const item: ChannelMetric = {
     id: makeId("met"),
@@ -792,11 +843,10 @@ export function addChannelMetric(input: {
     createdAt: nowIso,
   };
 
-  db.prepare(`
-    INSERT INTO channel_metrics (
+  await db.run(
+    `INSERT INTO channel_metrics (
       id, recorded_at, platform, subscribers, total_views, avg_ccv, avg_ctr, notes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     item.id,
     item.recordedAt,
     item.platform,
@@ -810,13 +860,13 @@ export function addChannelMetric(input: {
   return item;
 }
 
-export function deleteChannelMetric(id: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM channel_metrics WHERE id = ?").run(id);
+export async function deleteChannelMetric(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM channel_metrics WHERE id = ?", id);
   return res.changes > 0;
 }
 
-export function upsertDailyChannelMetric(input: {
+export async function upsertDailyChannelMetric(input: {
   recordedAt?: string;
   platform?: string;
   subscribers?: number | null;
@@ -824,16 +874,16 @@ export function upsertDailyChannelMetric(input: {
   avgCcv?: number | null;
   avgCtr?: number | null;
   notes?: string;
-}): ChannelMetric {
-  const db = getStudioDb();
+}): Promise<ChannelMetric> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
   const recordedAt = (input.recordedAt || nowIso.slice(0, 10)).trim();
   const platform = (input.platform || "youtube").trim().toLowerCase();
-  const existing = db
-    .query(
-      "SELECT * FROM channel_metrics WHERE recorded_at = ? AND platform = ? ORDER BY created_at DESC LIMIT 1"
-    )
-    .get(recordedAt, platform) as MetricRow | null;
+  const existing = await db.get<MetricRow>(
+    "SELECT * FROM channel_metrics WHERE recorded_at = ? AND platform = ? ORDER BY created_at DESC LIMIT 1",
+    recordedAt,
+    platform
+  );
 
   if (!existing) {
     return addChannelMetric({ ...input, recordedAt, platform });
@@ -842,27 +892,33 @@ export function upsertDailyChannelMetric(input: {
   const nextSubs =
     typeof input.subscribers === "number" && Number.isFinite(input.subscribers)
       ? Math.round(input.subscribers)
-      : existing.subscribers;
+      : toNullableNumber(existing.subscribers);
   const nextViews =
     typeof input.totalViews === "number" && Number.isFinite(input.totalViews)
       ? Math.round(input.totalViews)
-      : existing.total_views;
+      : toNullableNumber(existing.total_views);
   const nextCcv =
     typeof input.avgCcv === "number" && Number.isFinite(input.avgCcv)
       ? Math.round(input.avgCcv)
-      : existing.avg_ccv;
+      : toNullableNumber(existing.avg_ccv);
   const nextCtr =
     typeof input.avgCtr === "number" && Number.isFinite(input.avgCtr)
       ? Number(input.avgCtr)
-      : existing.avg_ctr;
+      : toNullableNumber(existing.avg_ctr);
   const nextNotes =
     typeof input.notes === "string" && input.notes.trim() ? input.notes.trim() : existing.notes;
 
-  db.prepare(`
-    UPDATE channel_metrics
-    SET subscribers = ?, total_views = ?, avg_ccv = ?, avg_ctr = ?, notes = ?
-    WHERE id = ?
-  `).run(nextSubs, nextViews, nextCcv, nextCtr, nextNotes, existing.id);
+  await db.run(
+    `UPDATE channel_metrics
+     SET subscribers = ?, total_views = ?, avg_ccv = ?, avg_ctr = ?, notes = ?
+     WHERE id = ?`,
+    nextSubs,
+    nextViews,
+    nextCcv,
+    nextCtr,
+    nextNotes,
+    existing.id
+  );
 
   return {
     id: existing.id,
@@ -879,25 +935,29 @@ export function upsertDailyChannelMetric(input: {
 
 // ---------- Overview & Safe Read-Only SQL ----------
 
-function countQuery(db: Database, sql: string): number {
-  const row = db.query(sql).get();
-  if (row && typeof row === "object" && "c" in row && typeof row.c === "number") {
-    return row.c;
-  }
-  return 0;
+async function countQuery(db: DbDriver, sql: string): Promise<number> {
+  const row = await db.get<{ c?: number | string }>(sql);
+  return Number(row?.c ?? 0);
 }
 
-export function getStudioDbOverview() {
-  const db = getStudioDb();
-  const calCount = countQuery(db, "SELECT COUNT(*) as c FROM calendar_events WHERE status != 'cancelled'");
-  const pipeAll = listPipelineItems();
+export async function getStudioDbOverview() {
+  const db = await getDb();
+  const [calCount, pipeAll, contactsCount, metricsCount, clipJobsCount, clipsCount, archiveCount] =
+    await Promise.all([
+      countQuery(db, "SELECT COUNT(*) as c FROM calendar_events WHERE status != 'cancelled'"),
+      listPipelineItems(),
+      countQuery(db, "SELECT COUNT(*) as c FROM contacts"),
+      countQuery(db, "SELECT COUNT(*) as c FROM channel_metrics"),
+      countQuery(db, "SELECT COUNT(*) as c FROM clip_jobs"),
+      countQuery(db, "SELECT COUNT(*) as c FROM clips"),
+      countQuery(db, "SELECT COUNT(*) as c FROM archive_videos"),
+    ]);
   const activePipe = pipeAll.filter((p) => p.status !== "dropped");
-  const contactsCount = countQuery(db, "SELECT COUNT(*) as c FROM contacts");
-  const metricsCount = countQuery(db, "SELECT COUNT(*) as c FROM channel_metrics");
-  const clipJobsCount = countQuery(db, "SELECT COUNT(*) as c FROM clip_jobs");
-  const clipsCount = countQuery(db, "SELECT COUNT(*) as c FROM clips");
+  const info = getNeonRuntimeInfo();
   return {
-    dbPath: getStudioDbPath(),
+    backend: db.backend,
+    dbPath: db.backend === "neon" ? `neon://${info.projectName || "lma-studio"}` : getStudioDbPath(),
+    neon: info,
     tables: {
       calendar_events: calCount,
       content_pipeline: activePipe.length,
@@ -905,14 +965,15 @@ export function getStudioDbOverview() {
       channel_metrics: metricsCount,
       clip_jobs: clipJobsCount,
       clips: clipsCount,
+      archive_videos: archiveCount,
     },
   };
 }
 
-export function runReadOnlySql(
+export async function runReadOnlySql(
   sql: string,
   params: Array<string | number | null> = []
-): { rows: unknown[]; truncated: boolean } {
+): Promise<{ rows: unknown[]; truncated: boolean }> {
   const trimmed = sql.trim();
   if (!/^(SELECT|WITH|PRAGMA\s+table_info)\b/i.test(trimmed)) {
     throw new Error("Only read-only SELECT, WITH, or PRAGMA table_info statements are allowed.");
@@ -923,8 +984,8 @@ export function runReadOnlySql(
   if (/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM|REINDEX)\b/i.test(trimmed)) {
     throw new Error("Mutation keywords are forbidden in read-only queries.");
   }
-  const db = getStudioDb();
-  const allRows = db.query(trimmed).all(...params);
+  const db = await getDb();
+  const allRows = await db.all<unknown>(trimmed, ...params);
   const MAX_ROWS = 100;
   return {
     rows: allRows.slice(0, MAX_ROWS),
@@ -934,30 +995,30 @@ export function runReadOnlySql(
 
 // ---------- Studio Metadata KV (Setup State, Preferences) ----------
 
-export function getStudioMeta(key: string): string | null {
-  const db = getStudioDb();
-  const row = db.query("SELECT value FROM studio_meta WHERE key = ?").get(key);
-  if (row && typeof row === "object" && "value" in row && typeof row.value === "string") {
-    return row.value;
-  }
-  return null;
+export async function getStudioMeta(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.get<{ value?: string }>("SELECT value FROM studio_meta WHERE key = ?", key);
+  return typeof row?.value === "string" ? row.value : null;
 }
 
-export function setStudioMeta(key: string, value: string): void {
-  const db = getStudioDb();
+export async function setStudioMeta(key: string, value: string): Promise<void> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
-  db.prepare(`
-    INSERT INTO studio_meta (key, value, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = excluded.updated_at
-  `).run(key, value, nowIso);
+  await db.run(
+    `INSERT INTO studio_meta (key, value, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       value = excluded.value,
+       updated_at = excluded.updated_at`,
+    key,
+    value,
+    nowIso
+  );
 }
 
-export function deleteStudioMeta(key: string): void {
-  const db = getStudioDb();
-  db.prepare("DELETE FROM studio_meta WHERE key = ?").run(key);
+export async function deleteStudioMeta(key: string): Promise<void> {
+  const db = await getDb();
+  await db.run("DELETE FROM studio_meta WHERE key = ?", key);
 }
 
 // ---------- Clip Jobs & Clips Ecosystem ----------
@@ -968,7 +1029,7 @@ function rowToClipJob(row: Record<string, unknown>): ClipJob {
     vodUrl: String(row.vod_url ?? ""),
     videoId: String(row.video_id ?? ""),
     title: String(row.title ?? ""),
-    maxClips: typeof row.max_clips === "number" ? row.max_clips : 3,
+    maxClips: toNullableNumber(row.max_clips) ?? 3,
     focusNotes: String(row.focus_notes ?? ""),
     status: (String(row.status ?? "queued") as ClipJobStatus),
     stage: String(row.stage ?? "Queued"),
@@ -988,10 +1049,10 @@ function rowToClipRecord(row: Record<string, unknown>): ClipRecord {
     title: String(row.title ?? ""),
     filePath: String(row.file_path ?? ""),
     srtPath: String(row.srt_path ?? ""),
-    startSec: typeof row.start_sec === "number" ? row.start_sec : null,
-    endSec: typeof row.end_sec === "number" ? row.end_sec : null,
-    durationSec: typeof row.duration_sec === "number" ? row.duration_sec : null,
-    hookScore: typeof row.hook_score === "number" ? row.hook_score : null,
+    startSec: toNullableNumber(row.start_sec),
+    endSec: toNullableNumber(row.end_sec),
+    durationSec: toNullableNumber(row.duration_sec),
+    hookScore: toNullableNumber(row.hook_score),
     editorNotes: String(row.editor_notes ?? ""),
     youtubeUrl: String(row.youtube_url ?? ""),
     boxUrl: String(row.box_url ?? ""),
@@ -1001,14 +1062,14 @@ function rowToClipRecord(row: Record<string, unknown>): ClipRecord {
   };
 }
 
-export function createClipJob(input: {
+export async function createClipJob(input: {
   vodUrl: string;
   videoId?: string;
   title?: string;
   maxClips?: number;
   focusNotes?: string;
-}): ClipJob {
-  const db = getStudioDb();
+}): Promise<ClipJob> {
+  const db = await getDb();
   const id = makeId("job");
   const nowIso = new Date().toISOString();
   const rawMax = input.maxClips ?? 0;
@@ -1016,12 +1077,11 @@ export function createClipJob(input: {
   const initialLog: ClipJobLogEntry[] = [
     { at: nowIso, stage: "Queued", message: "Clip job created and queued for background worker." },
   ];
-  db.prepare(`
-    INSERT INTO clip_jobs (
+  await db.run(
+    `INSERT INTO clip_jobs (
       id, vod_url, video_id, title, max_clips, focus_notes,
       status, stage, progress_log, error, created_at, updated_at, completed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 'Queued', ?, '', ?, ?, NULL)
-  `).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 'Queued', ?, '', ?, ?, NULL)`,
     id,
     input.vodUrl.trim(),
     (input.videoId ?? "").trim(),
@@ -1032,24 +1092,25 @@ export function createClipJob(input: {
     nowIso,
     nowIso
   );
-  return getClipJob(id)!;
+  return (await getClipJob(id))!;
 }
 
-export function getClipJob(id: string): ClipJob | null {
-  const db = getStudioDb();
-  const row = db.query("SELECT * FROM clip_jobs WHERE id = ?").get(id) as Record<string, unknown> | null;
+export async function getClipJob(id: string): Promise<ClipJob | null> {
+  const db = await getDb();
+  const row = await db.get<Record<string, unknown>>("SELECT * FROM clip_jobs WHERE id = ?", id);
   return row ? rowToClipJob(row) : null;
 }
 
-export function listClipJobs(limit = 20): ClipJob[] {
-  const db = getStudioDb();
-  const rows = db
-    .query("SELECT * FROM clip_jobs ORDER BY created_at DESC LIMIT ?")
-    .all(Math.max(1, Math.min(100, limit))) as Array<Record<string, unknown>>;
+export async function listClipJobs(limit = 20): Promise<ClipJob[]> {
+  const db = await getDb();
+  const rows = await db.all<Record<string, unknown>>(
+    "SELECT * FROM clip_jobs ORDER BY created_at DESC LIMIT ?",
+    Math.max(1, Math.min(100, limit))
+  );
   return rows.map(rowToClipJob);
 }
 
-export function updateClipJob(
+export async function updateClipJob(
   id: string,
   patch: {
     title?: string;
@@ -1060,8 +1121,8 @@ export function updateClipJob(
     error?: string;
     completedAt?: string | null;
   }
-): ClipJob | null {
-  const existing = getClipJob(id);
+): Promise<ClipJob | null> {
+  const existing = await getClipJob(id);
   if (!existing) return null;
   const nowIso = new Date().toISOString();
   const nextStage = patch.stage ?? existing.stage;
@@ -1078,12 +1139,11 @@ export function updateClipJob(
         ? existing.completedAt ?? nowIso
         : existing.completedAt;
 
-  const db = getStudioDb();
-  db.prepare(`
-    UPDATE clip_jobs
-    SET title = ?, video_id = ?, status = ?, stage = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
-    WHERE id = ?
-  `).run(
+  const db = await getDb();
+  await db.run(
+    `UPDATE clip_jobs
+     SET title = ?, video_id = ?, status = ?, stage = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
+     WHERE id = ?`,
     patch.title !== undefined ? patch.title : existing.title,
     patch.videoId !== undefined ? patch.videoId : existing.videoId,
     nextStatus,
@@ -1097,13 +1157,13 @@ export function updateClipJob(
   return getClipJob(id);
 }
 
-export function deleteClipJob(id: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM clip_jobs WHERE id = ?").run(id);
+export async function deleteClipJob(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM clip_jobs WHERE id = ?", id);
   return res.changes > 0;
 }
 
-export function upsertClipRecord(input: {
+export async function upsertClipRecord(input: {
   id?: string;
   jobId?: string | null;
   videoId?: string;
@@ -1118,39 +1178,33 @@ export function upsertClipRecord(input: {
   youtubeUrl?: string;
   boxUrl?: string;
   status?: ClipRecordStatus;
-}): ClipRecord {
-  const db = getStudioDb();
+}): Promise<ClipRecord> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
   const normalizedPath = input.filePath.trim().replace(/^\/home\/sprite\/workspace\//, "").replace(/^\/+/, "");
   const existing =
-    (input.id
-      ? (db.query("SELECT * FROM clips WHERE id = ?").get(input.id) as Record<string, unknown> | null)
-      : null) ??
-    (db.query("SELECT * FROM clips WHERE file_path = ?").get(normalizedPath) as Record<string, unknown> | null);
+    (input.id ? await db.get<Record<string, unknown>>("SELECT * FROM clips WHERE id = ?", input.id) : null) ??
+    (await db.get<Record<string, unknown>>("SELECT * FROM clips WHERE file_path = ?", normalizedPath));
 
   const id = existing ? String(existing.id) : input.id?.trim() || makeId("clip");
-  const startSec = input.startSec ?? (existing && typeof existing.start_sec === "number" ? existing.start_sec : null);
-  const endSec = input.endSec ?? (existing && typeof existing.end_sec === "number" ? existing.end_sec : null);
+  const startSec = input.startSec ?? toNullableNumber(existing?.start_sec);
+  const endSec = input.endSec ?? toNullableNumber(existing?.end_sec);
   const durationSec =
     input.durationSec ??
     (startSec !== null && endSec !== null && endSec > startSec
       ? Math.round(endSec - startSec)
-      : existing && typeof existing.duration_sec === "number"
-        ? existing.duration_sec
-        : null);
+      : toNullableNumber(existing?.duration_sec));
   const hookScore =
     typeof input.hookScore === "number"
       ? Math.max(1, Math.min(10, Math.round(input.hookScore)))
-      : existing && typeof existing.hook_score === "number"
-        ? existing.hook_score
-        : null;
+      : toNullableNumber(existing?.hook_score);
   const srtPath = (input.srtPath ?? (existing ? String(existing.srt_path ?? "") : ""))
     .trim()
     .replace(/^\/home\/sprite\/workspace\//, "")
     .replace(/^\/+/, "");
 
-  db.prepare(`
-    INSERT INTO clips (
+  await db.run(
+    `INSERT INTO clips (
       id, job_id, video_id, title, file_path, srt_path,
       start_sec, end_sec, duration_sec, hook_score,
       editor_notes, youtube_url, box_url, status, created_at, updated_at
@@ -1169,8 +1223,7 @@ export function upsertClipRecord(input: {
       youtube_url = CASE WHEN excluded.youtube_url != '' THEN excluded.youtube_url ELSE clips.youtube_url END,
       box_url = CASE WHEN excluded.box_url != '' THEN excluded.box_url ELSE clips.box_url END,
       status = excluded.status,
-      updated_at = excluded.updated_at
-  `).run(
+      updated_at = excluded.updated_at`,
     id,
     input.jobId !== undefined ? input.jobId : existing?.job_id ? String(existing.job_id) : null,
     (input.videoId ?? (existing ? String(existing.video_id ?? "") : "")).trim(),
@@ -1188,70 +1241,48 @@ export function upsertClipRecord(input: {
     existing ? String(existing.created_at ?? nowIso) : nowIso,
     nowIso
   );
-  const saved = db.query("SELECT * FROM clips WHERE id = ?").get(id) as Record<string, unknown>;
+  const saved = (await db.get<Record<string, unknown>>("SELECT * FROM clips WHERE id = ?", id))!;
   return rowToClipRecord(saved);
 }
 
-export function listClipRecords(opts?: { jobId?: string; limit?: number }): ClipRecord[] {
-  const db = getStudioDb();
+export async function listClipRecords(opts?: { jobId?: string; limit?: number }): Promise<ClipRecord[]> {
+  const db = await getDb();
   const limit = Math.max(1, Math.min(200, opts?.limit ?? 60));
   if (opts?.jobId) {
-    const rows = db
-      .query("SELECT * FROM clips WHERE job_id = ? ORDER BY created_at DESC LIMIT ?")
-      .all(opts.jobId, limit) as Array<Record<string, unknown>>;
+    const rows = await db.all<Record<string, unknown>>(
+      "SELECT * FROM clips WHERE job_id = ? ORDER BY created_at DESC LIMIT ?",
+      opts.jobId,
+      limit
+    );
     return rows.map(rowToClipRecord);
   }
-  const rows = db
-    .query("SELECT * FROM clips ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as Array<Record<string, unknown>>;
+  const rows = await db.all<Record<string, unknown>>(
+    "SELECT * FROM clips ORDER BY created_at DESC LIMIT ?",
+    limit
+  );
   return rows.map(rowToClipRecord);
 }
 
-export function updateClipBoxUrl(id: string, boxUrl: string): ClipRecord | null {
-  const db = getStudioDb();
+export async function updateClipBoxUrl(id: string, boxUrl: string): Promise<ClipRecord | null> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
-  db.prepare("UPDATE clips SET box_url = ?, status = 'sent_to_box', updated_at = ? WHERE id = ?").run(
+  await db.run(
+    "UPDATE clips SET box_url = ?, status = 'sent_to_box', updated_at = ? WHERE id = ?",
     boxUrl,
     nowIso,
     id
   );
-  const row = db.query("SELECT * FROM clips WHERE id = ?").get(id) as Record<string, unknown> | null;
+  const row = await db.get<Record<string, unknown>>("SELECT * FROM clips WHERE id = ?", id);
   return row ? rowToClipRecord(row) : null;
 }
 
-export function deleteClipRecord(id: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM clips WHERE id = ?").run(id);
+export async function deleteClipRecord(id: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM clips WHERE id = ?", id);
   return res.changes > 0;
 }
 
 // ---------- Creator Archive (Pinecone Video Transcript Index) ----------
-
-export type ArchiveVideoStatus = "pending" | "indexing" | "indexed" | "no_captions" | "failed";
-export type ArchiveContentType = "video" | "live" | "short";
-
-export interface ArchiveVideoRecord {
-  videoId: string;
-  title: string;
-  publishedAt: string;
-  durationSec: number;
-  contentType: ArchiveContentType;
-  status: ArchiveVideoStatus;
-  chunkCount: number;
-  lang: string;
-  error: string;
-  indexedAt: string | null;
-  updatedAt: string;
-}
-
-export interface ArchiveStats {
-  totalTracked: number;
-  indexedVideos: number;
-  noCaptionsVideos: number;
-  failedVideos: number;
-  pendingVideos: number;
-  totalChunks: number;
-}
 
 function rowToArchiveVideo(row: Record<string, unknown>): ArchiveVideoRecord {
   return {
@@ -1269,7 +1300,7 @@ function rowToArchiveVideo(row: Record<string, unknown>): ArchiveVideoRecord {
   };
 }
 
-export function upsertArchiveVideo(input: {
+export async function upsertArchiveVideo(input: {
   videoId: string;
   title?: string;
   publishedAt?: string;
@@ -1280,15 +1311,17 @@ export function upsertArchiveVideo(input: {
   lang?: string;
   error?: string;
   indexedAt?: string | null;
-}): ArchiveVideoRecord {
-  const db = getStudioDb();
+}): Promise<ArchiveVideoRecord> {
+  const db = await getDb();
   const nowIso = new Date().toISOString();
-  const existing = db
-    .query("SELECT * FROM archive_videos WHERE video_id = ?")
-    .get(input.videoId) as Record<string, unknown> | null;
+  const vid = input.videoId.trim();
+  const existing = await db.get<Record<string, unknown>>(
+    "SELECT * FROM archive_videos WHERE video_id = ?",
+    vid
+  );
 
-  db.prepare(`
-    INSERT INTO archive_videos (
+  await db.run(
+    `INSERT INTO archive_videos (
       video_id, title, published_at, duration_sec, content_type,
       status, chunk_count, lang, error, indexed_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1302,9 +1335,8 @@ export function upsertArchiveVideo(input: {
       lang = CASE WHEN excluded.lang != '' THEN excluded.lang ELSE archive_videos.lang END,
       error = excluded.error,
       indexed_at = COALESCE(excluded.indexed_at, archive_videos.indexed_at),
-      updated_at = excluded.updated_at
-  `).run(
-    input.videoId.trim(),
+      updated_at = excluded.updated_at`,
+    vid,
     (input.title ?? (existing ? String(existing.title ?? "") : "")).trim(),
     (input.publishedAt ?? (existing ? String(existing.published_at ?? "") : "")).trim(),
     input.durationSec ?? (existing ? Number(existing.duration_sec ?? 0) : 0),
@@ -1317,46 +1349,46 @@ export function upsertArchiveVideo(input: {
     nowIso
   );
 
-  const saved = db
-    .query("SELECT * FROM archive_videos WHERE video_id = ?")
-    .get(input.videoId.trim()) as Record<string, unknown>;
+  const saved = (await db.get<Record<string, unknown>>(
+    "SELECT * FROM archive_videos WHERE video_id = ?",
+    vid
+  ))!;
   return rowToArchiveVideo(saved);
 }
 
-export function listArchiveVideos(opts?: {
+export async function listArchiveVideos(opts?: {
   status?: ArchiveVideoStatus;
   limit?: number;
-}): ArchiveVideoRecord[] {
-  const db = getStudioDb();
+}): Promise<ArchiveVideoRecord[]> {
+  const db = await getDb();
   const limit = Math.max(1, Math.min(500, opts?.limit ?? 120));
   if (opts?.status) {
-    const rows = db
-      .query(
-        "SELECT * FROM archive_videos WHERE status = ? ORDER BY published_at DESC, updated_at DESC LIMIT ?"
-      )
-      .all(opts.status, limit) as Array<Record<string, unknown>>;
+    const rows = await db.all<Record<string, unknown>>(
+      "SELECT * FROM archive_videos WHERE status = ? ORDER BY published_at DESC, updated_at DESC LIMIT ?",
+      opts.status,
+      limit
+    );
     return rows.map(rowToArchiveVideo);
   }
-  const rows = db
-    .query("SELECT * FROM archive_videos ORDER BY published_at DESC, updated_at DESC LIMIT ?")
-    .all(limit) as Array<Record<string, unknown>>;
+  const rows = await db.all<Record<string, unknown>>(
+    "SELECT * FROM archive_videos ORDER BY published_at DESC, updated_at DESC LIMIT ?",
+    limit
+  );
   return rows.map(rowToArchiveVideo);
 }
 
-export function getArchiveStats(): ArchiveStats {
-  const db = getStudioDb();
-  const row = db
-    .query(`
-      SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) AS indexed_cnt,
-        SUM(CASE WHEN status = 'no_captions' THEN 1 ELSE 0 END) AS nocap_cnt,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_cnt,
-        SUM(CASE WHEN status IN ('pending', 'indexing') THEN 1 ELSE 0 END) AS pending_cnt,
-        COALESCE(SUM(chunk_count), 0) AS total_chunks
-      FROM archive_videos
-    `)
-    .get() as Record<string, unknown> | null;
+export async function getArchiveStats(): Promise<ArchiveStats> {
+  const db = await getDb();
+  const row = await db.get<Record<string, unknown>>(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) AS indexed_cnt,
+      SUM(CASE WHEN status = 'no_captions' THEN 1 ELSE 0 END) AS nocap_cnt,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_cnt,
+      SUM(CASE WHEN status IN ('pending', 'indexing') THEN 1 ELSE 0 END) AS pending_cnt,
+      COALESCE(SUM(chunk_count), 0) AS total_chunks
+    FROM archive_videos
+  `);
 
   return {
     totalTracked: Number(row?.total ?? 0),
@@ -1368,8 +1400,8 @@ export function getArchiveStats(): ArchiveStats {
   };
 }
 
-export function deleteArchiveVideo(videoId: string): boolean {
-  const db = getStudioDb();
-  const res = db.prepare("DELETE FROM archive_videos WHERE video_id = ?").run(videoId);
+export async function deleteArchiveVideo(videoId: string): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.run("DELETE FROM archive_videos WHERE video_id = ?", videoId);
   return res.changes > 0;
 }

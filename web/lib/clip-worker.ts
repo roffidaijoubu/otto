@@ -58,11 +58,11 @@ export function getActiveClipWorkerIds(): string[] {
  * Mark any clip jobs left in `running`/`queued` from a previous server process as interrupted
  * so the UI never displays a permanently stuck spinner after a restart or deploy.
  */
-export function reconcileOrphanedClipJobs(): number {
+export async function reconcileOrphanedClipJobs(): Promise<number> {
   let fixed = 0;
-  for (const job of listClipJobs(50)) {
+  for (const job of await listClipJobs(50)) {
     if ((job.status === "running" || job.status === "queued") && !activeWorkers.has(job.id)) {
-      updateClipJob(job.id, {
+      await updateClipJob(job.id, {
         status: "failed",
         stage: "Interrupted",
         error: "Server restarted while this background clip job was running. Cached chat/transcript data is preserved — re-run to resume fast.",
@@ -74,11 +74,11 @@ export function reconcileOrphanedClipJobs(): number {
   return fixed;
 }
 
-export function cancelBackgroundClipJob(
+export async function cancelBackgroundClipJob(
   jobId: string,
   onBroadcast: (payload: Record<string, unknown>) => void,
   onBusyChange: (busy: boolean) => void
-): ClipJob | null {
+): Promise<ClipJob | null> {
   cancelledJobs.add(jobId);
   const proc = activeWorkers.get(jobId);
   if (proc) {
@@ -89,7 +89,7 @@ export function cancelBackgroundClipJob(
     }
     activeWorkers.delete(jobId);
   }
-  const updated = updateClipJob(jobId, {
+  const updated = await updateClipJob(jobId, {
     status: "cancelled",
     stage: "Cancelled",
     logMessage: "Background clip job cancelled by creator.",
@@ -133,7 +133,7 @@ function buildWorkerPrompt(job: ClipJob): string {
   ].join("\n");
 }
 
-export function startBackgroundClipJob(
+export async function startBackgroundClipJob(
   input: {
     vodUrl: string;
     videoId?: string;
@@ -142,11 +142,11 @@ export function startBackgroundClipJob(
     focusNotes?: string;
   },
   hooks: ClipWorkerHooks
-): ClipJob {
+): Promise<ClipJob> {
   const videoId = input.videoId?.trim() || extractYouTubeVideoId(input.vodUrl);
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  const job = createClipJob({
+  const job = await createClipJob({
     vodUrl: canonicalUrl,
     videoId,
     title: input.title?.trim() || `VOD ${videoId}`,
@@ -155,11 +155,11 @@ export function startBackgroundClipJob(
   });
 
   const runningJob =
-    updateClipJob(job.id, {
+    (await updateClipJob(job.id, {
       status: "running",
       stage: "Preflight check",
       logMessage: "Checking VOD availability and downloadability with yt-dlp before scanning...",
-    }) ?? job;
+    })) ?? job;
 
   hooks.onBusyChange(true);
   hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
@@ -204,7 +204,7 @@ export function startBackgroundClipJob(
       } else if (/private video|unavailable/i.test(rawErr)) {
         friendly = `VOD ${videoId} is private or unavailable on YouTube.`;
       }
-      updateClipJob(job.id, {
+      await updateClipJob(job.id, {
         status: "failed",
         stage: "Preflight blocked",
         error: friendly,
@@ -217,11 +217,11 @@ export function startBackgroundClipJob(
 
     const discoveredTitle = pfOut.trim().split("\n")[0]?.trim();
     const effectiveJob =
-      updateClipJob(job.id, {
+      (await updateClipJob(job.id, {
         ...(discoveredTitle && (!input.title || !input.title.trim()) ? { title: discoveredTitle } : {}),
         stage: "Starting worker",
         logMessage: `Preflight OK${discoveredTitle ? ` ("${discoveredTitle}")` : ""}. Launching isolated background clipper worker...`,
-      }) ?? runningJob;
+      })) ?? runningJob;
     hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
 
     const childEnv: Record<string, string | undefined> = {
@@ -283,18 +283,18 @@ export function startBackgroundClipJob(
     clearInterval(pollTimer);
     activeWorkers.delete(job.id);
     const wasCancelled = cancelledJobs.delete(job.id);
-    const current = getClipJob(job.id);
+    const current = await getClipJob(job.id);
 
     if (!wasCancelled && current && current.status === "running") {
-      const savedForJob = listClipRecords({ jobId: job.id, limit: 1 });
+      const savedForJob = await listClipRecords({ jobId: job.id, limit: 1 });
       if (code === 0 && savedForJob.length > 0) {
-        updateClipJob(job.id, {
+        await updateClipJob(job.id, {
           status: "done",
           stage: "Completed",
           logMessage: "Background clipper worker finished.",
         });
       } else if (code === 0 && savedForJob.length === 0) {
-        updateClipJob(job.id, {
+        await updateClipJob(job.id, {
           status: "failed",
           stage: "No clips produced",
           error:
@@ -303,7 +303,7 @@ export function startBackgroundClipJob(
           logMessage: "Worker exited with 0 saved clips.",
         });
       } else {
-        updateClipJob(job.id, {
+        await updateClipJob(job.id, {
           status: "failed",
           stage: "Failed",
           error: stderrTail.trim() || `Worker exited with code ${code}`,

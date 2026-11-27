@@ -7,11 +7,13 @@ import {
   ExternalLinkIcon,
   Loader2Icon,
   MonitorPlayIcon,
+  PaperclipIcon,
   PlusIcon,
   RefreshCwIcon,
   SendIcon,
   SparklesIcon,
   Trash2Icon,
+  XIcon,
 } from "@lucide/vue";
 import { toast } from "vue-sonner";
 import {
@@ -88,14 +90,25 @@ const copiedKey = ref("");
 const deleteTarget = ref<ObsOverlayItem | null>(null);
 const deleting = ref(false);
 
+interface UploadedAttachment {
+  workspacePath: string;
+  originalName: string;
+  previewUrl: string;
+}
+
 const showCreateDialog = ref(false);
 const customOverlayPrompt = ref("");
 const creatingOverlay = ref(false);
 const creatingOverlayLabel = ref("");
+const createAttachments = ref<UploadedAttachment[]>([]);
+const createFileInputRef = ref<HTMLInputElement | null>(null);
 
 // Isolated per-overlay Refine with Otto chat state (never pollutes main Otto Chat)
 const refineInput = ref("");
 const refining = ref(false);
+const refineAttachments = ref<UploadedAttachment[]>([]);
+const refineFileInputRef = ref<HTMLInputElement | null>(null);
+const uploadingImage = ref(false);
 const refineThreads = ref<Record<string, RefineMessage[]>>({});
 const refineScrollRef = ref<HTMLElement | null>(null);
 
@@ -253,6 +266,10 @@ async function sendRefine(instructionOverride?: string) {
   if (!ov || !text || refining.value) return;
 
   const slug = ov.slug;
+  const attachedPaths = instructionOverride ? [] : refineAttachments.value.map((a) => a.workspacePath);
+  const attachNote =
+    attachedPaths.length > 0 ? ` [${attachedPaths.length} image${attachedPaths.length > 1 ? "s" : ""} attached]` : "";
+
   if (!refineThreads.value[slug]) refineThreads.value[slug] = [];
   const historySnapshot = refineThreads.value[slug].map((m) => ({
     role: m.role,
@@ -262,9 +279,13 @@ async function sendRefine(instructionOverride?: string) {
   refineThreads.value[slug].push({
     id: `u_${Date.now()}`,
     role: "user",
-    text,
+    text: text + attachNote,
   });
-  if (!instructionOverride) refineInput.value = "";
+  if (!instructionOverride) {
+    refineInput.value = "";
+    refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    refineAttachments.value = [];
+  }
   refining.value = true;
   playSound("chat_send");
   await scrollRefineToBottom();
@@ -276,6 +297,7 @@ async function sendRefine(instructionOverride?: string) {
       body: JSON.stringify({
         instruction: text,
         title: ov.title,
+        attachedImages: attachedPaths,
         history: historySnapshot,
       }),
     });
@@ -344,11 +366,80 @@ async function confirmDeleteOverlay() {
   }
 }
 
+async function uploadOverlayImages(files: FileList | File[], target: "create" | "refine") {
+  const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+  if (list.length === 0) return;
+  uploadingImage.value = true;
+  try {
+    for (const file of list) {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/obs-overlays/upload", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        workspacePath?: string;
+        originalName?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.workspacePath) {
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      const item: UploadedAttachment = {
+        workspacePath: data.workspacePath,
+        originalName: data.originalName || file.name,
+        previewUrl: URL.createObjectURL(file),
+      };
+      if (target === "create") createAttachments.value.push(item);
+      else refineAttachments.value.push(item);
+    }
+    playSound("complete");
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Could not upload image");
+  } finally {
+    uploadingImage.value = false;
+  }
+}
+
+function removeAttachment(target: "create" | "refine", idx: number) {
+  const list = target === "create" ? createAttachments.value : refineAttachments.value;
+  const removed = list.splice(idx, 1)[0];
+  if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+}
+
+function handlePasteImage(e: ClipboardEvent, target: "create" | "refine") {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const imgs: File[] = [];
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith("image/")) {
+      const f = item.getAsFile();
+      if (f) imgs.push(f);
+    }
+  }
+  if (imgs.length > 0) {
+    e.preventDefault();
+    void uploadOverlayImages(imgs, target);
+  }
+}
+
+function notifyExternalJob(state: { running: boolean; label?: string; slug?: string }) {
+  creatingOverlay.value = state.running;
+  creatingOverlayLabel.value = state.running ? state.label || "Building OBS overlay..." : "";
+  if (!state.running) {
+    frameKey.value += 1;
+    void loadOverlays(state.slug || undefined, Boolean(state.slug));
+  }
+}
+
 async function requestNewOverlay(prompt: string, label?: string) {
   const trimmed = prompt.trim();
   if (!trimmed || creatingOverlay.value) return;
   showCreateDialog.value = false;
   customOverlayPrompt.value = "";
+  const attachedPaths = createAttachments.value.map((a) => a.workspacePath);
+  createAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+  createAttachments.value = [];
   creatingOverlay.value = true;
   creatingOverlayLabel.value = label || trimmed.slice(0, 72);
   toast.message("Building new OBS overlay in background — main Otto Chat stays free.");
@@ -357,7 +448,7 @@ async function requestNewOverlay(prompt: string, label?: string) {
     const res = await fetch("/api/obs-overlays/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: trimmed }),
+      body: JSON.stringify({ prompt: trimmed, attachedImages: attachedPaths }),
     });
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -489,29 +580,8 @@ defineExpose({
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
-        <!-- Isolated Background Creation Banner -->
         <div
-          v-if="creatingOverlay"
-          class="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 px-4 py-3 text-amber-950"
-        >
-          <div class="flex min-w-0 items-center gap-2.5">
-            <Loader2Icon class="size-4 shrink-0 animate-spin text-amber-700" />
-            <div class="min-w-0">
-              <div class="font-mono text-xs font-semibold">
-                Building &amp; deploying new overlay on Fly Machine...
-              </div>
-              <div class="truncate text-[11px] text-amber-800/80">
-                {{ creatingOverlayLabel }}
-              </div>
-            </div>
-          </div>
-          <span class="shrink-0 rounded-full bg-amber-200/70 px-2 py-0.5 font-mono text-[10px] font-medium text-amber-900">
-            isolated worker
-          </span>
-        </div>
-
-        <div
-          v-if="loading && overlays.length === 0"
+          v-if="loading && overlays.length === 0 && !creatingOverlay"
           class="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground"
         >
           <Spinner class="size-4" />
@@ -519,7 +589,7 @@ defineExpose({
         </div>
 
         <div
-          v-else-if="!status.connectorAvailable && overlays.length === 0"
+          v-else-if="!status.connectorAvailable && overlays.length === 0 && !creatingOverlay"
           class="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
         >
           <div class="flex size-12 items-center justify-center rounded-2xl border border-[#EDEDED] bg-white">
@@ -531,7 +601,7 @@ defineExpose({
         </div>
 
         <div
-          v-else-if="overlays.length === 0"
+          v-else-if="overlays.length === 0 && !creatingOverlay"
           class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6 text-center"
         >
           <div class="flex size-12 items-center justify-center rounded-2xl border border-[#EDEDED] bg-white shadow-xs">
@@ -561,6 +631,33 @@ defineExpose({
         </div>
 
         <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <!-- IN-PROGRESS OVERLAY CARD (uniform with Thumbnail Studio) -->
+          <div
+            v-if="creatingOverlay"
+            class="flex flex-col overflow-hidden rounded-2xl border border-amber-300/80 bg-white shadow-xs"
+          >
+            <div class="relative flex aspect-video w-full flex-col items-center justify-center gap-2 overflow-hidden bg-neutral-100">
+              <div class="absolute inset-0 animate-pulse bg-gradient-to-br from-neutral-200/70 via-neutral-100 to-amber-100/50" />
+              <Loader2Icon class="relative z-10 size-6 animate-spin text-amber-700" />
+              <span class="relative z-10 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 font-mono text-[10px] font-medium text-amber-800">
+                In progress · 1920×1080
+              </span>
+            </div>
+            <div class="flex flex-col gap-1 p-3.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="truncate font-mono text-xs font-semibold text-[#171717]">
+                  {{ creatingOverlayLabel || "Building OBS overlay..." }}
+                </div>
+                <span class="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-mono text-[9.5px] text-amber-800">
+                  In progress
+                </span>
+              </div>
+              <div class="text-[11px] text-neutral-500">
+                Isolated worker deploying to Fly Machine...
+              </div>
+            </div>
+          </div>
+
           <article
             v-for="ov in overlays"
             :key="ov.slug"
@@ -574,7 +671,7 @@ defineExpose({
               <iframe
                 :key="`thumb-${ov.slug}-${frameKey}`"
                 :src="ov.overlayUrl"
-                class="pointer-events-none border-0 bg-transparent"
+                class="pointer-events-none absolute left-0 top-0 border-0 bg-transparent"
                 style="width: 1920px; height: 1080px; transform: scale(0.18); transform-origin: top left;"
                 tabindex="-1"
                 :title="ov.title"
@@ -897,13 +994,53 @@ defineExpose({
             class="shrink-0 border-t border-[#EDEDED] bg-[#FAFAFA] p-2.5"
             @submit.prevent="sendRefine()"
           >
+            <div v-if="refineAttachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
+              <div
+                v-for="(att, idx) in refineAttachments"
+                :key="att.workspacePath"
+                class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white py-1 pl-1 pr-1.5"
+              >
+                <img :src="att.previewUrl" :alt="att.originalName" class="size-6 rounded object-cover" />
+                <span class="max-w-[110px] truncate font-mono text-[10px] text-[#262626]">
+                  {{ att.originalName }}
+                </span>
+                <button
+                  type="button"
+                  class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
+                  @click="removeAttachment('refine', idx)"
+                >
+                  <XIcon class="size-3" />
+                </button>
+              </div>
+            </div>
+            <input
+              ref="refineFileInputRef"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              multiple
+              class="hidden"
+              @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadOverlayImages(f, 'refine'); (e.target as HTMLInputElement).value = ''; }"
+            />
             <div class="flex items-end gap-1.5 rounded-xl border border-[#E2E2E2] bg-white p-1.5 focus-within:border-[#171717]">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                class="size-8 shrink-0 text-neutral-600 hover:text-black"
+                title="Upload image (or paste with Ctrl+V)"
+                :disabled="refining || uploadingImage"
+                @click="refineFileInputRef?.click()"
+              >
+                <Loader2Icon v-if="uploadingImage" class="size-3.5 animate-spin" />
+                <PaperclipIcon v-else class="size-3.5" />
+              </Button>
               <textarea
                 v-model="refineInput"
                 rows="2"
-                placeholder="Describe a change (Enter to refine)..."
+                placeholder="Describe a change or paste/attach an image (Enter to refine)..."
                 class="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent px-1.5 py-1 text-xs text-[#171717] placeholder:text-neutral-400 focus:outline-none"
                 :disabled="refining"
+                @paste="(e) => handlePasteImage(e, 'refine')"
                 @keydown="handleRefineKeydown"
               />
               <Button
@@ -943,17 +1080,59 @@ defineExpose({
           @submit.prevent="requestNewOverlay(customOverlayPrompt)"
         >
           <div class="flex flex-col overflow-hidden rounded-2xl border border-[#D4D4D4] bg-[#FAFAFA] transition-colors focus-within:border-[#171717] focus-within:bg-white">
+            <div v-if="createAttachments.length > 0" class="flex flex-wrap gap-1.5 px-3 pt-3">
+              <div
+                v-for="(att, idx) in createAttachments"
+                :key="att.workspacePath"
+                class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white py-1 pl-1 pr-1.5"
+              >
+                <img :src="att.previewUrl" :alt="att.originalName" class="size-7 rounded object-cover" />
+                <span class="max-w-[140px] truncate font-mono text-[10px] text-[#262626]">
+                  {{ att.originalName }}
+                </span>
+                <button
+                  type="button"
+                  class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
+                  @click="removeAttachment('create', idx)"
+                >
+                  <XIcon class="size-3" />
+                </button>
+              </div>
+            </div>
+            <input
+              ref="createFileInputRef"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              multiple
+              class="hidden"
+              @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadOverlayImages(f, 'create'); (e.target as HTMLInputElement).value = ''; }"
+            />
             <textarea
               v-model="customOverlayPrompt"
               rows="5"
-              placeholder="Describe your overlay... e.g. 'Minimal cyberpunk Starting Soon screen with a 10-minute countdown, editable stream title, animated pulse dot, and Start/Pause/Reset buttons on the remote deck'"
+              placeholder="Describe your overlay... e.g. 'Starting Soon screen with my logo from Otto Assets, matching visual style, 10-minute countdown, and Start/Pause/Reset controls' (or paste/upload an image)"
               class="min-h-[128px] w-full resize-none bg-transparent p-4 text-sm leading-relaxed text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+              @paste="(e) => handlePasteImage(e, 'create')"
               @keydown="handleCreateKeydown"
             />
-            <div class="flex items-center justify-between border-t border-[#EDEDED] bg-white/80 px-3 py-2">
-              <span class="font-mono text-[10.5px] text-neutral-400">
-                Press Enter to build · Shift+Enter for new line
-              </span>
+            <div class="flex items-center justify-between gap-2 border-t border-[#EDEDED] bg-white/80 px-3 py-2">
+              <div class="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 gap-1 bg-white px-2 text-[11px]"
+                  :disabled="uploadingImage"
+                  @click="createFileInputRef?.click()"
+                >
+                  <Loader2Icon v-if="uploadingImage" class="size-3 animate-spin" />
+                  <PaperclipIcon v-else class="size-3" />
+                  Upload Image
+                </Button>
+                <span class="font-mono text-[10.5px] text-neutral-400">
+                  Enter to build · Ctrl+V to paste image
+                </span>
+              </div>
               <Button
                 type="submit"
                 size="sm"

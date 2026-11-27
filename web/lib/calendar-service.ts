@@ -10,12 +10,12 @@ import { broadcast } from "./sse.ts";
 
 export type ServerCalendarEvent = CalendarEvent;
 
-export function readCalendarEvents(): ServerCalendarEvent[] {
+export async function readCalendarEvents(): Promise<ServerCalendarEvent[]> {
   return listCalendarEvents();
 }
 
-export function writeCalendarEvents(events: ServerCalendarEvent[]): void {
-  saveCalendarEventsBatch(events);
+export async function writeCalendarEvents(events: ServerCalendarEvent[]): Promise<void> {
+  await saveCalendarEventsBatch(events);
   broadcast({ type: "db_changed" });
 }
 
@@ -117,7 +117,7 @@ export async function syncGoogleCalendar(): Promise<SyncGoogleCalendarResult> {
       end?: { dateTime?: string; date?: string };
     }>;
 
-    const events = readCalendarEvents();
+    const events = await readCalendarEvents();
     const nowIso = new Date().toISOString();
     let added = 0;
     let updated = 0;
@@ -168,7 +168,7 @@ export async function syncGoogleCalendar(): Promise<SyncGoogleCalendarResult> {
         added++;
       }
     }
-    writeCalendarEvents(events);
+    await writeCalendarEvents(events);
     return {
       ok: true,
       connected: true,

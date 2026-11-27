@@ -2,6 +2,8 @@ import { requireInternalSecret } from "../lib/internal-auth.ts";
 import { handleHybridChatCompletions } from "../lib/llm-router.ts";
 import { startClipJob } from "../lib/clip-service.ts";
 import { startBackgroundArchiveSync } from "../lib/archive-worker.ts";
+import { dispatchObsOverlayBackgroundJob } from "./obs-overlays.ts";
+import { dispatchThumbnailBackgroundJob } from "./thumbnails.ts";
 import { broadcast } from "../lib/sse.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 
@@ -66,6 +68,47 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     return Response.json({ ok: true, slug });
   }
 
+  // Internal-only dispatchers so main Otto Chat offloads Thumbnails & OBS Overlays to isolated OMP workers
+  if (req.method === "POST" && url.pathname === "/api/internal/thumbnails/start") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const body = (await req.json().catch(() => ({}))) as {
+      prompt?: string;
+      attachedImages?: string[];
+      slug?: string;
+      label?: string;
+    };
+    const prompt = String(body.prompt || "").trim();
+    if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
+    const job = dispatchThumbnailBackgroundJob({
+      prompt,
+      attachedImages: Array.isArray(body.attachedImages) ? body.attachedImages : [],
+      slug: body.slug ? String(body.slug) : undefined,
+      label: body.label ? String(body.label) : undefined,
+    });
+    return Response.json({ ok: true, ...job });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/obs-overlays/start") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const body = (await req.json().catch(() => ({}))) as {
+      prompt?: string;
+      attachedImages?: string[];
+      slug?: string;
+      label?: string;
+    };
+    const prompt = String(body.prompt || "").trim();
+    if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
+    const job = dispatchObsOverlayBackgroundJob({
+      prompt,
+      attachedImages: Array.isArray(body.attachedImages) ? body.attachedImages : [],
+      slug: body.slug ? String(body.slug) : undefined,
+      label: body.label ? String(body.label) : undefined,
+    });
+    return Response.json({ ok: true, ...job });
+  }
+
   // Internal-only endpoint for Otto chat (`vod_start_clip_job`) to dispatch isolated background clip jobs
   if (req.method === "POST" && url.pathname === "/api/internal/clip-jobs/start") {
     const denied = requireInternalSecret(req);
@@ -81,7 +124,7 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
       if (!body.vodUrl) {
         return Response.json({ error: "vodUrl is required" }, { status: 400 });
       }
-      const job = startClipJob(
+      const job = await startClipJob(
         {
           vodUrl: String(body.vodUrl),
           videoId: body.videoId ? String(body.videoId) : undefined,
@@ -110,7 +153,7 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
         includeShorts?: boolean;
         limit?: number;
       };
-      const result = startBackgroundArchiveSync({
+      const result = await startBackgroundArchiveSync({
         channelUrl: body.channelUrl,
         includeShorts: body.includeShorts !== false,
         limit: typeof body.limit === "number" ? body.limit : undefined,

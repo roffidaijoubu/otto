@@ -26,7 +26,9 @@ loadPrivateEnv();
 initWebPassword();
 
 void rpc;
-reconcileOrphanedClipJobs();
+void reconcileOrphanedClipJobs().catch((err) => {
+  console.warn("[lma-web] reconcileOrphanedClipJobs warning:", err);
+});
 
 // Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
 ensureWorkspaceScaffold();
