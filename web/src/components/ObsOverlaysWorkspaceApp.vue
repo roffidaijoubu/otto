@@ -89,6 +89,8 @@ const deleting = ref(false);
 
 const showCreateDialog = ref(false);
 const customOverlayPrompt = ref("");
+const creatingOverlay = ref(false);
+const creatingOverlayLabel = ref("");
 
 // Isolated per-overlay Refine with Otto chat state (never pollutes main Otto Chat)
 const refineInput = ref("");
@@ -336,12 +338,49 @@ async function confirmDeleteOverlay() {
   }
 }
 
-function requestNewOverlay(prompt: string) {
+async function requestNewOverlay(prompt: string, label?: string) {
   const trimmed = prompt.trim();
-  if (!trimmed) return;
+  if (!trimmed || creatingOverlay.value) return;
   showCreateDialog.value = false;
   customOverlayPrompt.value = "";
-  emit("askPrompt", trimmed);
+  creatingOverlay.value = true;
+  creatingOverlayLabel.value = label || trimmed.slice(0, 72);
+  toast.message("Building new OBS overlay in background — main Otto Chat stays free.");
+
+  try {
+    const res = await fetch("/api/obs-overlays/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: trimmed }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      slug?: string;
+      reply?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Failed to create overlay (${res.status})`);
+    }
+    frameKey.value += 1;
+    await loadOverlays(data.slug || undefined, Boolean(data.slug));
+    if (data.slug) {
+      void nextTick(() => attachStageObserver());
+    }
+    toast.success("OBS overlay deployed live to your Fly Machine!");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Could not create overlay");
+  } finally {
+    creatingOverlay.value = false;
+    creatingOverlayLabel.value = "";
+  }
+}
+
+function handleCreateKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    void requestNewOverlay(customOverlayPrompt.value);
+  }
 }
 
 function selectOverlay(slug: string) {
@@ -442,6 +481,27 @@ defineExpose({
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <!-- Isolated Background Creation Banner -->
+        <div
+          v-if="creatingOverlay"
+          class="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 px-4 py-3 text-amber-950"
+        >
+          <div class="flex min-w-0 items-center gap-2.5">
+            <Loader2Icon class="size-4 shrink-0 animate-spin text-amber-700" />
+            <div class="min-w-0">
+              <div class="font-mono text-xs font-semibold">
+                Building &amp; deploying new overlay on Fly Machine...
+              </div>
+              <div class="truncate text-[11px] text-amber-800/80">
+                {{ creatingOverlayLabel }}
+              </div>
+            </div>
+          </div>
+          <span class="shrink-0 rounded-full bg-amber-200/70 px-2 py-0.5 font-mono text-[10px] font-medium text-amber-900">
+            isolated worker
+          </span>
+        </div>
+
         <div
           v-if="loading && overlays.length === 0"
           class="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground"
@@ -854,51 +914,73 @@ defineExpose({
       </div>
     </template>
 
-    <!-- Create New Overlay Dialog -->
+    <!-- Create New Overlay Dialog (Prompt-First Hero Composer + Starter Templates Below) -->
     <Dialog v-model:open="showCreateDialog">
-      <DialogContent class="max-w-lg">
+      <DialogContent class="max-w-2xl p-6">
         <DialogHeader>
-          <DialogTitle class="font-mono text-sm">Create New OBS Overlay</DialogTitle>
-          <DialogDescription class="text-xs">
-            Pick a starter template or describe any 1920×1080 overlay — Otto will build and deploy it live to your Fly Machine.
+          <div class="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle class="font-mono text-base font-semibold">Create New OBS Overlay</DialogTitle>
+            <span class="rounded-full bg-[#F2F2F2] px-2.5 py-0.5 font-mono text-[10.5px] text-neutral-600">
+              Isolated worker · 1920×1080
+            </span>
+          </div>
+          <DialogDescription class="text-xs leading-relaxed">
+            Describe any transparent 1920×1080 OBS Browser Source and remote controller you want. Otto builds and deploys it directly to your Fly Machine without cluttering main Otto Chat.
           </DialogDescription>
         </DialogHeader>
 
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button
-            v-for="s in starters"
-            :key="s.label"
-            type="button"
-            class="flex flex-col items-start gap-1 rounded-xl border border-[#E5E5E5] bg-[#FAFAFA] p-3 text-left transition-colors hover:border-[#171717] hover:bg-white"
-            @click="requestNewOverlay(s.prompt)"
-          >
-            <span class="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-[#171717]">
-              <SparklesIcon class="size-3" />
-              {{ s.label }}
-            </span>
-            <span class="text-[11px] text-neutral-500">{{ s.desc }}</span>
-          </button>
-        </div>
-
+        <!-- Hero Chat / Prompt Composer FIRST -->
         <form
-          class="mt-2 flex flex-col gap-2 border-t border-[#EDEDED] pt-3"
-          @submit.prevent="requestNewOverlay(`Deploy a transparent 1920x1080 OBS overlay to my Fly Machine: ${customOverlayPrompt}`)"
+          class="mt-1 flex flex-col gap-2.5"
+          @submit.prevent="requestNewOverlay(customOverlayPrompt)"
         >
-          <label class="font-mono text-[11px] font-medium text-neutral-600">
-            Or describe a custom overlay for Otto
-          </label>
-          <div class="flex gap-2">
-            <input
+          <div class="flex flex-col overflow-hidden rounded-2xl border border-[#D4D4D4] bg-[#FAFAFA] transition-colors focus-within:border-[#171717] focus-within:bg-white">
+            <textarea
               v-model="customOverlayPrompt"
-              type="text"
-              placeholder="e.g. Minimal anime-style Now Playing music bar with song/artist remote"
-              class="h-9 flex-1 rounded-lg border border-[#E5E5E5] bg-[#FAFAFA] px-3 text-xs focus:border-[#171717] focus:bg-white focus:outline-none"
+              rows="4"
+              placeholder="Describe your overlay... e.g. 'Minimal cyberpunk Starting Soon screen with a 10-minute countdown, editable stream title, animated pulse dot, and Start/Pause/Reset buttons on the remote deck'"
+              class="min-h-[112px] w-full resize-none bg-transparent p-3.5 text-sm leading-relaxed text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+              @keydown="handleCreateKeydown"
             />
-            <Button type="submit" size="sm" class="h-9 rounded-lg px-3 text-xs" :disabled="!customOverlayPrompt.trim()">
-              Build
-            </Button>
+            <div class="flex items-center justify-between border-t border-[#EDEDED] bg-white/80 px-3 py-2">
+              <span class="font-mono text-[10.5px] text-neutral-400">
+                Press Enter to build · Shift+Enter for new line
+              </span>
+              <Button
+                type="submit"
+                size="sm"
+                class="h-8 gap-1.5 rounded-xl bg-[#171717] px-4 font-mono text-xs text-white hover:bg-neutral-800"
+                :disabled="!customOverlayPrompt.trim() || creatingOverlay"
+              >
+                <SparklesIcon class="size-3.5" />
+                <span>Build &amp; Deploy</span>
+              </Button>
+            </div>
           </div>
         </form>
+
+        <!-- Compact Quick-Start Templates BELOW -->
+        <div class="mt-2 flex flex-col gap-2 border-t border-[#EDEDED] pt-3.5">
+          <span class="font-mono text-[10.5px] font-medium uppercase tracking-wide text-neutral-400">
+            Or start from a template
+          </span>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              v-for="s in starters"
+              :key="s.label"
+              type="button"
+              class="flex flex-col items-start gap-0.5 rounded-xl border border-[#E5E5E5] bg-[#FAFAFA] px-3 py-2.5 text-left transition-colors hover:border-[#171717] hover:bg-white"
+              :disabled="creatingOverlay"
+              @click="requestNewOverlay(s.prompt, s.label)"
+            >
+              <span class="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-[#171717]">
+                <SparklesIcon class="size-3 shrink-0" />
+                {{ s.label }}
+              </span>
+              <span class="text-[11px] text-neutral-500">{{ s.desc }}</span>
+            </button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
 

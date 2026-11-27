@@ -13,6 +13,50 @@ export async function handleObsOverlaysRoutes(req: Request, url: URL): Promise<R
     return Response.json(result);
   }
 
+  // Isolated background creation of a new OBS overlay (never clutters main Otto Chat)
+  if (req.method === "POST" && url.pathname === "/api/obs-overlays/create") {
+    try {
+      const body = (await req.json().catch(() => ({}))) as { prompt?: string };
+      const userPrompt = String(body.prompt || "").trim();
+      if (!userPrompt) {
+        return Response.json({ error: "Overlay description is required" }, { status: 400 });
+      }
+
+      const before = await listHostedObsOverlays().catch(() => ({ overlays: [] as Array<{ slug: string }> }));
+      const beforeSlugs = new Set((before.overlays || []).map((o) => o.slug));
+
+      const prompt = [
+        `ISOLATED OBS OVERLAY CREATION TASK (never asks questions; builds and deploys directly).`,
+        `Creator request: ${userPrompt}`,
+        ``,
+        `Instructions:`,
+        `1. Follow obs-overlay-craft best practices: build a crisp, transparent 1920x1080 OBS Browser Source HTML (strictly zero controls inside the OBS HTML, zero AI-generated images) + a matching Live Remote Control Deck HTML.`,
+        `2. Call obs_overlay_deploy with a clean lowercase kebab-case slug, title, description, overlayHtml, controlHtml, and initialState.`,
+        `3. Reply concisely (1-2 plain sentences) summarizing the deployed overlay and its slug.`,
+      ].join("\n");
+
+      const refineRes = await runOverlayRefine("new", prompt);
+      if (!refineRes.ok) return refineRes;
+      const refineJson = (await refineRes.json().catch(() => ({}))) as { reply?: string };
+
+      const after = await listHostedObsOverlays().catch(() => ({ overlays: [] as Array<{ slug: string; updatedAt: string }> }));
+      const created =
+        (after.overlays || []).find((o) => !beforeSlugs.has(o.slug)) ||
+        (after.overlays || []).sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0];
+
+      if (created?.slug) {
+        broadcast({ type: "obs_overlays_changed", slug: created.slug });
+      }
+      return Response.json({
+        ok: true,
+        slug: created?.slug || "",
+        reply: refineJson.reply || "Deployed new OBS overlay.",
+      });
+    } catch (err: unknown) {
+      return Response.json({ error: errorMessage(err) }, { status: 400 });
+    }
+  }
+
   const obsOverlayMatch = url.pathname.match(/^\/api\/obs-overlays\/([^/]+)(?:\/(state|refine))?$/);
   if (obsOverlayMatch) {
     const slug = decodeURIComponent(obsOverlayMatch[1]).trim();
