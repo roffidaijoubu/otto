@@ -24,6 +24,7 @@ import { handleIsolatedAiRoutes } from "./routes/isolated-ai.ts";
 import { handleDbRoutes } from "./routes/db.ts";
 import { handleClipsRoutes } from "./routes/clips.ts";
 import { handleArchiveRoutes } from "./routes/archive.ts";
+import { handleCheckpointsRoutes } from "./routes/checkpoints.ts";
 
 loadPrivateEnv();
 initWebPassword();
@@ -119,6 +120,9 @@ Bun.serve({
 
     const archiveRes = await handleArchiveRoutes(req, url);
     if (archiveRes) return archiveRes;
+
+    const checkpointsRes = await handleCheckpointsRoutes(req, url);
+    if (checkpointsRes) return checkpointsRes;
 
     const spaRes = serveSpa(req, url);
     if (spaRes) return spaRes;

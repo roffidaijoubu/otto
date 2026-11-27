@@ -3,12 +3,15 @@ import { computed, onMounted, ref, watch } from "vue";
 import {
   CheckIcon,
   Columns2Icon,
+  HistoryIcon,
   LayersIcon,
   LayoutGridIcon,
+  Loader2Icon,
   Maximize2Icon,
   PaletteIcon,
   PencilIcon,
   PlugIcon,
+  PlusIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -18,6 +21,17 @@ import {
   Volume2Icon,
   VolumeXIcon,
 } from "@lucide/vue";
+import { toast } from "vue-sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import OttoMascot from "./OttoMascot.vue";
 import { renderMarkdown } from "@/lib/markdown";
@@ -33,7 +47,22 @@ export interface ConnectorInfo {
   status: string;
 }
 
-export type SettingsTab = "general" | "appearance" | "profile" | "connectors";
+export type SettingsTab = "general" | "appearance" | "profile" | "connectors" | "snapshots";
+
+interface SpriteCheckpointItem {
+  id: string;
+  createTime: string;
+  comment: string;
+  isAuto: boolean;
+  isCurrent: boolean;
+}
+
+interface AutoSnapshotConfig {
+  enabled: boolean;
+  timezone: string;
+  cron: string | null;
+  scheduleId: string | null;
+}
 
 const props = defineProps<{
   wm: WindowManagerInstance | null;
@@ -59,6 +88,7 @@ const NAV_ITEMS: Array<{ id: SettingsTab; label: string }> = [
   { id: "appearance", label: "Appearance" },
   { id: "profile", label: "Profile" },
   { id: "connectors", label: "Connectors" },
+  { id: "snapshots", label: "Snapshots" },
 ];
 
 const editingIdentity = ref(false);
@@ -186,6 +216,124 @@ function formatTime(iso: string | null): string {
   }
 }
 
+const checkpoints = ref<SpriteCheckpointItem[]>([]);
+const checkpointsAvailable = ref(true);
+const autoSnapshot = ref<AutoSnapshotConfig>({
+  enabled: false,
+  timezone: "UTC",
+  cron: null,
+  scheduleId: null,
+});
+const newSnapshotLabel = ref("");
+const creatingSnapshot = ref(false);
+const togglingAutoSnapshot = ref(false);
+const autoSnapshotNote = ref("");
+const restoreTarget = ref<SpriteCheckpointItem | null>(null);
+const restoringSnapshot = ref(false);
+
+async function fetchCheckpoints() {
+  try {
+    const res = await fetch("/api/checkpoints");
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      available?: boolean;
+      checkpoints?: SpriteCheckpointItem[];
+      autoSnapshot?: AutoSnapshotConfig;
+    };
+    if (typeof data.available === "boolean") checkpointsAvailable.value = data.available;
+    if (Array.isArray(data.checkpoints)) checkpoints.value = data.checkpoints;
+    if (data.autoSnapshot) autoSnapshot.value = data.autoSnapshot;
+  } catch {
+    // ignore transient errors
+  }
+}
+
+async function createSnapshot() {
+  if (creatingSnapshot.value) return;
+  creatingSnapshot.value = true;
+  try {
+    const res = await fetch("/api/checkpoints", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comment: newSnapshotLabel.value.trim() }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      id?: string;
+      checkpoints?: SpriteCheckpointItem[];
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Failed to create snapshot (${res.status})`);
+    }
+    newSnapshotLabel.value = "";
+    if (Array.isArray(data.checkpoints)) checkpoints.value = data.checkpoints;
+    else await fetchCheckpoints();
+    playSound("job_complete");
+    toast.success(`Snapshot ${data.id || ""} created!`);
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Failed to create snapshot");
+  } finally {
+    creatingSnapshot.value = false;
+  }
+}
+
+async function toggleAutoSnapshot() {
+  if (togglingAutoSnapshot.value) return;
+  togglingAutoSnapshot.value = true;
+  autoSnapshotNote.value = "";
+  try {
+    const next = !autoSnapshot.value.enabled;
+    const res = await fetch("/api/checkpoints/auto-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: next, timezone: props.timezone || autoSnapshot.value.timezone }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      note?: string;
+      autoSnapshot?: AutoSnapshotConfig;
+      error?: string;
+    };
+    if (data.autoSnapshot) autoSnapshot.value = data.autoSnapshot;
+    if (data.note) autoSnapshotNote.value = data.note;
+    if (!res.ok || data.ok === false) {
+      playSound("error");
+      toast.error(data.error || data.note || "Could not update auto-snapshot");
+    } else {
+      playSound("toggle");
+    }
+  } finally {
+    togglingAutoSnapshot.value = false;
+  }
+}
+
+async function confirmRestoreSnapshot() {
+  const target = restoreTarget.value;
+  if (!target || restoringSnapshot.value) return;
+  restoringSnapshot.value = true;
+  try {
+    const res = await fetch(`/api/checkpoints/${encodeURIComponent(target.id)}/restore`, {
+      method: "POST",
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Restore failed (${res.status})`);
+    }
+    restoreTarget.value = null;
+    playSound("job_complete");
+    toast.success(`Restoring ${target.id} — reloading studio...`);
+    setTimeout(() => window.location.reload(), 2500);
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Could not restore snapshot");
+  } finally {
+    restoringSnapshot.value = false;
+  }
+}
+
 async function fetchData() {
   loading.value = true;
   try {
@@ -193,6 +341,7 @@ async function fetchData() {
       fetch("/api/dossier").then((r) => r.json()).catch(() => null),
       fetch("/api/connectors").then((r) => r.json()).catch(() => null),
       fetch("/api/llm/router-status").then((r) => r.json()).catch(() => null),
+      fetchCheckpoints(),
     ]);
     if (dRes && typeof dRes === "object") {
       dossierContent.value = String(dRes.content || "");
@@ -256,7 +405,8 @@ watch(
             <SettingsIcon v-if="item.id === 'general'" class="size-3.5 shrink-0" />
             <PaletteIcon v-else-if="item.id === 'appearance'" class="size-3.5 shrink-0" />
             <UserIcon v-else-if="item.id === 'profile'" class="size-3.5 shrink-0" />
-            <PlugIcon v-else class="size-3.5 shrink-0" />
+            <PlugIcon v-else-if="item.id === 'connectors'" class="size-3.5 shrink-0" />
+            <HistoryIcon v-else class="size-3.5 shrink-0" />
             <span>{{ item.label }}</span>
           </span>
           <span
@@ -265,6 +415,13 @@ watch(
             :class="activeTab === item.id ? 'text-white/75' : 'text-neutral-400'"
           >
             {{ connectors.length }}
+          </span>
+          <span
+            v-else-if="item.id === 'snapshots' && checkpoints.length > 0"
+            class="font-mono text-[10.5px] tabular-nums"
+            :class="activeTab === item.id ? 'text-white/75' : 'text-neutral-400'"
+          >
+            {{ checkpoints.length }}
           </span>
         </button>
       </nav>
@@ -587,6 +744,135 @@ watch(
             </section>
           </template>
 
+          <!-- ==================== SNAPSHOTS (TIME-TRAVEL CHECKPOINTS) ==================== -->
+          <template v-else-if="activeTab === 'snapshots'">
+            <section class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5">
+                  <HistoryIcon class="size-4 text-[#171717]" />
+                  <h3 class="text-xs font-semibold text-[#171717]">Sprite Time-Travel Snapshots</h3>
+                </div>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  class="h-7 gap-1 rounded-lg bg-white text-[11px]"
+                  :disabled="loading"
+                  @click="fetchCheckpoints"
+                >
+                  <RefreshCwIcon class="size-3" :class="loading ? 'animate-spin' : ''" />
+                  Refresh
+                </Button>
+              </div>
+
+              <form
+                class="flex flex-wrap items-center gap-2 rounded-xl border border-black/8 bg-[#FAF9F6]/60 p-3"
+                @submit.prevent="createSnapshot"
+              >
+                <input
+                  v-model="newSnapshotLabel"
+                  type="text"
+                  placeholder="Optional label (e.g. Before stream redesign)"
+                  class="h-8 min-w-[200px] flex-1 rounded-lg border border-black/15 bg-white px-2.5 font-mono text-xs text-[#171717] outline-none focus:border-[#171717]"
+                  :disabled="creatingSnapshot || !checkpointsAvailable"
+                />
+                <Button
+                  type="submit"
+                  size="xs"
+                  class="h-8 gap-1.5 rounded-lg bg-[#171717] px-3 text-[11px] text-white hover:bg-neutral-800"
+                  :disabled="creatingSnapshot || !checkpointsAvailable"
+                >
+                  <Loader2Icon v-if="creatingSnapshot" class="size-3.5 animate-spin" />
+                  <PlusIcon v-else class="size-3.5" />
+                  <span>{{ creatingSnapshot ? "Creating..." : "Create Snapshot" }}</span>
+                </Button>
+              </form>
+
+              <!-- Daily Auto-Snapshot Schedule -->
+              <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/8 bg-[#FAF9F6]/60 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-medium text-[#171717]">Daily Auto-Snapshot (04:00 {{ autoSnapshot.timezone }})</div>
+                  <div class="text-[11px] text-neutral-500">
+                    Backs up /workspace files, Studio Apps, and local config once daily while preserving $0-idle sleep. Studio DB (Neon) and Archive/Memory (Pinecone) stay cloud-persistent.
+                  </div>
+                  <div v-if="autoSnapshotNote" class="mt-1 font-mono text-[10.5px] text-neutral-600">
+                    {{ autoSnapshotNote }}
+                  </div>
+                </div>
+                <Button
+                  size="xs"
+                  :variant="autoSnapshot.enabled ? 'default' : 'outline'"
+                  type="button"
+                  class="h-7 shrink-0 rounded-lg px-3 font-mono text-[11px]"
+                  :disabled="togglingAutoSnapshot"
+                  @click="toggleAutoSnapshot"
+                >
+                  {{ togglingAutoSnapshot ? "Saving..." : autoSnapshot.enabled ? "Enabled" : "Off" }}
+                </Button>
+              </div>
+            </section>
+
+            <section class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-[#171717]">Saved Snapshots</h3>
+                <span class="font-mono text-[11px] text-neutral-500 tabular-nums">
+                  {{ checkpoints.length }} available
+                </span>
+              </div>
+
+              <div
+                v-if="!checkpointsAvailable"
+                class="rounded-xl border border-dashed border-black/15 bg-[#FAF9F6]/50 px-4 py-8 text-center font-mono text-xs text-neutral-500"
+              >
+                Sprite Checkpoint API is only available inside a Fly.io Sprite runtime.
+              </div>
+              <div
+                v-else-if="checkpoints.length === 0"
+                class="rounded-xl border border-dashed border-black/15 bg-[#FAF9F6]/50 px-4 py-8 text-center font-mono text-xs text-neutral-500"
+              >
+                No snapshots created yet.
+              </div>
+              <div v-else class="divide-y divide-black/6 overflow-hidden rounded-xl border border-black/8 bg-white">
+                <div
+                  v-for="cp in checkpoints"
+                  :key="cp.id"
+                  class="flex items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span class="rounded-md bg-[#FAF9F6] px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#171717] ring-1 ring-black/10">
+                        {{ cp.id }}
+                      </span>
+                      <span
+                        v-if="cp.isCurrent"
+                        class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-800"
+                      >
+                        Current
+                      </span>
+                      <span class="font-mono text-[10.5px] text-neutral-400">
+                        {{ formatTime(cp.createTime) }}
+                      </span>
+                    </div>
+                    <div class="mt-1 truncate text-xs text-neutral-700">
+                      {{ cp.comment || "(No comment)" }}
+                    </div>
+                  </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    type="button"
+                    class="h-7 shrink-0 gap-1 rounded-lg bg-white text-[11px]"
+                    :disabled="cp.isCurrent || restoringSnapshot"
+                    @click="restoreTarget = cp"
+                  >
+                    <RotateCcwIcon class="size-3" />
+                    Restore
+                  </Button>
+                </div>
+              </div>
+            </section>
+          </template>
+
           <!-- ==================== CONNECTORS & SECURITY ==================== -->
           <template v-else>
             <section class="flex flex-col gap-2">
@@ -742,6 +1028,26 @@ watch(
         </div>
       </div>
     </div>
+
+    <!-- Restore Confirmation Dialog -->
+    <AlertDialog :open="Boolean(restoreTarget)" @update:open="(o) => { if (!o) restoreTarget = null; }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restore snapshot {{ restoreTarget?.id }}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This rolls back your Sprite VM filesystem (/workspace, Studio Apps, local configs) to
+            "{{ restoreTarget?.comment || restoreTarget?.id }}". Your Neon Studio DB and Pinecone
+            Creator Archive/Memory remain safely in the cloud.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="restoringSnapshot">Cancel</AlertDialogCancel>
+          <AlertDialogAction :disabled="restoringSnapshot" @click="confirmRestoreSnapshot">
+            {{ restoringSnapshot ? "Restoring..." : "Restore Snapshot" }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 

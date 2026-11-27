@@ -50,7 +50,7 @@ if [ "${NO_MEMORY}" != "1" ]; then
   fi
 fi
 
-COMMENT="initialized: ${SHA} [${SEED_LABEL}] — ${MSG}"
+COMMENT="${SHA} | initialized [${SEED_LABEL}] — ${MSG}"
 echo "[lma-checkpoint] Syncing repo (${SHA}) to Sprite (${SEED_LABEL})..."
 
 # 0. Protect live prod data: if MEMORY.md on Sprite differs from both the blank template and current seed, snapshot it first!
@@ -72,8 +72,8 @@ if [ "${HAS_LIVE_DATA}" = "modified" ]; then
   sprite checkpoint create --comment "prod: auto-backup before ${SHA}"
 fi
 
-# 1. Record existing 'initialized:' checkpoints so we only clean up old initialized baselines (never prod checkpoints)
-OLD_INIT_IDS="$(sprite checkpoint list 2>/dev/null | awk '$4 ~ /^initialized:/ { print $1 }' || true)"
+# 1. Record existing initialized checkpoints (both legacy 'initialized:' and '<sha> | initialized') so we only prune old baselines
+OLD_INIT_IDS="$(sprite checkpoint list 2>/dev/null | awk '$0 ~ /(initialized:| \| initialized )/ { print $1 }' || true)"
 
 # 2. Sync tracked files (excluding node_modules, dist, .git, .docs, .tests, agent/models.yml)
 tar \

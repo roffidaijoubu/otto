@@ -1,5 +1,6 @@
 import { verifyUpstashSignature } from "../lib/qstash.ts";
 import { syncAllMetrics, resolveTimezone } from "../lib/metrics-service.ts";
+import { runScheduledAutoSnapshot } from "../lib/checkpoints.ts";
 import { startSilentBackgroundJob } from "../lib/background-job.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 import { broadcast } from "../lib/sse.ts";
@@ -19,6 +20,15 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
       return Response.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     const label = typeof payload.label === "string" ? payload.label : "Scheduled Wake-Up";
+
+    // Deterministic zero-LLM daily workspace snapshot (Fly.io Sprite Checkpoint)
+    if (payload.mode === "checkpoint") {
+      const res = await runScheduledAutoSnapshot();
+      return Response.json(
+        { ok: res.ok, mode: "checkpoint", label, id: res.id, comment: res.comment, error: res.error },
+        { status: res.ok ? 200 : 500 }
+      );
+    }
 
     // Deterministic zero-LLM daily multi-platform metrics sync (YouTube + TikTok + IG + X)
     if (payload.mode === "metrics_sync") {
