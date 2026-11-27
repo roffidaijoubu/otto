@@ -27,12 +27,6 @@ import type { ChatMessage, SessionSummary, TodoPhase, TraceStep } from "./types/
 
 const MASCOT_SWATCHES = ["#303030", "#7CC6A5", "#E89B7E", "#A7D8F0", "#C9B8E8", "#F9F5A2"] as const;
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
-  { id: "general", label: "General" },
-  { id: "profile", label: "Profile" },
-  { id: "connectors", label: "Connectors" },
-];
-
 const shellRef = ref<DesktopShellExposed | null>(null);
 const fileManagerRef = ref<InstanceType<typeof WorkspaceFileManager> | null>(null);
 const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(null);
@@ -780,26 +774,7 @@ watch(shellRef, (val) => {
         </div>
       </template>
 
-      <!-- WINDOW 7: SYSTEM SETTINGS (General, Profile & Connectors) -->
-      <template #window-actions-settings>
-        <div class="flex items-center gap-0.5 rounded-full bg-[#f2f2f2] p-0.5">
-          <button
-            v-for="sub in SETTINGS_TABS"
-            :key="sub.id"
-            type="button"
-            class="rounded-full px-2 py-0.5 font-mono text-[10.5px] font-medium transition-colors"
-            :class="
-              settingsTab === sub.id
-                ? 'bg-[#303030] text-white'
-                : 'text-[#666] hover:text-[#303030]'
-            "
-            @click="settingsTab = sub.id"
-          >
-            {{ sub.label }}
-          </button>
-        </div>
-      </template>
-
+      <!-- WINDOW 7: SYSTEM SETTINGS (Native 2-Pane Preferences) -->
       <template #app-settings>
         <SystemSettingsApp
           :wm="shellRef?.wm ?? null"

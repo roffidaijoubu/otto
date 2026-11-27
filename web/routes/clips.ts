@@ -98,7 +98,7 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
   }
 
   if (req.method === "GET" && url.pathname === "/api/clips") {
-    return Response.json({ clips: listLegacyClips() });
+    return Response.json(listLegacyClips());
   }
 
   if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/clips/file/")) {

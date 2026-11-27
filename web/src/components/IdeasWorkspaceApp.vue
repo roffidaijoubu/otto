@@ -1,7 +1,22 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { FileTextIcon, ImageIcon, PlusIcon, XIcon } from "@lucide/vue";
+import {
+  FileTextIcon,
+  ImageIcon,
+  LightbulbIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export interface ContentIdeaItem {
   id: string;
@@ -30,17 +45,52 @@ const items = ref<ContentIdeaItem[]>([]);
 const loading = ref(false);
 const errorMsg = ref("");
 const filterFormat = ref<"all" | ContentIdeaItem["format"]>("all");
+const filterStatus = ref<"all" | ContentIdeaItem["status"]>("all");
 
 const newTitle = ref("");
 const newFormat = ref<ContentIdeaItem["format"]>("stream");
 const newHook = ref("");
+const showHookInput = ref(false);
 
-const activeItems = computed(() => items.value.filter((i) => i.status !== "dropped"));
+const FORMAT_LABELS: Record<ContentIdeaItem["format"], string> = {
+  stream: "Stream",
+  video: "Video",
+  short: "Short",
+  collab: "Collab",
+};
+
+const STATUS_OPTIONS: Array<{ value: ContentIdeaItem["status"]; label: string }> = [
+  { value: "idea", label: "Idea" },
+  { value: "prepping", label: "Prepping" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "live", label: "Live" },
+  { value: "editing", label: "Editing" },
+  { value: "published", label: "Published" },
+  { value: "dropped", label: "Dropped" },
+];
+
+const activeCount = computed(() => items.value.filter((i) => i.status !== "dropped").length);
+
+function formatCount(fmt: "all" | ContentIdeaItem["format"]): number {
+  if (fmt === "all") return items.value.length;
+  return items.value.filter((i) => i.format === fmt).length;
+}
+
 const filteredItems = computed(() =>
-  filterFormat.value === "all"
-    ? items.value
-    : items.value.filter((i) => i.format === filterFormat.value)
+  items.value.filter((item) => {
+    if (filterFormat.value !== "all" && item.format !== filterFormat.value) return false;
+    if (filterStatus.value !== "all" && item.status !== filterStatus.value) return false;
+    return true;
+  })
 );
+
+function statusDotClass(status: ContentIdeaItem["status"]): string {
+  if (status === "published") return "bg-emerald-500";
+  if (status === "scheduled" || status === "live") return "bg-amber-500";
+  if (status === "prepping" || status === "editing") return "bg-blue-500";
+  if (status === "dropped") return "bg-neutral-300";
+  return "bg-neutral-500";
+}
 
 async function fetchIdeas() {
   loading.value = true;
@@ -74,6 +124,7 @@ async function addIdea() {
   }
   newTitle.value = "";
   newHook.value = "";
+  showHookInput.value = false;
   await fetchIdeas();
 }
 
@@ -103,153 +154,255 @@ defineExpose({ fetchIdeas });
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-3 overflow-y-auto bg-[#fafafa]/60 p-4">
-    <div class="otto-card">
-      <div class="otto-card-head">
-        <span>(Y)our ideas.</span>
-        <div class="otto-card-head-right flex items-center gap-2">
-          <span class="otto-chip otto-chip-neutral">
-            {{ activeItems.length }} active
-          </span>
-          <Button
-            type="button"
-            variant="secondary"
-            size="xs"
-            @click="emit('askPrompt', 'Review my saved content ideas and suggest which one we should prep next.')"
-          >
-            Prioritize with Otto
-          </Button>
+  <div class="flex h-full min-h-0 bg-white text-[#171717]">
+    <!-- Left Native Sidebar -->
+    <aside class="hidden w-[204px] shrink-0 flex-col border-r border-black/8 bg-[#FAF9F6] sm:flex">
+      <div class="flex-1 overflow-y-auto p-2.5">
+        <div class="mb-1.5 px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+          Formats
         </div>
-      </div>
-
-      <div class="otto-card-body flex flex-col gap-3">
-        <!-- Quick Add Form -->
-        <form class="flex flex-wrap items-center gap-2" @submit.prevent="addIdea">
-          <input
-            v-model="newTitle"
-            type="text"
-            class="h-8 flex-1 min-w-[180px] rounded-full border border-[#ededed] bg-[#f6f6f6] px-3 font-mono text-xs text-[#303030] outline-none focus:border-[#303030]"
-            placeholder="New stream, video, short, or collab idea..."
-            required
-          />
-          <select
-            v-model="newFormat"
-            class="h-8 rounded-full border border-[#ededed] bg-[#f6f6f6] px-3 font-mono text-xs text-[#303030] outline-none focus:border-[#303030]"
-          >
-            <option value="stream">Stream</option>
-            <option value="video">YouTube Video</option>
-            <option value="short">Short / Clip</option>
-            <option value="collab">Collab</option>
-          </select>
-          <input
-            v-model="newHook"
-            type="text"
-            class="h-8 flex-1 min-w-[150px] rounded-full border border-[#ededed] bg-[#f6f6f6] px-3 font-mono text-xs text-[#303030] outline-none focus:border-[#303030]"
-            placeholder="Hook / angle (optional)"
-          />
-          <Button type="submit" size="sm">
-            <PlusIcon data-icon="inline-start" />
-            Add Idea
-          </Button>
-        </form>
-
-        <!-- Format Filter Pills -->
-        <div class="flex flex-wrap items-center gap-1.5">
+        <div class="flex flex-col gap-0.5">
           <button
             v-for="fmt in (['all', 'stream', 'video', 'short', 'collab'] as const)"
             :key="fmt"
             type="button"
-            class="rounded-full px-2.5 py-1 font-mono text-[11px] transition-colors"
+            class="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
             :class="
               filterFormat === fmt
-                ? 'bg-[#303030] text-white'
-                : 'bg-[#f2f2f2] text-[#666] hover:text-[#303030]'
+                ? 'bg-[#171717] text-white'
+                : 'text-neutral-700 hover:bg-black/5'
             "
             @click="filterFormat = fmt"
           >
-            {{ fmt === "all" ? `All (${items.length})` : fmt }}
+            <span>{{ fmt === "all" ? "All Ideas" : `${FORMAT_LABELS[fmt]}s` }}</span>
+            <span
+              class="font-mono text-[10.5px] tabular-nums"
+              :class="filterFormat === fmt ? 'text-white/75' : 'text-neutral-400'"
+            >
+              {{ formatCount(fmt) }}
+            </span>
           </button>
         </div>
 
-        <div v-if="errorMsg" class="font-mono text-xs text-[#991b1b]">{{ errorMsg }}</div>
+        <div class="mt-4 mb-1.5 px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+          Stage
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+            :class="
+              filterStatus === 'all'
+                ? 'bg-black/8 text-[#171717]'
+                : 'text-neutral-600 hover:bg-black/5'
+            "
+            @click="filterStatus = 'all'"
+          >
+            <span>Any Stage</span>
+            <span class="font-mono text-[10.5px] text-neutral-400">{{ activeCount }}</span>
+          </button>
+          <button
+            v-for="st in STATUS_OPTIONS.slice(0, 6)"
+            :key="st.value"
+            type="button"
+            class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors"
+            :class="
+              filterStatus === st.value
+                ? 'bg-black/8 font-medium text-[#171717]'
+                : 'text-neutral-600 hover:bg-black/5'
+            "
+            @click="filterStatus = st.value"
+          >
+            <span class="size-1.5 shrink-0 rounded-full" :class="statusDotClass(st.value)" />
+            <span>{{ st.label }}</span>
+          </button>
+        </div>
+      </div>
 
+      <div class="border-t border-black/8 p-2.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="h-8 w-full justify-start gap-1.5 rounded-lg bg-white text-[11px] font-medium"
+          @click="emit('askPrompt', 'Review my saved content ideas and suggest which one we should prep next.')"
+        >
+          <SparklesIcon class="size-3.5 shrink-0" />
+          <span>Prioritize with Otto</span>
+        </Button>
+      </div>
+    </aside>
+
+    <!-- Right Main Stage -->
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+      <!-- Top Quick-Capture Omnibar -->
+      <div class="shrink-0 border-b border-black/8 bg-[#FAF9F6] px-4 py-3">
+        <form
+          class="flex items-center gap-2 rounded-xl border border-black/12 bg-white px-2.5 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] focus-within:border-black/30"
+          @submit.prevent="addIdea"
+        >
+          <LightbulbIcon class="size-4 shrink-0 text-neutral-400" aria-hidden="true" />
+          <input
+            v-model="newTitle"
+            type="text"
+            placeholder="Capture a stream, video, short, or collab idea and press Enter..."
+            class="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-[#171717] placeholder:text-neutral-400 focus:outline-none"
+          />
+
+          <button
+            type="button"
+            class="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors"
+            :class="
+              showHookInput || newHook
+                ? 'bg-[#171717] text-white'
+                : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+            "
+            title="Add hook or angle"
+            @click="showHookInput = !showHookInput"
+          >
+            <SlidersHorizontalIcon class="size-3.5" />
+            <span class="hidden sm:inline">Hook</span>
+          </button>
+
+          <Select v-model="newFormat">
+            <SelectTrigger class="h-7 w-auto gap-1.5 rounded-lg border-0 bg-neutral-100 px-2.5 text-[11px] font-semibold text-[#171717] shadow-none hover:bg-neutral-200/80 focus:ring-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="stream">Stream</SelectItem>
+              <SelectItem value="video">Video</SelectItem>
+              <SelectItem value="short">Short</SelectItem>
+              <SelectItem value="collab">Collab</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div class="h-5 w-px bg-black/10" />
+
+          <Button
+            type="submit"
+            size="sm"
+            class="h-7 gap-1 rounded-lg bg-[#171717] px-3 text-[11px] font-medium text-white hover:bg-neutral-800"
+            :disabled="!newTitle.trim()"
+          >
+            <PlusIcon class="size-3.5" />
+            <span>Add</span>
+          </Button>
+        </form>
+
+        <input
+          v-if="showHookInput"
+          v-model="newHook"
+          type="text"
+          placeholder="Optional hook, angle, or thumbnail concept..."
+          class="mt-2 h-8 w-full rounded-lg border border-black/10 bg-white px-3 text-xs text-[#171717] placeholder:text-neutral-400 focus:border-black/25 focus:outline-none"
+        />
+      </div>
+
+      <!-- Mobile Format Strip -->
+      <div class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-black/8 bg-white px-3 py-1.5 sm:hidden">
+        <button
+          v-for="fmt in (['all', 'stream', 'video', 'short', 'collab'] as const)"
+          :key="fmt"
+          type="button"
+          class="rounded-md px-2.5 py-1 text-[11px] font-medium whitespace-nowrap"
+          :class="filterFormat === fmt ? 'bg-[#171717] text-white' : 'text-neutral-600'"
+          @click="filterFormat = fmt"
+        >
+          {{ fmt === "all" ? `All (${items.length})` : FORMAT_LABELS[fmt] }}
+        </button>
+      </div>
+
+      <div v-if="errorMsg" class="border-b border-red-200 bg-red-50 px-4 py-2 font-mono text-xs text-red-700">
+        {{ errorMsg }}
+      </div>
+
+      <!-- Full-Bleed Ideas List -->
+      <div class="min-h-0 flex-1 overflow-y-auto">
         <div
           v-if="filteredItems.length === 0 && !loading"
-          class="rounded-2xl border border-dashed border-[#d9d9d9] bg-[#fafafa] px-4 py-8 text-center font-mono text-xs text-[#808080]"
+          class="flex flex-col items-center justify-center px-6 py-20 text-center"
         >
-          No content ideas yet. Drop an idea above or brainstorm one with Otto.
+          <LightbulbIcon class="mb-3 size-8 text-neutral-300" aria-hidden="true" />
+          <p class="text-xs font-semibold text-neutral-700">No content ideas yet</p>
+          <p class="mt-1 max-w-sm text-[11px] text-neutral-500">
+            Type an idea in the bar above and press Enter, or ask Otto to brainstorm stream and video concepts for your channel.
+          </p>
         </div>
 
-        <div v-else class="flex flex-col gap-2">
+        <div v-else class="divide-y divide-black/6">
           <div
             v-for="item in filteredItems"
             :key="item.id"
-            class="rounded-2xl border border-[#ededed] bg-white p-3 transition-colors hover:border-[#d9d9d9]"
+            class="flex flex-wrap items-start justify-between gap-3 px-4 py-3 transition-colors hover:bg-[#FAF9F6]"
           >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex flex-wrap items-center gap-2 min-w-0">
-                <span class="otto-chip otto-chip-neutral">{{ item.format }}</span>
-                <span class="text-sm font-medium text-[#303030]">{{ item.title }}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-neutral-600">
+                  {{ FORMAT_LABELS[item.format] }}
+                </span>
+                <span class="text-xs font-semibold text-[#171717]">{{ item.title }}</span>
               </div>
-              <div class="flex items-center gap-1.5">
-                <select
-                  :value="item.status"
-                  class="h-7 rounded-full border border-[#ededed] bg-[#f4f4f4] px-2.5 font-mono text-[11px] text-[#303030] outline-none"
-                  @change="patchIdea(item.id, { status: ($event.target as HTMLSelectElement).value as ContentIdeaItem['status'] })"
-                >
-                  <option value="idea">Idea</option>
-                  <option value="prepping">Prepping</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="live">Live</option>
-                  <option value="editing">Editing</option>
-                  <option value="published">Published</option>
-                  <option value="dropped">Dropped</option>
-                </select>
-                <Button
+              <p v-if="item.hook" class="mt-1 text-xs text-neutral-600">
+                {{ item.hook }}
+              </p>
+              <p v-if="item.notes" class="mt-0.5 text-[11px] text-neutral-400">
+                {{ item.notes }}
+              </p>
+
+              <div v-if="item.thumbnailPath || item.scriptPath" class="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  v-if="item.thumbnailPath"
                   type="button"
-                  variant="secondary"
-                  size="xs"
-                  @click="emit('askPrompt', `Let's plan and prep my ${item.format} idea '${item.title}' (id: ${item.id}) — title options, rundown, and brief notes for my team.`)"
+                  class="inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2 py-0.5 font-mono text-[10.5px] text-neutral-600 hover:bg-neutral-50"
+                  @click="emit('openWorkspacePath', item.thumbnailPath.includes('/') ? item.thumbnailPath.slice(0, item.thumbnailPath.lastIndexOf('/')) : '')"
                 >
-                  Prep
-                </Button>
-                <Button
+                  <ImageIcon class="size-3" />
+                  {{ item.thumbnailPath }}
+                </button>
+                <button
+                  v-if="item.scriptPath"
                   type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  class="text-destructive hover:text-destructive"
-                  aria-label="Delete idea"
-                  @click="removeIdea(item.id)"
+                  class="inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2 py-0.5 font-mono text-[10.5px] text-neutral-600 hover:bg-neutral-50"
+                  @click="emit('openWorkspacePath', item.scriptPath.includes('/') ? item.scriptPath.slice(0, item.scriptPath.lastIndexOf('/')) : '')"
                 >
-                  <XIcon />
-                </Button>
+                  <FileTextIcon class="size-3" />
+                  {{ item.scriptPath }}
+                </button>
               </div>
             </div>
 
-            <div v-if="item.hook" class="mt-1.5 text-xs text-[#666]">Hook: {{ item.hook }}</div>
-            <div v-if="item.notes" class="mt-0.5 text-xs text-[#737373]">{{ item.notes }}</div>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <Select
+                :model-value="item.status"
+                @update:model-value="(val) => patchIdea(item.id, { status: String(val) as ContentIdeaItem['status'] })"
+              >
+                <SelectTrigger class="h-7 w-[108px] rounded-lg border border-black/10 bg-white px-2 font-mono text-[11px] shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem v-for="st in STATUS_OPTIONS" :key="st.value" :value="st.value">
+                    {{ st.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
 
-            <div v-if="item.thumbnailPath || item.scriptPath" class="mt-2 flex flex-wrap gap-1.5">
               <Button
-                v-if="item.thumbnailPath"
                 type="button"
-                variant="secondary"
+                variant="outline"
                 size="xs"
-                @click="emit('openWorkspacePath', item.thumbnailPath.includes('/') ? item.thumbnailPath.slice(0, item.thumbnailPath.lastIndexOf('/')) : '')"
+                class="h-7 rounded-lg px-2.5 text-[11px]"
+                @click="emit('askPrompt', `Let's plan and prep my ${item.format} idea '${item.title}' (id: ${item.id}) — title options, rundown, and brief notes for my team.`)"
               >
-                <ImageIcon data-icon="inline-start" />
-                {{ item.thumbnailPath }}
+                Prep
               </Button>
-              <Button
-                v-if="item.scriptPath"
+              <button
                 type="button"
-                variant="secondary"
-                size="xs"
-                @click="emit('openWorkspacePath', item.scriptPath.includes('/') ? item.scriptPath.slice(0, item.scriptPath.lastIndexOf('/')) : '')"
+                class="rounded-lg p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                aria-label="Delete idea"
+                @click="removeIdea(item.id)"
               >
-                <FileTextIcon data-icon="inline-start" />
-                {{ item.scriptPath }}
-              </Button>
+                <Trash2Icon class="size-3.5" />
+              </button>
             </div>
           </div>
         </div>
