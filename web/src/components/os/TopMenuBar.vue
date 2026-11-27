@@ -241,8 +241,8 @@ const focusedWin = computed(() => {
       <button
         type="button"
         data-os-sound-toggle
-        :aria-label="soundsEnabled ? 'Mute UI sounds' : 'Unmute UI sounds'"
-        :title="soundsEnabled ? 'UI sounds on (click to mute for OBS)' : 'UI sounds muted (click to enable)'"
+        :aria-label="soundsEnabled ? 'Turn off UI sounds' : 'Turn on UI sounds'"
+        :title="soundsEnabled ? 'UI sounds on (click to turn off)' : 'UI sounds off (click to enable)'"
         :aria-pressed="soundsEnabled"
         class="flex size-6 items-center justify-center rounded-full transition-colors hover:bg-black/6"
         :class="soundsEnabled ? 'text-[#525252] hover:text-[#303030]' : 'text-[#a3a3a3] hover:text-[#303030]'"

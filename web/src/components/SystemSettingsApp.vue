@@ -453,7 +453,7 @@ watch(
                   <div>
                     <div class="text-xs font-medium text-[#171717]">Tactile UI Audio</div>
                     <div class="text-[11px] text-neutral-500">
-                      Subtle desk feedback for windows, chat, and background jobs. Mute anytime from the top bar when live in OBS.
+                      Optional desk feedback for windows, chat, and background jobs (off by default).
                     </div>
                   </div>
                 </div>
@@ -464,18 +464,18 @@ watch(
                   <button
                     type="button"
                     class="rounded-md px-2.5 py-1 font-mono text-[10.5px] font-medium transition-colors"
-                    :class="soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-                    @click="setSoundsEnabled(true)"
+                    :class="!soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+                    @click="setSoundsEnabled(false)"
                   >
-                    On
+                    Off
                   </button>
                   <button
                     type="button"
                     class="rounded-md px-2.5 py-1 font-mono text-[10.5px] font-medium transition-colors"
-                    :class="!soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
-                    @click="setSoundsEnabled(false)"
+                    :class="soundsEnabled ? 'bg-[#171717] text-white' : 'text-neutral-600 hover:text-[#171717]'"
+                    @click="setSoundsEnabled(true)"
                   >
-                    Muted
+                    On
                   </button>
                 </div>
               </div>

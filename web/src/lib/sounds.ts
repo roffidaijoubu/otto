@@ -14,15 +14,15 @@ const STORAGE_KEY = "otto-studio-os-sounds-enabled";
 const DEFAULT_VOLUME = 0.38;
 
 function readInitialEnabled(): boolean {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return false;
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved === "false" || saved === "0") return false;
     if (saved === "true" || saved === "1") return true;
+    if (saved === "false" || saved === "0") return false;
   } catch {
     // ignore storage errors
   }
-  return true;
+  return false;
 }
 
 export const soundsEnabled = ref<boolean>(readInitialEnabled());
