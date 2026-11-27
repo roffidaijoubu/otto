@@ -146,3 +146,51 @@ export async function runThumbnailWorker(slug: string, prompt: string): Promise<
     rpc.releaseSpriteHold();
   }
 }
+
+export async function runIsolatedQuickTask(opts: {
+  tools: string;
+  prompt: string;
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; reply: string; error?: string }> {
+  const childEnv = buildAgentChildEnv();
+  rpc.backgroundBusy = true;
+  void rpc.holdSpriteActive();
+  try {
+    const args = [OMP_BIN, "--no-session"];
+    if (opts.tools.trim()) {
+      args.push("--tools", opts.tools.trim());
+    }
+    args.push("-p", opts.prompt);
+    const proc = Bun.spawn(args, {
+      cwd: WORK_DIR,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: childEnv,
+    });
+    const timer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        // ignore
+      }
+    }, opts.timeoutMs ?? 90_000);
+    const [stdoutText, stderrText, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    clearTimeout(timer);
+    if (exitCode !== 0) {
+      return {
+        ok: false,
+        reply: "",
+        error: stderrText.trim() || `Isolated worker exited (${exitCode})`,
+      };
+    }
+    return { ok: true, reply: stdoutText.trim() };
+  } finally {
+    rpc.backgroundBusy = false;
+    rpc.releaseSpriteHold();
+  }
+}

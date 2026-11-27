@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { YouTubeMetricsWidgetState } from "./ChannelMetricsWidget.vue";
 import PlatformBrandIcon from "./PlatformBrandIcon.vue";
+import { renderMarkdown } from "@/lib/markdown";
 import { playSound } from "@/lib/sounds";
 
 export interface ChannelMetric {
@@ -43,6 +44,44 @@ export interface SocialPlatformSummary {
 }
 
 type ActiveTab = "overview" | "youtube" | "tiktok" | "instagram" | "x";
+
+const insightsOpen = ref(false);
+const insightsLoading = ref(false);
+const insightsMarkdown = ref("");
+const insightsError = ref("");
+const insightsHtml = computed(() =>
+  insightsMarkdown.value.trim() ? renderMarkdown(insightsMarkdown.value) : ""
+);
+
+async function runContainedInsights() {
+  insightsOpen.value = true;
+  if (insightsLoading.value) return;
+  insightsLoading.value = true;
+  insightsError.value = "";
+  try {
+    const focus = activeTab.value === "overview" ? "all platforms (YouTube, TikTok, Instagram, X)" : activeTab.value;
+    const res = await fetch("/api/analytics/insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ focusPlatform: focus }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      insights?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Insights failed (${res.status})`);
+    }
+    insightsMarkdown.value = data.insights || "";
+    playSound("complete");
+  } catch (err) {
+    insightsError.value = err instanceof Error ? err.message : "Could not generate analytics insights";
+    playSound("error");
+  } finally {
+    insightsLoading.value = false;
+  }
+}
 
 const props = defineProps<{
   refreshTick: number;
@@ -392,10 +431,11 @@ defineExpose({ fetchAll });
           variant="outline"
           size="sm"
           class="h-8 w-full justify-start gap-1.5 rounded-lg bg-white text-[11px] font-medium"
-          @click="emit('askPrompt', 'Analyze my multi-platform analytics history (YouTube, TikTok, Instagram, X) from Studio DB and suggest concrete growth experiments.')"
+          :disabled="insightsLoading"
+          @click="runContainedInsights"
         >
           <SparklesIcon class="size-3.5 shrink-0" />
-          <span>Analyze with Otto</span>
+          <span>{{ insightsLoading ? "Analyzing…" : "AI Growth Insights" }}</span>
         </Button>
       </div>
     </aside>
@@ -518,6 +558,56 @@ defineExpose({ fetchAll });
           class="border-b border-black/6 bg-[#FAF9F6] px-4 py-1.5 font-mono text-[11px] text-neutral-600"
         >
           {{ dailyNote }}
+        </div>
+
+        <!-- Contained AI Growth Insights Panel (Isolated OMP Worker) -->
+        <div
+          v-if="insightsOpen"
+          class="border-b border-black/10 bg-[#FAF9F6] px-4 py-3.5"
+        >
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5">
+              <SparklesIcon class="size-3.5 text-[#171717]" />
+              <span class="font-mono text-xs font-semibold text-[#171717]">AI Growth Insights</span>
+              <span class="rounded-full border border-black/10 bg-white px-2 py-0.5 font-mono text-[10px] text-neutral-500">
+                isolated worker
+              </span>
+            </div>
+            <div class="flex items-center gap-1">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                class="h-6 bg-white px-2 text-[11px]"
+                :disabled="insightsLoading"
+                @click="runContainedInsights"
+              >
+                <RefreshCwIcon class="size-3" :class="insightsLoading ? 'animate-spin' : ''" />
+                Refresh
+              </Button>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                class="size-6"
+                @click="insightsOpen = false"
+              >
+                <XIcon class="size-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          <div v-if="insightsLoading" class="font-mono text-xs text-neutral-500 py-2">
+            Analyzing your multi-platform metrics history…
+          </div>
+          <div v-else-if="insightsError" class="rounded-lg bg-red-50 px-3 py-2 font-mono text-xs text-red-700">
+            {{ insightsError }}
+          </div>
+          <div
+            v-else-if="insightsHtml"
+            class="prose-sm max-w-none text-xs leading-relaxed text-[#171717] [&_ul]:list-disc [&_ul]:pl-4 [&_li]:my-0.5 [&_strong]:font-semibold"
+            v-html="insightsHtml"
+          />
         </div>
 
         <!-- ==================== OVERVIEW VIEW ==================== -->

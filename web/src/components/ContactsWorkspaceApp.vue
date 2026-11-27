@@ -356,11 +356,53 @@ async function copyHandle(handle: string) {
   }
 }
 
-function draftOutreach(c: StudioContact) {
-  emit(
-    "askPrompt",
-    `Draft a clear, zero-friction ${c.role === "collab" ? "collab pitch" : "brief / outreach message"} for ${c.name} (${c.role}${c.handle ? `, ${c.handle}` : ""}${c.platform ? ` on ${c.platform}` : ""}).`
-  );
+const outreachOpen = ref(false);
+const outreachTone = ref<"casual" | "professional" | "short">("casual");
+const outreachNote = ref("");
+const outreachDraft = ref("");
+const outreachLoading = ref(false);
+const outreachError = ref("");
+
+async function draftOutreach(c: StudioContact, toneOverride?: "casual" | "professional" | "short") {
+  if (toneOverride) outreachTone.value = toneOverride;
+  outreachOpen.value = true;
+  outreachLoading.value = true;
+  outreachError.value = "";
+  try {
+    const res = await fetch("/api/contacts/draft-outreach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: c.name,
+        role: c.role,
+        handle: c.handle,
+        platform: c.platform,
+        notes: c.notes,
+        tone: outreachTone.value,
+        customNote: outreachNote.value.trim(),
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; draft?: string; error?: string };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Failed (${res.status})`);
+    }
+    outreachDraft.value = data.draft || "";
+  } catch (err) {
+    outreachError.value = err instanceof Error ? err.message : "Could not generate draft";
+    toast.error(outreachError.value);
+  } finally {
+    outreachLoading.value = false;
+  }
+}
+
+async function copyOutreachDraft() {
+  if (!outreachDraft.value) return;
+  try {
+    await navigator.clipboard.writeText(outreachDraft.value);
+    toast.success("Outreach draft copied");
+  } catch {
+    toast.error("Could not copy draft");
+  }
 }
 
 watch(
@@ -633,9 +675,9 @@ defineExpose({ fetchContacts, openNewContactModal });
 
           <!-- Quick Action Row -->
           <div v-if="!editing" class="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" @click="draftOutreach(selectedContact)">
+            <Button type="button" size="sm" :disabled="outreachLoading" @click="draftOutreach(selectedContact)">
               <SparklesIcon class="size-3.5" />
-              Draft Outreach with Otto
+              {{ outreachLoading ? "Drafting…" : "Draft Outreach" }}
             </Button>
             <Button
               v-if="selectedContact.handle"
@@ -663,6 +705,80 @@ defineExpose({ fetchContacts, openNewContactModal });
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </div>
+
+          <!-- Contained Inline Outreach Drafter (Isolated OMP Worker) -->
+          <div
+            v-if="!editing && outreachOpen"
+            class="rounded-2xl border border-[#e5e5e5] bg-white p-3.5 space-y-2.5 shadow-xs"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <SparklesIcon class="size-3.5 text-[#303030]" />
+                <span class="font-mono text-xs font-semibold text-[#141414]">Outreach Draft</span>
+                <span class="rounded-full bg-[#f2f2f2] px-2 py-0.5 font-mono text-[10px] text-neutral-500">
+                  isolated
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  v-for="t in (['casual', 'professional', 'short'] as const)"
+                  :key="t"
+                  type="button"
+                  class="rounded-md px-2 py-0.5 font-mono text-[10.5px] capitalize transition-colors"
+                  :class="outreachTone === t ? 'bg-[#171717] text-white' : 'bg-[#f4f4f5] text-neutral-600 hover:bg-neutral-200'"
+                  :disabled="outreachLoading"
+                  @click="draftOutreach(selectedContact, t)"
+                >
+                  {{ t }}
+                </button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  class="h-6 px-1.5 text-[11px]"
+                  @click="outreachOpen = false"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <Input
+                v-model="outreachNote"
+                type="text"
+                placeholder="Optional angle (e.g. ask about thumbnail rate for Friday stream)…"
+                class="h-7 flex-1 text-xs"
+                @keydown.enter.prevent="draftOutreach(selectedContact)"
+              />
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                class="h-7 text-[11px]"
+                :disabled="outreachLoading"
+                @click="draftOutreach(selectedContact)"
+              >
+                Regenerate
+              </Button>
+            </div>
+
+            <div v-if="outreachLoading" class="rounded-xl bg-[#fafafa] px-3 py-4 font-mono text-xs text-neutral-500">
+              Drafting message for {{ selectedContact.name }}…
+            </div>
+            <div v-else-if="outreachError" class="rounded-xl bg-red-50 px-3 py-2 font-mono text-xs text-red-700">
+              {{ outreachError }}
+            </div>
+            <div v-else-if="outreachDraft" class="space-y-2">
+              <Textarea v-model="outreachDraft" rows="5" class="bg-[#fafafa] text-xs leading-relaxed" />
+              <div class="flex justify-end">
+                <Button type="button" size="xs" @click="copyOutreachDraft">
+                  <CopyIcon class="size-3" />
+                  Copy Draft
+                </Button>
+              </div>
+            </div>
           </div>
 
           <!-- View Mode: Structured OS Contact Fields -->

@@ -129,16 +129,12 @@ export function zipUrl(relDir: string): string {
 }
 
 export function askActionLabel(entry: WorkspaceEntry): string {
-  if (entry.kind === "image") return "Review Thumbnail";
   if (entry.kind === "video") return "Review Clip";
   return "Ask Otto";
 }
 
 export function buildAskOttoPrompt(entry: WorkspaceEntry): string {
   const hidden = `<hidden>Workspace file absolute path: ${entry.absPath} (relative: ${entry.relPath}, type: ${entry.kind})</hidden>`;
-  if (entry.kind === "image") {
-    return `Review my thumbnail draft "${entry.name}" for mobile readability and give concrete revision notes for my human artist.\n${hidden}`;
-  }
   if (entry.kind === "video") {
     return `Watch my clip "${entry.name}" and critique the first 3-second hook, pacing, dead air, and editor notes.\n${hidden}`;
   }

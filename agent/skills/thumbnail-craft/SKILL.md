@@ -45,3 +45,13 @@ Pass every downloaded workspace asset path in `assets: [...]` to `thumbnail_save
 <img src="/assets/light-closeup-gloom-horrified.png" class="character" />
 ```
 `thumbnail_save` automatically copies them into the thumbnail project and rewrites `/assets/<basename>` to same-origin project URLs so live preview and PNG/JPEG export work reliably with zero CORS issues.
+
+---
+
+## 4. Mandatory 120px Mobile Squint-Test Self-Check Loop
+
+Before finishing any thumbnail creation or refinement, run a strict **Squint-Test Self-Check** inside your agent loop:
+1. **120px Legibility:** Would the 2–4 word hook still be instantly readable when shrunk to `120×68px` on a mobile YouTube feed? If font size is `< 84px`, word count > 4, or letter-spacing/stroke is thin, tighten the copy and increase weight/size immediately.
+2. **Contrast & Separation:** Does the text sit over a dark scrim/highlight block with > 10:1 contrast, and does the character cutout pop from the background via rim-light / drop-shadow + background blur/dimming?
+3. **YouTube Duration Safe Zone:** Confirm NO headline text, badge, or logo enters the bottom-right `220×90px` corner (`right <= 220px && bottom <= 90px`).
+4. **Auto-Fix Before Returning:** If any check fails (or if an exported PNG exists and `critique_thumbnail` flags readability issues), immediately fix the HTML/CSS and call `thumbnail_save` again on the same slug before replying to the creator.

@@ -20,6 +20,7 @@ import { handleWorkspaceRoutes } from "./routes/workspace.ts";
 import { handleStudioAppsRoutes } from "./routes/studio-apps.ts";
 import { handleObsOverlaysRoutes } from "./routes/obs-overlays.ts";
 import { handleThumbnailsRoutes } from "./routes/thumbnails.ts";
+import { handleIsolatedAiRoutes } from "./routes/isolated-ai.ts";
 import { handleDbRoutes } from "./routes/db.ts";
 import { handleClipsRoutes } from "./routes/clips.ts";
 import { handleArchiveRoutes } from "./routes/archive.ts";
@@ -106,6 +107,9 @@ Bun.serve({
 
     const thumbnailsRes = await handleThumbnailsRoutes(req, url);
     if (thumbnailsRes) return thumbnailsRes;
+
+    const isolatedAiRes = await handleIsolatedAiRoutes(req, url);
+    if (isolatedAiRes) return isolatedAiRes;
 
     const dbRes = await handleDbRoutes(req, url);
     if (dbRes) return dbRes;

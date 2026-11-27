@@ -1184,16 +1184,6 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                           <FilePlus2Icon data-icon="inline-start" />
                           New Note
                         </Button>
-                        <Button
-                          v-if="currentPath === 'clips' || !currentPath"
-                          type="button"
-                          variant="secondary"
-                          size="xs"
-                          @click="emit('askPrompt', 'Scan my latest YouTube VOD for hype moments and cut the top raw clips (.mp4 + .srt) into my workspace clips folder.')"
-                        >
-                          <SparklesIcon data-icon="inline-start" />
-                          Scan VOD for Clips
-                        </Button>
                       </template>
                     </div>
                   </EmptyContent>
@@ -1297,7 +1287,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
 
                         <div class="flex items-center justify-end gap-1 shrink-0">
                           <Button
-                            v-if="!entry.isDir"
+                            v-if="!entry.isDir && entry.kind !== 'image'"
                             type="button"
                             size="xs"
                             @click.stop="askOttoAbout(entry)"
@@ -1306,7 +1296,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                             {{ askActionLabel(entry) }}
                           </Button>
                           <Button
-                            v-else
+                            v-else-if="entry.isDir"
                             type="button"
                             variant="ghost"
                             size="xs"
@@ -1339,7 +1329,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                   <PencilIcon />
                                   Edit File
                                 </DropdownMenuItem>
-                                <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                                <DropdownMenuItem v-if="!entry.isDir && entry.kind !== 'image'" @select="askOttoAbout(entry)">
                                   <SparklesIcon />
                                   {{ askActionLabel(entry) }}
                                 </DropdownMenuItem>
@@ -1409,7 +1399,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                           <PencilIcon />
                           Edit File
                         </ContextMenuItem>
-                        <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                        <ContextMenuItem v-if="!entry.isDir && entry.kind !== 'image'" @select="askOttoAbout(entry)">
                           <SparklesIcon />
                           {{ askActionLabel(entry) }}
                         </ContextMenuItem>
@@ -1552,7 +1542,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                                   <PencilIcon />
                                   Edit File
                                 </DropdownMenuItem>
-                                <DropdownMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                                <DropdownMenuItem v-if="!entry.isDir && entry.kind !== 'image'" @select="askOttoAbout(entry)">
                                   <SparklesIcon />
                                   {{ askActionLabel(entry) }}
                                 </DropdownMenuItem>
@@ -1615,7 +1605,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
                           <PencilIcon />
                           Edit File
                         </ContextMenuItem>
-                        <ContextMenuItem v-if="!entry.isDir" @select="askOttoAbout(entry)">
+                        <ContextMenuItem v-if="!entry.isDir && entry.kind !== 'image'" @select="askOttoAbout(entry)">
                           <SparklesIcon />
                           {{ askActionLabel(entry) }}
                         </ContextMenuItem>
@@ -1723,7 +1713,7 @@ defineExpose({ loadDirectory, navigateTo, openNewFolderDialog, openNewNoteDialog
 
           <div class="flex items-center justify-between gap-2 flex-wrap border-b border-border bg-secondary/40 px-5 py-2.5">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <Button type="button" size="xs" @click="askOttoAbout(selectedFile)">
+              <Button v-if="selectedFile.kind !== 'image'" type="button" size="xs" @click="askOttoAbout(selectedFile)">
                 <SparklesIcon data-icon="inline-start" />
                 {{ askActionLabel(selectedFile) }}
               </Button>
