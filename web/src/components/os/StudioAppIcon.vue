@@ -13,6 +13,7 @@ import {
   Lightbulb,
   MessageSquare,
   MonitorPlay,
+  Scissors,
   Settings,
   Sparkles,
 } from "@lucide/vue";
@@ -43,6 +44,7 @@ const ICON_MAP: Record<StudioAppIconName, Component> = {
   settings: Settings,
   lightbulb: Lightbulb,
   chart: BarChart3,
+  scissors: Scissors,
 };
 
 const resolvedIcon = computed(() => ICON_MAP[props.icon] ?? LayoutDashboard);

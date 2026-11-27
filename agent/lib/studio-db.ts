@@ -91,6 +91,51 @@ export interface ChannelMetric {
   createdAt: string;
 }
 
+export type ClipJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+
+export interface ClipJobLogEntry {
+  at: string;
+  stage: string;
+  message: string;
+}
+
+export interface ClipJob {
+  id: string;
+  vodUrl: string;
+  videoId: string;
+  title: string;
+  maxClips: number;
+  focusNotes: string;
+  status: ClipJobStatus;
+  stage: string;
+  progressLog: ClipJobLogEntry[];
+  error: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export type ClipRecordStatus = "ready" | "sent_to_box" | "archived";
+
+export interface ClipRecord {
+  id: string;
+  jobId: string | null;
+  videoId: string;
+  title: string;
+  filePath: string;
+  srtPath: string;
+  startSec: number | null;
+  endSec: number | null;
+  durationSec: number | null;
+  hookScore: number | null;
+  editorNotes: string;
+  youtubeUrl: string;
+  boxUrl: string;
+  status: ClipRecordStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 let dbInstance: Database | null = null;
 let dbInstancePath: string | null = null;
 
@@ -185,6 +230,46 @@ function initSchema(db: Database): void {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS clip_jobs (
+      id TEXT PRIMARY KEY,
+      vod_url TEXT NOT NULL,
+      video_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      max_clips INTEGER NOT NULL DEFAULT 3,
+      focus_notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'queued',
+      stage TEXT NOT NULL DEFAULT 'Queued',
+      progress_log TEXT NOT NULL DEFAULT '[]',
+      error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clip_jobs_created ON clip_jobs(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS clips (
+      id TEXT PRIMARY KEY,
+      job_id TEXT,
+      video_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      srt_path TEXT NOT NULL DEFAULT '',
+      start_sec INTEGER,
+      end_sec INTEGER,
+      duration_sec INTEGER,
+      hook_score INTEGER,
+      editor_notes TEXT NOT NULL DEFAULT '',
+      youtube_url TEXT NOT NULL DEFAULT '',
+      box_url TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'ready',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_clips_job ON clips(job_id);
   `);
 
   // Drop legacy 3+1 pillar column cleanly on existing databases
@@ -792,6 +877,8 @@ export function getStudioDbOverview() {
   const activePipe = pipeAll.filter((p) => p.status !== "dropped");
   const contactsCount = countQuery(db, "SELECT COUNT(*) as c FROM contacts");
   const metricsCount = countQuery(db, "SELECT COUNT(*) as c FROM channel_metrics");
+  const clipJobsCount = countQuery(db, "SELECT COUNT(*) as c FROM clip_jobs");
+  const clipsCount = countQuery(db, "SELECT COUNT(*) as c FROM clips");
   return {
     dbPath: getStudioDbPath(),
     tables: {
@@ -799,6 +886,8 @@ export function getStudioDbOverview() {
       content_pipeline: activePipe.length,
       contacts: contactsCount,
       channel_metrics: metricsCount,
+      clip_jobs: clipJobsCount,
+      clips: clipsCount,
     },
   };
 }
@@ -852,4 +941,268 @@ export function setStudioMeta(key: string, value: string): void {
 export function deleteStudioMeta(key: string): void {
   const db = getStudioDb();
   db.prepare("DELETE FROM studio_meta WHERE key = ?").run(key);
+}
+
+// ---------- Clip Jobs & Clips Ecosystem ----------
+
+function rowToClipJob(row: Record<string, unknown>): ClipJob {
+  return {
+    id: String(row.id),
+    vodUrl: String(row.vod_url ?? ""),
+    videoId: String(row.video_id ?? ""),
+    title: String(row.title ?? ""),
+    maxClips: typeof row.max_clips === "number" ? row.max_clips : 3,
+    focusNotes: String(row.focus_notes ?? ""),
+    status: (String(row.status ?? "queued") as ClipJobStatus),
+    stage: String(row.stage ?? "Queued"),
+    progressLog: safeJsonParse<ClipJobLogEntry[]>(row.progress_log as string, []),
+    error: String(row.error ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+  };
+}
+
+function rowToClipRecord(row: Record<string, unknown>): ClipRecord {
+  return {
+    id: String(row.id),
+    jobId: row.job_id ? String(row.job_id) : null,
+    videoId: String(row.video_id ?? ""),
+    title: String(row.title ?? ""),
+    filePath: String(row.file_path ?? ""),
+    srtPath: String(row.srt_path ?? ""),
+    startSec: typeof row.start_sec === "number" ? row.start_sec : null,
+    endSec: typeof row.end_sec === "number" ? row.end_sec : null,
+    durationSec: typeof row.duration_sec === "number" ? row.duration_sec : null,
+    hookScore: typeof row.hook_score === "number" ? row.hook_score : null,
+    editorNotes: String(row.editor_notes ?? ""),
+    youtubeUrl: String(row.youtube_url ?? ""),
+    boxUrl: String(row.box_url ?? ""),
+    status: (String(row.status ?? "ready") as ClipRecordStatus),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+export function createClipJob(input: {
+  vodUrl: string;
+  videoId?: string;
+  title?: string;
+  maxClips?: number;
+  focusNotes?: string;
+}): ClipJob {
+  const db = getStudioDb();
+  const id = makeId("job");
+  const nowIso = new Date().toISOString();
+  const maxClips = Math.max(1, Math.min(5, Math.floor(input.maxClips ?? 3)));
+  const initialLog: ClipJobLogEntry[] = [
+    { at: nowIso, stage: "Queued", message: "Clip job created and queued for background worker." },
+  ];
+  db.prepare(`
+    INSERT INTO clip_jobs (
+      id, vod_url, video_id, title, max_clips, focus_notes,
+      status, stage, progress_log, error, created_at, updated_at, completed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 'Queued', ?, '', ?, ?, NULL)
+  `).run(
+    id,
+    input.vodUrl.trim(),
+    (input.videoId ?? "").trim(),
+    (input.title ?? "").trim(),
+    maxClips,
+    (input.focusNotes ?? "").trim(),
+    JSON.stringify(initialLog),
+    nowIso,
+    nowIso
+  );
+  return getClipJob(id)!;
+}
+
+export function getClipJob(id: string): ClipJob | null {
+  const db = getStudioDb();
+  const row = db.query("SELECT * FROM clip_jobs WHERE id = ?").get(id) as Record<string, unknown> | null;
+  return row ? rowToClipJob(row) : null;
+}
+
+export function listClipJobs(limit = 20): ClipJob[] {
+  const db = getStudioDb();
+  const rows = db
+    .query("SELECT * FROM clip_jobs ORDER BY created_at DESC LIMIT ?")
+    .all(Math.max(1, Math.min(100, limit))) as Array<Record<string, unknown>>;
+  return rows.map(rowToClipJob);
+}
+
+export function updateClipJob(
+  id: string,
+  patch: {
+    title?: string;
+    videoId?: string;
+    status?: ClipJobStatus;
+    stage?: string;
+    logMessage?: string;
+    error?: string;
+    completedAt?: string | null;
+  }
+): ClipJob | null {
+  const existing = getClipJob(id);
+  if (!existing) return null;
+  const nowIso = new Date().toISOString();
+  const nextStage = patch.stage ?? existing.stage;
+  const nextStatus = patch.status ?? existing.status;
+  const nextLog = [...existing.progressLog];
+  if (patch.logMessage) {
+    nextLog.push({ at: nowIso, stage: nextStage, message: patch.logMessage });
+  }
+  const trimmedLog = nextLog.slice(-40);
+  const completedAt =
+    patch.completedAt !== undefined
+      ? patch.completedAt
+      : nextStatus === "done" || nextStatus === "failed" || nextStatus === "cancelled"
+        ? existing.completedAt ?? nowIso
+        : existing.completedAt;
+
+  const db = getStudioDb();
+  db.prepare(`
+    UPDATE clip_jobs
+    SET title = ?, video_id = ?, status = ?, stage = ?, progress_log = ?, error = ?, updated_at = ?, completed_at = ?
+    WHERE id = ?
+  `).run(
+    patch.title !== undefined ? patch.title : existing.title,
+    patch.videoId !== undefined ? patch.videoId : existing.videoId,
+    nextStatus,
+    nextStage,
+    JSON.stringify(trimmedLog),
+    patch.error !== undefined ? patch.error : existing.error,
+    nowIso,
+    completedAt,
+    id
+  );
+  return getClipJob(id);
+}
+
+export function deleteClipJob(id: string): boolean {
+  const db = getStudioDb();
+  const res = db.prepare("DELETE FROM clip_jobs WHERE id = ?").run(id);
+  return res.changes > 0;
+}
+
+export function upsertClipRecord(input: {
+  id?: string;
+  jobId?: string | null;
+  videoId?: string;
+  title: string;
+  filePath: string;
+  srtPath?: string;
+  startSec?: number | null;
+  endSec?: number | null;
+  durationSec?: number | null;
+  hookScore?: number | null;
+  editorNotes?: string;
+  youtubeUrl?: string;
+  boxUrl?: string;
+  status?: ClipRecordStatus;
+}): ClipRecord {
+  const db = getStudioDb();
+  const nowIso = new Date().toISOString();
+  const normalizedPath = input.filePath.trim().replace(/^\/home\/sprite\/workspace\//, "").replace(/^\/+/, "");
+  const existing =
+    (input.id
+      ? (db.query("SELECT * FROM clips WHERE id = ?").get(input.id) as Record<string, unknown> | null)
+      : null) ??
+    (db.query("SELECT * FROM clips WHERE file_path = ?").get(normalizedPath) as Record<string, unknown> | null);
+
+  const id = existing ? String(existing.id) : input.id?.trim() || makeId("clip");
+  const startSec = input.startSec ?? (existing && typeof existing.start_sec === "number" ? existing.start_sec : null);
+  const endSec = input.endSec ?? (existing && typeof existing.end_sec === "number" ? existing.end_sec : null);
+  const durationSec =
+    input.durationSec ??
+    (startSec !== null && endSec !== null && endSec > startSec
+      ? Math.round(endSec - startSec)
+      : existing && typeof existing.duration_sec === "number"
+        ? existing.duration_sec
+        : null);
+  const hookScore =
+    typeof input.hookScore === "number"
+      ? Math.max(1, Math.min(10, Math.round(input.hookScore)))
+      : existing && typeof existing.hook_score === "number"
+        ? existing.hook_score
+        : null;
+  const srtPath = (input.srtPath ?? (existing ? String(existing.srt_path ?? "") : ""))
+    .trim()
+    .replace(/^\/home\/sprite\/workspace\//, "")
+    .replace(/^\/+/, "");
+
+  db.prepare(`
+    INSERT INTO clips (
+      id, job_id, video_id, title, file_path, srt_path,
+      start_sec, end_sec, duration_sec, hook_score,
+      editor_notes, youtube_url, box_url, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      job_id = COALESCE(excluded.job_id, clips.job_id),
+      video_id = CASE WHEN excluded.video_id != '' THEN excluded.video_id ELSE clips.video_id END,
+      title = excluded.title,
+      file_path = excluded.file_path,
+      srt_path = CASE WHEN excluded.srt_path != '' THEN excluded.srt_path ELSE clips.srt_path END,
+      start_sec = COALESCE(excluded.start_sec, clips.start_sec),
+      end_sec = COALESCE(excluded.end_sec, clips.end_sec),
+      duration_sec = COALESCE(excluded.duration_sec, clips.duration_sec),
+      hook_score = COALESCE(excluded.hook_score, clips.hook_score),
+      editor_notes = CASE WHEN excluded.editor_notes != '' THEN excluded.editor_notes ELSE clips.editor_notes END,
+      youtube_url = CASE WHEN excluded.youtube_url != '' THEN excluded.youtube_url ELSE clips.youtube_url END,
+      box_url = CASE WHEN excluded.box_url != '' THEN excluded.box_url ELSE clips.box_url END,
+      status = excluded.status,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    input.jobId !== undefined ? input.jobId : existing?.job_id ? String(existing.job_id) : null,
+    (input.videoId ?? (existing ? String(existing.video_id ?? "") : "")).trim(),
+    input.title.trim(),
+    normalizedPath,
+    srtPath,
+    startSec,
+    endSec,
+    durationSec,
+    hookScore,
+    (input.editorNotes ?? (existing ? String(existing.editor_notes ?? "") : "")).trim(),
+    (input.youtubeUrl ?? (existing ? String(existing.youtube_url ?? "") : "")).trim(),
+    (input.boxUrl ?? (existing ? String(existing.box_url ?? "") : "")).trim(),
+    input.status ?? (existing ? (String(existing.status ?? "ready") as ClipRecordStatus) : "ready"),
+    existing ? String(existing.created_at ?? nowIso) : nowIso,
+    nowIso
+  );
+  const saved = db.query("SELECT * FROM clips WHERE id = ?").get(id) as Record<string, unknown>;
+  return rowToClipRecord(saved);
+}
+
+export function listClipRecords(opts?: { jobId?: string; limit?: number }): ClipRecord[] {
+  const db = getStudioDb();
+  const limit = Math.max(1, Math.min(200, opts?.limit ?? 60));
+  if (opts?.jobId) {
+    const rows = db
+      .query("SELECT * FROM clips WHERE job_id = ? ORDER BY created_at DESC LIMIT ?")
+      .all(opts.jobId, limit) as Array<Record<string, unknown>>;
+    return rows.map(rowToClipRecord);
+  }
+  const rows = db
+    .query("SELECT * FROM clips ORDER BY created_at DESC LIMIT ?")
+    .all(limit) as Array<Record<string, unknown>>;
+  return rows.map(rowToClipRecord);
+}
+
+export function updateClipBoxUrl(id: string, boxUrl: string): ClipRecord | null {
+  const db = getStudioDb();
+  const nowIso = new Date().toISOString();
+  db.prepare("UPDATE clips SET box_url = ?, status = 'sent_to_box', updated_at = ? WHERE id = ?").run(
+    boxUrl,
+    nowIso,
+    id
+  );
+  const row = db.query("SELECT * FROM clips WHERE id = ?").get(id) as Record<string, unknown> | null;
+  return row ? rowToClipRecord(row) : null;
+}
+
+export function deleteClipRecord(id: string): boolean {
+  const db = getStudioDb();
+  const res = db.prepare("DELETE FROM clips WHERE id = ?").run(id);
+  return res.changes > 0;
 }

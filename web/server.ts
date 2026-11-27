@@ -4,16 +4,21 @@ import path from "node:path";
 import {
   addChannelMetric,
   deleteChannelMetric,
+  deleteClipJob,
+  deleteClipRecord,
   deleteContact,
   deletePipelineItem,
   getStudioDbOverview,
   getStudioMeta,
   listCalendarEvents,
   listChannelMetrics,
+  listClipJobs,
+  listClipRecords,
   listContacts,
   listPipelineItems,
   saveCalendarEventsBatch,
   setStudioMeta,
+  updateClipBoxUrl,
   upsertContact,
   upsertPipelineItem,
   type CalendarEvent,
@@ -23,6 +28,12 @@ import {
   type PipelineFormat,
   type PipelineStatus,
 } from "../agent/lib/studio-db.ts";
+import {
+  cancelBackgroundClipJob,
+  getActiveClipWorkerIds,
+  isClipWorkerBusy,
+  startBackgroundClipJob,
+} from "./lib/clip-worker.ts";
 import {
   deleteCustomStudioApp,
   getCustomStudioApp,
@@ -738,7 +749,7 @@ class OmpRpcBridge {
   public backgroundBusy = false;
 
   public isAnyBusy(): boolean {
-    return this.busy || this.backgroundBusy;
+    return this.busy || this.backgroundBusy || isClipWorkerBusy();
   }
 
   public async holdSpriteActive(): Promise<void> {
@@ -1471,6 +1482,58 @@ Bun.serve({
         broadcast({ type: "obs_overlays_changed", slug, deleted: body.deleted === true });
       }
       return Response.json({ ok: true, slug });
+    }
+
+    // Internal-only endpoint for Otto chat (`vod_start_clip_job`) to dispatch isolated background clip jobs
+    if (req.method === "POST" && url.pathname === "/api/internal/clip-jobs/start") {
+      const auth = req.headers.get("authorization") || "";
+      const headerToken =
+        req.headers.get("x-lma-internal-secret") ||
+        (auth.startsWith("Bearer ") ? auth.slice(7).trim() : "");
+      if (!headerToken || !timingSafeStrEqual(headerToken, LMA_INTERNAL_SECRET)) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
+      try {
+        const body = (await req.json()) as {
+          vodUrl?: string;
+          videoId?: string;
+          title?: string;
+          maxClips?: number;
+          focusNotes?: string;
+        };
+        if (!body.vodUrl) {
+          return Response.json({ error: "vodUrl is required" }, { status: 400 });
+        }
+        const job = startBackgroundClipJob(
+          {
+            vodUrl: String(body.vodUrl),
+            videoId: body.videoId ? String(body.videoId) : undefined,
+            title: body.title ? String(body.title) : undefined,
+            maxClips: typeof body.maxClips === "number" ? body.maxClips : 3,
+            focusNotes: body.focusNotes ? String(body.focusNotes) : "",
+          },
+          {
+            ompBin: OMP_BIN,
+            workDir: WORK_DIR,
+            port: PORT,
+            internalSecret: LMA_INTERNAL_SECRET,
+            onBroadcast: broadcast,
+            onBusyChange: (busy) => {
+              if (busy) {
+                void rpc.holdSpriteActive();
+              } else {
+                rpc.releaseSpriteHold();
+              }
+            },
+          }
+        );
+        return Response.json({ ok: true, job });
+      } catch (err) {
+        return Response.json(
+          { error: err instanceof Error ? err.message : String(err) },
+          { status: 400 }
+        );
+      }
     }
 
     // Public favicon so both login page and Studio OS render the Otto icon
@@ -2506,6 +2569,154 @@ Bun.serve({
       const deleted = deleteChannelMetric(id);
       if (deleted) broadcast({ type: "db_changed" });
       return Response.json({ ok: deleted, id }, { status: deleted ? 200 : 404 });
+    }
+
+    // ---------- Clips Ecosystem & Background VOD Clipper APIs ----------
+
+    if (req.method === "GET" && url.pathname === "/api/clips/ecosystem") {
+      ensureWorkspaceScaffold();
+      const jobs = listClipJobs(30);
+      const records = listClipRecords({ limit: 80 });
+      const trackedPaths = new Set(records.map((r) => r.filePath));
+      const untrackedFiles: Array<{
+        videoId: string;
+        name: string;
+        filename: string;
+        relPath: string;
+        mp4Url: string;
+        srtUrl: string | null;
+        sizeBytes: number;
+        updatedAt: string;
+      }> = [];
+      if (fs.existsSync(WORKSPACE_CLIPS_DIR)) {
+        for (const vidEntry of fs.readdirSync(WORKSPACE_CLIPS_DIR, { withFileTypes: true })) {
+          if (!vidEntry.isDirectory() || !/^[A-Za-z0-9_-]{6,32}$/.test(vidEntry.name)) continue;
+          const vidDir = path.join(WORKSPACE_CLIPS_DIR, vidEntry.name);
+          for (const f of fs.readdirSync(vidDir)) {
+            if (!f.endsWith(".mp4")) continue;
+            const relPath = `clips/${vidEntry.name}/${f}`;
+            if (trackedPaths.has(relPath)) continue;
+            const full = path.join(vidDir, f);
+            const st = fs.statSync(full);
+            if (!st.isFile()) continue;
+            const base = f.slice(0, -4);
+            const exactSrt = `${base}.srt`;
+            const strippedSrt = `${base.replace(/_prepped$/, "")}.srt`;
+            const matchedSrt = fs.existsSync(path.join(vidDir, exactSrt))
+              ? exactSrt
+              : fs.existsSync(path.join(vidDir, strippedSrt))
+                ? strippedSrt
+                : null;
+            untrackedFiles.push({
+              videoId: vidEntry.name,
+              name: base,
+              filename: f,
+              relPath,
+              mp4Url: `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(f)}`,
+              srtUrl: matchedSrt
+                ? `/api/clips/file/${encodeURIComponent(vidEntry.name)}/${encodeURIComponent(matchedSrt)}`
+                : null,
+              sizeBytes: st.size,
+              updatedAt: st.mtime.toISOString(),
+            });
+          }
+        }
+      }
+      untrackedFiles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return Response.json({
+        jobs,
+        records,
+        untrackedFiles,
+        activeWorkerIds: getActiveClipWorkerIds(),
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/clips/jobs") {
+      try {
+        const body = (await req.json()) as {
+          vodUrl?: string;
+          title?: string;
+          maxClips?: number;
+          focusNotes?: string;
+        };
+        if (!body.vodUrl || !String(body.vodUrl).trim()) {
+          return Response.json({ error: "YouTube VOD URL is required" }, { status: 400 });
+        }
+        const job = startBackgroundClipJob(
+          {
+            vodUrl: String(body.vodUrl),
+            title: body.title ? String(body.title) : undefined,
+            maxClips: typeof body.maxClips === "number" ? body.maxClips : 3,
+            focusNotes: body.focusNotes ? String(body.focusNotes) : "",
+          },
+          {
+            ompBin: OMP_BIN,
+            workDir: WORK_DIR,
+            port: PORT,
+            internalSecret: LMA_INTERNAL_SECRET,
+            onBroadcast: broadcast,
+            onBusyChange: (busy) => {
+              if (busy) {
+                void rpc.holdSpriteActive();
+              } else {
+                rpc.releaseSpriteHold();
+              }
+            },
+          }
+        );
+        return Response.json({ ok: true, job });
+      } catch (err) {
+        return Response.json(
+          { error: err instanceof Error ? err.message : String(err) },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/clips/jobs/") && url.pathname.endsWith("/cancel")) {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/clips/jobs/".length, -"/cancel".length)
+      );
+      const job = cancelBackgroundClipJob(id, broadcast, (busy) => {
+        if (!busy) rpc.releaseSpriteHold();
+      });
+      if (!job) return Response.json({ error: "Clip job not found" }, { status: 404 });
+      return Response.json({ ok: true, job });
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/clips/jobs/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/clips/jobs/".length));
+      const ok = deleteClipJob(id);
+      if (ok) broadcast({ type: "clips_changed" });
+      return Response.json({ ok });
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/clips/records/") && url.pathname.endsWith("/box")) {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/clips/records/".length, -"/box".length)
+      );
+      const all = listClipRecords({ limit: 200 });
+      const rec = all.find((c) => c.id === id);
+      if (!rec) return Response.json({ error: "Clip record not found" }, { status: 404 });
+      try {
+        const resolved = resolveSafeWorkspacePath(rec.filePath, { allowMissing: false });
+        const uploaded = await exportWorkspaceEntryToBox(resolved.absPath, resolved.relPath);
+        const updated = updateClipBoxUrl(rec.id, uploaded.url);
+        broadcast({ type: "clips_changed" });
+        return Response.json({ ok: true, clip: updated, boxUrl: uploaded.url });
+      } catch (err) {
+        return Response.json(
+          { error: err instanceof Error ? err.message : String(err) },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/clips/records/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/clips/records/".length));
+      const ok = deleteClipRecord(id);
+      if (ok) broadcast({ type: "clips_changed" });
+      return Response.json({ ok });
     }
 
     // ---------- Backwards-Compatible Raw Clips Endpoints (now unified under workspace/clips) ----------

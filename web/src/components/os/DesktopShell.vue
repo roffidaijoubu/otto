@@ -91,6 +91,7 @@ const SHORTCUT_APP_IDS: StudioAppId[] = [
   "calendar",
   "contacts",
   "settings",
+  "clips",
 ];
 
 function handleGlobalKeyDown(event: KeyboardEvent) {

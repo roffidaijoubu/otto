@@ -12,6 +12,7 @@ import AnalyticsWorkspaceApp from "./components/AnalyticsWorkspaceApp.vue";
 import CalendarWorkspaceApp from "./components/CalendarWorkspaceApp.vue";
 import ChannelMetricsWidget from "./components/ChannelMetricsWidget.vue";
 import ChatComposer, { type ComposerAttachment } from "./components/ChatComposer.vue";
+import ClipsWorkspaceApp from "./components/ClipsWorkspaceApp.vue";
 import ContactsWorkspaceApp from "./components/ContactsWorkspaceApp.vue";
 import IdeasWorkspaceApp from "./components/IdeasWorkspaceApp.vue";
 import MessageBubble from "./components/MessageBubble.vue";
@@ -38,6 +39,7 @@ const obsOverlaysRef = ref<InstanceType<typeof ObsOverlaysWorkspaceApp> | null>(
 const activeObsOverlaySlug = ref("");
 const studioAppsRefreshTick = ref(0);
 const obsOverlaysRefreshTick = ref(0);
+const clipsRefreshTick = ref(0);
 
 interface InstalledCustomApp {
   slug: string;
@@ -49,7 +51,7 @@ interface InstalledCustomApp {
 const installedCustomApps = ref<InstalledCustomApp[]>([]);
 
 const BUILTIN_DESKTOP_SHORTCUTS: DesktopShortcut[] = [
-  { id: "clips", label: "Clips", sublabel: "/clips", icon: "folder", appId: "files", filesPath: "clips" },
+  { id: "clips", label: "Clips", sublabel: "VOD Clipper", icon: "scissors", appId: "clips" },
   { id: "obs-overlays", label: "OBS Overlays", sublabel: "Fly Machine", icon: "tv", appId: "obs-overlays" },
   { id: "ideas", label: "Ideas", sublabel: "Content", icon: "lightbulb", appId: "ideas" },
   { id: "analytics", label: "Analytics", sublabel: "YouTube", icon: "chart", appId: "analytics" },
@@ -372,6 +374,11 @@ function connectEvents() {
       dbRefreshTick.value += 1;
       if (wm && wm.focusedWindowId.value !== "ideas") {
         wm.setWindowMeta("ideas", { badgeText: "Updated" });
+      }
+    } else if (type === "clips_changed") {
+      clipsRefreshTick.value += 1;
+      if (wm && wm.focusedWindowId.value !== "clips") {
+        wm.setWindowMeta("clips", { badgeText: "Updated" });
       }
     } else if (type === "done") {
       commitLiveAssistant();
@@ -730,7 +737,12 @@ watch(shellRef, (val) => {
         />
       </template>
 
-      <!-- WINDOW 4: IDEAS -->
+      <!-- WINDOW 4: CLIPS -->
+      <template #app-clips>
+        <ClipsWorkspaceApp :refresh-tick="clipsRefreshTick" />
+      </template>
+
+      <!-- WINDOW 5: IDEAS -->
       <template #app-ideas>
         <IdeasWorkspaceApp
           :refresh-tick="dbRefreshTick"

@@ -4,6 +4,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import {
+  listClipJobs,
+  updateClipJob,
+  upsertClipRecord,
+} from "../lib/studio-db.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -294,6 +299,138 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         details: result,
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_start_clip_job",
+    label: "Start Background VOD Clipping Job",
+    description:
+      "Launch an isolated background VOD clipping job in the Clips app (never blocks or clutters the main Otto Chat thread). The background worker scans chat hype, cuts the best raw .mp4 + .srt clips, normalizes them to -14 LUFS CFR 30fps, watches each clip to write hook scores and human-editor notes, and saves them to the Clips gallery. Use this whenever the creator asks to clip a YouTube VOD.",
+    parameters: Type.Object({
+      url: Type.String({ description: "YouTube VOD URL or 11-character video ID" }),
+      title: Type.Optional(Type.String({ description: "Optional human-friendly stream/VOD title" })),
+      maxClips: Type.Optional(
+        Type.Number({ description: "How many clips to extract (1 to 5, default: 3)" })
+      ),
+      focusNotes: Type.Optional(
+        Type.String({
+          description: "Optional focus instructions (e.g. 'funny moments', 'boss fight reactions', 'Q&A answers')",
+        })
+      ),
+    }),
+    async execute(_id, params) {
+      const videoId = extractVideoId(params.url);
+      const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const port = process.env.PORT || "8080";
+      const secret = process.env.LMA_INTERNAL_SECRET || "";
+      const res = await fetch(`http://127.0.0.1:${port}/api/internal/clip-jobs/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(secret ? { "X-LMA-Internal-Secret": secret } : {}),
+        },
+        body: JSON.stringify({
+          vodUrl: canonicalUrl,
+          videoId,
+          title: params.title || "",
+          maxClips: params.maxClips ?? 3,
+          focusNotes: params.focusNotes || "",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Failed to start background clip job (${res.status}): ${err}`);
+      }
+      const data = await res.json();
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: data as Record<string, unknown>,
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_update_job_progress",
+    label: "Update Background Clip Job Progress",
+    description:
+      "Update the live stage and progress log of an active background VOD clip job in studio.db so the Clips app reflects realtime progress.",
+    parameters: Type.Object({
+      jobId: Type.String({ description: "Clip job ID (e.g. job_a1b2c3d4e5)" }),
+      stage: Type.String({ description: "Short stage label (e.g. 'Scanning chat hype', 'Cutting clip 1/3', 'Reviewing hook')" }),
+      message: Type.String({ description: "Concise status update for the Clips app log" }),
+      title: Type.Optional(Type.String({ description: "Optional discovered VOD title" })),
+    }),
+    async execute(_id, params) {
+      const updated = updateClipJob(params.jobId, {
+        stage: params.stage,
+        logMessage: params.message,
+        ...(params.title ? { title: params.title } : {}),
+      });
+      if (!updated) throw new Error(`Clip job not found: ${params.jobId}`);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, job: updated }, null, 2) }],
+        details: { ok: true, jobId: updated.id },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_save_clip",
+    label: "Save Clip to Clips Gallery",
+    description:
+      "Save a finished raw/prepped clip (.mp4 + optional .srt) with title, timestamps, hook score (1-10), and human-editor notes into studio.db so it appears in the Clips app ready for preview, download, and 1-click Box handoff.",
+    parameters: Type.Object({
+      jobId: Type.Optional(Type.String({ description: "Optional parent clip job ID" })),
+      videoId: Type.Optional(Type.String({ description: "11-character YouTube VOD video ID" })),
+      title: Type.String({ description: "Punchy clip title for the gallery" }),
+      filePath: Type.String({
+        description: "Workspace-relative or absolute path to the final .mp4 clip (e.g. 'clips/<id>/clip_01_prepped.mp4')",
+      }),
+      srtPath: Type.Optional(
+        Type.String({ description: "Workspace-relative or absolute path to the matching .srt caption file" })
+      ),
+      startSec: Type.Optional(Type.Number({ description: "Original VOD start timestamp in seconds" })),
+      endSec: Type.Optional(Type.Number({ description: "Original VOD end timestamp in seconds" })),
+      hookScore: Type.Optional(Type.Number({ description: "Hook strength score from 1 to 10" })),
+      editorNotes: Type.Optional(
+        Type.String({ description: "Concise notes for the human editor (hook timing, pacing, punchline, captions)" })
+      ),
+      youtubeUrl: Type.Optional(Type.String({ description: "Timestamped YouTube jump URL (https://youtu.be/<id>?t=...)" })),
+    }),
+    async execute(_id, params) {
+      const clip = upsertClipRecord({
+        jobId: params.jobId ?? null,
+        videoId: params.videoId,
+        title: params.title,
+        filePath: params.filePath,
+        srtPath: params.srtPath,
+        startSec: params.startSec ?? null,
+        endSec: params.endSec ?? null,
+        hookScore: params.hookScore ?? null,
+        editorNotes: params.editorNotes,
+        youtubeUrl: params.youtubeUrl,
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, clip }, null, 2) }],
+        details: { ok: true, clipId: clip.id },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_list_clip_jobs",
+    label: "List Background Clip Jobs",
+    description: "List recent background VOD clipping jobs and their current status/progress.",
+    parameters: Type.Object({
+      limit: Type.Optional(Type.Number({ description: "Max jobs to return (default: 10)" })),
+    }),
+    async execute(_id, params) {
+      const jobs = listClipJobs(params.limit ?? 10);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ jobs }, null, 2) }],
+        details: { count: jobs.length },
       };
     },
   });

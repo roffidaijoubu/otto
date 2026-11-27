@@ -14,6 +14,7 @@ export type BuiltinAppId =
   | "otto-chat"
   | "files"
   | "obs-overlays"
+  | "clips"
   | "ideas"
   | "analytics"
   | "calendar"
@@ -37,7 +38,8 @@ export type StudioAppIconName =
   | "contacts"
   | "settings"
   | "lightbulb"
-  | "chart";
+  | "chart"
+  | "scissors";
 
 export type SnapZone = "left" | "right" | "maximize";
 
@@ -221,6 +223,18 @@ export const STUDIO_APPS: readonly StudioAppDefinition[] = [
     defaultHeight: 660,
     dockSection: "primary",
     shortcutDigit: "3",
+  },
+  {
+    id: "clips",
+    title: "Clips",
+    shortLabel: "Clips",
+    icon: "scissors",
+    minWidth: 520,
+    minHeight: 420,
+    defaultWidth: 920,
+    defaultHeight: 660,
+    dockSection: "primary",
+    shortcutDigit: "9",
   },
   {
     id: "ideas",
