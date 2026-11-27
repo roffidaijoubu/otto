@@ -7,7 +7,7 @@
 <p align="center">
   <b>Otto OS turns one $0-idle Fly.io Sprite into a Cloud Studio OS for solo livestreamers: an 8-app creator desktop with live YouTube &amp; stream countdown widgets, a second auto-stop Fly Machine hosting live OBS overlays, one shared SQLite studio brain, deterministic VOD hype clipping with 1-click Box handoff to human editors, and 8 zero-key Sprites Connectors — zero API keys or session cookies in the VM, zero AI-generated art or video.</b>
   <br>
-  Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a> on <a href="https://sprites.dev">Sprites</a>, <a href="https://github.com/can1357/oh-my-pi">omp</a>, and Sprites Connectors.
+  Powered by <a href="https://github.com/can1357/oh-my-pi">Oh My Pi (<code>omp</code>)</a> on <a href="https://sprites.dev">Fly.io Sprites</a> &amp; Sprites Connectors · Built for <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving 2026</a>.
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@
 │        tight brief you can hand straight to your artist instead.              │
 │                                                                               │
 │        Everything else is done:                                               │
-│          1. Run-of-show saved to Studio Files (/scripts) & Content Pipeline   │
+│          1. Run-of-show saved to Studio Files (/scripts) & Ideas board        │
 │          2. Added to Calendar + synced to Google Calendar (T-1h check-in set) │
 │          3. Tailored X, TikTok & IG announcements queued as Buffer Drafts     │
 │                                                                               │
@@ -59,17 +59,17 @@ Meanwhile, most "AI creator tools" try to replace the exact craft your community
 
 ```mermaid
 flowchart LR
-    U["Otto Studio OS (Browser)<br/>7-App Window Manager · Desktop Widgets · Custom Studio Apps · Spotlight"] <-->|"HTTPS · SSE"| S["Fly.io Sprite: otto ($0 idle)<br/>Bun + omp RPC · SQLite WAL · workspace/"]
+    U["Otto Studio OS (Browser)<br/>8-App Window Manager · Desktop Widgets · Custom Studio Apps · Spotlight"] <-->|"HTTPS · SSE"| S["Fly.io Sprite: otto ($0 idle)<br/>Bun + Oh My Pi (omp) RPC · SQLite WAL · workspace/"]
     S -->|"Zero local keys"| G["Sprites Connector Gateway<br/>api.sprites.dev/v1/gateway"]
     G --> M["Google Gemini 4 Hydrogen<br/>(Brain + Multimodal Review)"]
-    G --> E["Exa, Firecrawl, YouTube, GCal, Buffer, QStash &amp; Fly Machines<br/>(Research, Social, Calendar, Wake-Ups &amp; Overlays)"]
+    G --> E["Exa, Firecrawl, YouTube, GCal, Buffer, Box, QStash &amp; Fly Machines<br/>(Research, Social, Handoffs, Calendar, Wake-Ups &amp; Overlays)"]
 ```
 
-- **`$0` idle, still proactive.** Signed QStash wake-ups plus a `/.sprite/api.sock` Tasks hold (5-minute heartbeat, hard 30-minute ceiling) fire pre-stream reminders and recurring `CRON_TZ` jobs while the Sprite sleeps ([`agent/extensions/qstash-scheduler.ts`](agent/extensions/qstash-scheduler.ts)).
+- **`$0` idle, still proactive.** Signed QStash wake-ups plus a `/.sprite/api.sock` Tasks hold (5-minute heartbeat, hard 30-minute ceiling) fire pre-stream reminders, daily zero-LLM YouTube metric snapshots, and recurring `CRON_TZ` jobs while the Sprite sleeps ([`agent/extensions/qstash-scheduler.ts`](agent/extensions/qstash-scheduler.ts)).
 - **Apps Otto writes for you.** `studio_app_create` installs a Custom Studio App as its own native desktop window with Otto's design tokens, running at opaque origin behind a tokenized `window.ottoApp` bridge that survives reloads ([`agent/lib/studio-apps.ts`](agent/lib/studio-apps.ts)).
 - **Overlays on their own machine.** One tool call provisions a 256 MB Fly Machine + 1 GB Volume through the Machines API — no Dockerfile, `autostop`, `min_machines_running: 0` — serving transparent 1080p OBS sources with mobile remote decks ([`agent/lib/obs-overlays.ts`](agent/lib/obs-overlays.ts)).
-- **One brain, two surfaces.** 5 SQLite WAL tables and a `realpathSync`-jailed workspace are shared by agent tools and the desktop, reconciled over one SSE stream the moment a tool finishes.
-- **Craft, not slop.** Four chat Z-scores with a 35-second lag pre-roll cut `.mp4` + `.srt` at −14 LUFS for human editors; `generate_image: deny` is enforced in tool policy, not in prose.
+- **One brain, two surfaces.** 5 SQLite WAL tables and a `realpathSync`-jailed workspace are shared by agent tools and the 8-app desktop (including dedicated **Ideas** and **Analytics** apps with direct YouTube Studio deep links), reconciled over one SSE stream the moment a tool finishes.
+- **Craft, not slop.** Four chat Z-scores with a 35-second lag pre-roll cut `.mp4` + `.srt` at −14 LUFS with 1-click **Box** handoff for human editors; `generate_image: deny` is enforced in tool policy, not in prose.
 
 <br>
 
@@ -115,12 +115,12 @@ Set me up with my own "Otto" personal Cloud Studio OS & Livestreamer Manager age
 2. Create a Sprite named "otto" and set it active (`sprite create --skip-console otto && sprite use otto`).
 3. Inside the Sprite, clone https://github.com/roffidaijoubu/otto.git into ~/lma and run `bash ~/lma/setup.sh` (installs omp, ffmpeg, yt-dlp, symlinks agent config/extensions, and initializes MEMORY.md).
 4. Inside the Sprite, check `curl -s https://api.sprites.dev/v1/gateway/list` and follow `docs/setup/README.md` to provision any missing Sprites Connectors (then re-run `bash ~/lma/setup.sh` so `~/.omp/agent/models.yml` is written):
-   - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl.
-   - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube + Google Calendar), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups).
+   - Required: Google Gemini (for LLM + multimodal review). Optional built-ins: Exa, Firecrawl, Box.
+   - Optional Custom API connectors via `sprite api`: `docs/setup/composio-youtube.md` (YouTube + Google Calendar), `docs/setup/buffer.md` (X/TikTok/IG), `docs/setup/qstash-scheduler.md` (proactive wake-ups), plus Fly Machines for OBS Overlays.
    - Do as much as possible via CLI; only ask me when you need an API key, OAuth click, or if a CLI step fails.
 ```
 
-> **Zero outbound API keys:** All 7 third-party API keys stay inside Fly.io's encrypted organization gateway — never inside the Sprite VM or this repository. `setup.sh` auto-generates your private Web UI passcode in `chmod 600 ~/.config/lma/web.env` and auto-discovers every authorized connector at runtime.
+> **Zero outbound API keys:** All 8 third-party API keys and OAuth tokens stay inside Fly.io's encrypted organization gateway — never inside the Sprite VM or this repository. `setup.sh` auto-generates your private Web UI passcode in `chmod 600 ~/.config/lma/web.env` and auto-discovers every authorized connector at runtime.
 
 ### Manual Setup (4 Commands)
 
@@ -174,10 +174,10 @@ Rather than turning `~/.omp/` into a messy git repo full of session logs and SQL
 | :--- | :--- |
 | [`agent/APPEND_SYSTEM.md`](agent/APPEND_SYSTEM.md) | Otto persona, pragmatic ops rules, strict no-AI-media guardrail, voice/character rules, and memory protocol |
 | [`agent/config.yml`](agent/config.yml) | Gemini-only model roles (`google/gemini-4-hydrogen:auto` + `gemini-3.5-flash-lite`), Mnemopi SQLite memory (`noEmbeddings: true`), and `generate_image: deny` |
-| [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts) | Shared **5-table** SQLite WAL database (`~/.omp/agent/studio.db`) for Calendar, Content Pipeline, Contacts, Channel Metrics &amp; Studio Meta |
-| [`agent/extensions/`](agent/extensions) | **11 extensions** exposing **38 registered `omp` tools** (Exa, Firecrawl, Composio YouTube/GCal, Buffer, QStash, Fly Machines `obs-overlays`, local `studio-apps`, VOD clipper, media review, `studio-db`) + `--new` CLI flag |
+| [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts) | Shared **5-table** SQLite WAL database (`~/.omp/agent/studio.db`) backing Calendar, Ideas (`content_pipeline`), Contacts, Analytics (`channel_metrics`) &amp; Studio Meta |
+| [`agent/extensions/`](agent/extensions) | **12 extensions** exposing **41 registered `omp` tools** (Exa, Firecrawl, Composio YouTube/GCal, Buffer, Box, QStash, Fly Machines `obs-overlays`, local `studio-apps`, VOD clipper, media review, `studio-db`) + `--new` CLI flag |
 | [`agent/skills/`](agent/skills) | **8 streamer skills**: 7 core ops &amp; craft skills (`onboarding`, `youtube-audit`, `stream-planner`, `social-promo`, `raw-clip-finder`, `studio-app-craft`, `obs-overlay-craft`) + 1 opt-in `streaming-coaching` skill |
-| [`web/`](web) | Bun RPC supervisor (`server.ts`, `workspace.ts`) + Vue 3 / Vite / `shadcn-vue` / Reka UI / Tailwind CSS v4 **Otto Studio OS** (7 wired desktop apps + live Desktop Widgets + dynamic Custom Studio App windows + Fly Machine `OBS Overlays` + `SpotlightCommand` + `OttoMascot` + `StudioSetupWizard`) |
+| [`web/`](web) | Bun RPC supervisor (`server.ts`, `workspace.ts`) + Vue 3 / Vite / `shadcn-vue` / Reka UI / Tailwind CSS v4 **Otto Studio OS** (8 wired desktop apps — incl. **Ideas**, **Analytics** w/ YouTube Studio links, **Studio Files** w/ 1-click Box handoff &amp; **System Settings** w/ inline `MEMORY.md` profile editing — plus live Desktop Widgets, dynamic Custom Studio App windows, Fly Machine `OBS Overlays`, `SpotlightCommand`, `OttoMascot` &amp; `StudioSetupWizard`) |
 | [`scripts/`](scripts) | Auto-checkpoint sync (`sync-initialized-checkpoint.sh`), headless OAuth dossier bootstrap (`bootstrap-dossier.sh`), **24-check** `verify-all.sh` (**25** with `--live`), &amp; 5 multi-turn E2E playbooks (`scripts/e2e/`) |
 | [`setup.sh`](setup.sh) | Idempotent bootstrap: installs `omp`, `ffmpeg`, `yt-dlp`, scaffolds `/home/sprite/workspace/`, builds `web/`, registers `lma-web`, and auto-bootstraps Draft Studio Profile |
 
@@ -198,10 +198,10 @@ Beyond zero-key **Sprites Connectors** and $0-idle auto-sleep (paired with **Ups
 
 Built actively during **Fly.io Hacksgiving 2026**:
 
-- ✅ **Otto Studio OS Multi-Window Cloud Desktop, Desktop Widgets, Custom Studio Apps &amp; Fly Machine OBS Overlays** (Vue 3 + Vite + `shadcn-vue` + Reka UI + Tailwind CSS v4, 7 wired draggable apps + live right-side Desktop Widgets for zero-LLM YouTube Metrics &amp; Next Stream Countdown + unlimited Desktop Custom Studio Apps with independent OS windows &amp; persistent `window.ottoApp` state + Fly Machine `256 MB`/1 GB Volume live OBS Overlays with SSE remote control decks, edge snapping, layout presets, `Cmd+K` Spotlight, pure-SVG 3D cursor-tracking Otto mascot, 3-step Setup Wizard w/ 413 IANA timezones, headless OAuth dossier bootstrap)
-- ✅ **Proactive QStash Ops &amp; 2-Way Google Calendar** (`CRON_TZ` timezone-aware schedules, QStash + `/.sprite/api.sock` Tasks API keep-alive hold, reschedule delta auto-re-arming + 2-way Google Calendar + RFC 5545 `.ics` `VALARM`s)
-- ✅ **Unified 2-Way Workspace + 5-Table SQLite WAL Studio DB + Creator Rolodex CRM** (`/home/sprite/workspace/` `realpathSync` jail w/ Range/206 &amp; 500 MB ZIP export; `~/.omp/agent/studio.db` w/ 10 agent tools &amp; live SSE sync; 3-pane human-team Contacts CRM)
-- ✅ **Zero-Key Sprites Connectors, Hard No-AI-Art Enforcement &amp; Deterministic VOD Clipper** (7 zero-key connectors, `generate_image: deny`, 12-thread InnerTube chat pull + 35s lag pre-roll + `-14 LUFS` CFR 30fps output, 480p/2fps FFmpeg multimodal proxy + SSRF guard, **24/24** deterministic checks)
+- ✅ **Otto Studio OS Multi-Window Cloud Desktop, Desktop Widgets, Custom Studio Apps &amp; Fly Machine OBS Overlays** (Vue 3 + Vite + `shadcn-vue` + Reka UI + Tailwind CSS v4, **8 wired draggable apps** — Otto Chat, Studio Files w/ 1-click Box handoff, OBS Overlays, Ideas, Analytics w/ YouTube Studio deep links, Calendar, Contacts, System Settings w/ inline `MEMORY.md` Creator &amp; Timezone editing — plus live right-side Desktop Widgets for zero-LLM YouTube Metrics &amp; Next Stream Countdown, unlimited Desktop Custom Studio Apps with independent OS windows &amp; persistent `window.ottoApp` state, Fly Machine `256 MB`/1 GB Volume live OBS Overlays with SSE remote control decks, edge snapping, layout presets, `Cmd+K` Spotlight, pure-SVG 3D cursor-tracking Otto mascot, and 3-step Setup Wizard w/ 413 IANA timezones)
+- ✅ **Proactive QStash Ops &amp; 2-Way Google Calendar** (`CRON_TZ` timezone-aware schedules, daily zero-LLM YouTube metrics sync, QStash + `/.sprite/api.sock` Tasks API keep-alive hold, reschedule delta auto-re-arming + 2-way Google Calendar + RFC 5545 `.ics` `VALARM`s)
+- ✅ **Unified 2-Way Workspace + 5-Table SQLite WAL Studio Brain + Creator Rolodex CRM** (`/home/sprite/workspace/` `realpathSync` jail w/ Range/206, 500 MB ZIP export &amp; 1-click Box handoff; `~/.omp/agent/studio.db` w/ 10 agent tools &amp; live SSE sync; 3-pane human-team Contacts CRM)
+- ✅ **Zero-Key Sprites Connectors, Hard No-AI-Art Enforcement &amp; Deterministic VOD Clipper** (**8 zero-key connectors**, `generate_image: deny`, 12-thread InnerTube chat pull + 35s lag pre-roll + `-14 LUFS` CFR 30fps output, 480p/2fps FFmpeg multimodal proxy + SSRF guard, **24/24** deterministic checks)
 - ⚠️ Final Hacksgiving demo video &amp; submission — ready to record.
 
 <br>
@@ -211,6 +211,7 @@ Built actively during **Fly.io Hacksgiving 2026**:
 ## Built By &amp; Acknowledgements
 
 - **Built by [Roffi Daijoubu](https://www.youtube.com/@roffi_daijoubu)** ([@Roffi_Daijoubu](https://x.com/Roffi_Daijoubu)) — an indie VTuber from Indonesia who built **Otto OS** to solve a real solo-creator bottleneck: keeping stream prep structured, titles sharp, social promos consistent, and raw VOD clips ready for human clippers and editors — without burning out or ever touching AI-generated art or video.
+- **Powered by [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi):** Otto runs on `omp` as its persistent agent runtime (RPC supervisor, extensions, skills, and Mnemopi SQLite memory) — and the stylized `tt` in the Otto logo is a direct nod to the Oh My Pi mark.
 - **Optional Coaching Skill Acknowledgement:** The opt-in `streaming-coaching` skill (activated only if a creator explicitly asks for streaming strategy or growth advice) is inspired by **[Ludwig Ahgren](https://www.youtube.com/@ludwig)**'s *Professor L* curriculum at **Streamer University** — specifically his [*"How to Get Lucky"* lecture](https://youtu.be/sXRtZaK1Nlw). *(Independent fan-built project; not affiliated with or endorsed by Ludwig Ahgren or Mogul Moves.)*
 
 <br>
