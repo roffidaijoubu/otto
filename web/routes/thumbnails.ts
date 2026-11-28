@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { runThumbnailWorker } from "../lib/background-job.ts";
 import { errorMessage } from "../lib/http.ts";
+import { rpc } from "../lib/rpc-bridge.ts";
+import { runManagedRpcWorker } from "../lib/rpc-worker.ts";
 import { broadcast } from "../lib/sse.ts";
 import {
   WORKSPACE_ROOT,
@@ -94,8 +96,34 @@ export function dispatchThumbnailBackgroundJob(opts: {
             .filter(Boolean)
             .join("\n");
 
-      const res = await runThumbnailWorker(targetSlug || "new", workerPrompt);
-      const data = (await res.json().catch(() => ({}))) as { reply?: string; error?: string };
+      void rpc.holdSpriteActive();
+      const workerResult = await runManagedRpcWorker({
+        jobId,
+        kind: "thumbnail",
+        tools:
+          "thumbnail_save,thumbnail_list,thumbnail_get,thumbnail_delete,thumbnail_render,box_list_assets,box_download_file,pixabay_search_backgrounds,pixabay_download_image,critique_thumbnail,read",
+        prompt: workerPrompt,
+        timeoutMs: 8 * 60 * 1000,
+        onToolStart: (_toolName, toolLabel) => {
+          void updateStudioJob(jobId, { stage: toolLabel }).catch(() => {});
+          broadcast({ type: "jobs_changed", jobId });
+        },
+        onBusyChange: (busy) => {
+          if (!busy) rpc.releaseSpriteHold();
+        },
+      });
+
+      if (workerResult.aborted) {
+        broadcast({
+          type: "thumbnail_job_finished",
+          jobId,
+          slug: targetSlug,
+          ok: false,
+          error: "Cancelled",
+        });
+        broadcast({ type: "jobs_changed", jobId });
+        return;
+      }
 
       let resolvedSlug = targetSlug;
       if (!resolvedSlug) {
@@ -106,21 +134,21 @@ export function dispatchThumbnailBackgroundJob(opts: {
         resolvedSlug = created?.slug || "";
       }
 
-      const errMsg = res.ok ? "" : data.error || "Thumbnail job failed";
+      const errMsg = workerResult.ok ? "" : workerResult.error || "Thumbnail job failed";
       await updateStudioJob(jobId, {
         targetSlug: resolvedSlug || targetSlug,
-        status: res.ok ? "done" : "failed",
-        stage: res.ok ? "Completed" : "Failed",
+        status: workerResult.ok ? "done" : "failed",
+        stage: workerResult.ok ? "Completed" : "Failed",
         error: errMsg,
-        logMessage: res.ok ? (data.reply || "Thumbnail saved.") : errMsg,
+        logMessage: workerResult.ok ? (workerResult.reply || "Thumbnail saved.") : errMsg,
       }).catch(() => {});
 
       broadcast({
         type: "thumbnail_job_finished",
         jobId,
         slug: resolvedSlug,
-        ok: res.ok,
-        reply: data.reply || "",
+        ok: workerResult.ok,
+        reply: workerResult.reply || "",
         error: errMsg,
       });
       broadcast({ type: "jobs_changed", jobId });

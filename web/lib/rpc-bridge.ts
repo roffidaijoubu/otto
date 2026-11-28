@@ -4,6 +4,7 @@ import { OMP_BIN, WORK_DIR } from "./config.ts";
 import { broadcast } from "./sse.ts";
 import { buildAgentChildEnv } from "./child-env.ts";
 import { isClipWorkerBusy } from "./clip-worker.ts";
+import { hasActiveManagedWorkers } from "./rpc-worker.ts";
 
 export interface TodoPhase {
   name: string;
@@ -42,6 +43,8 @@ export function friendlyToolLabel(toolName: string): string {
   if (/buffer/i.test(toolName)) return "Checking social channels...";
   if (/wakeup|schedule|calendar/i.test(toolName)) return "Managing schedule...";
   if (/^todo/i.test(toolName)) return "Updating checklist...";
+  if (/studio_job_nudge/i.test(toolName)) return "Steering background worker...";
+  if (/studio_job/i.test(toolName)) return "Checking background jobs...";
   if (/^studio_/i.test(toolName)) return "Updating studio database...";
   if (/vod_scan_hype/i.test(toolName)) return "Scanning VOD live chat & hype spikes...";
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
@@ -196,7 +199,7 @@ export class OmpRpcBridge {
   public backgroundBusy = false;
 
   public isAnyBusy(): boolean {
-    return this.busy || this.backgroundBusy || isClipWorkerBusy();
+    return this.busy || this.backgroundBusy || isClipWorkerBusy() || hasActiveManagedWorkers();
   }
 
   public async holdSpriteActive(): Promise<void> {

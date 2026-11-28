@@ -2,10 +2,18 @@ import { requireInternalSecret } from "../lib/internal-auth.ts";
 import { handleHybridChatCompletions } from "../lib/llm-router.ts";
 import { startClipJob } from "../lib/clip-service.ts";
 import { startBackgroundArchiveSync } from "../lib/archive-worker.ts";
+import {
+  cancelStudioJobById,
+  inspectStudioJobById,
+  listEnrichedStudioJobs,
+  nudgeStudioJobById,
+  resumeStudioJobById,
+} from "../lib/job-control.ts";
 import { dispatchObsOverlayBackgroundJob } from "./obs-overlays.ts";
 import { dispatchThumbnailBackgroundJob } from "./thumbnails.ts";
 import { broadcast } from "../lib/sse.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
+import type { StudioJobKind, StudioJobStatus } from "../../agent/lib/studio-db.ts";
 
 export async function handleInternalRoutes(req: Request, url: URL): Promise<Response | null> {
   // Internal OpenAI-compatible Hybrid LLM Router (Ollama primary -> Gemini circuit-breaker fallback)
@@ -158,6 +166,104 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
         includeShorts: body.includeShorts !== false,
         limit: typeof body.limit === "number" ? body.limit : undefined,
       });
+      return Response.json(result);
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Internal-only Studio Jobs visibility, live RPC nudging, resume, and cancel endpoints for Otto
+  if (req.method === "GET" && url.pathname === "/api/internal/jobs") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const kind = url.searchParams.get("kind") as StudioJobKind | null;
+    const status = url.searchParams.get("status") as StudioJobStatus | null;
+    const limit = Number(url.searchParams.get("limit") || 25);
+    const jobs = await listEnrichedStudioJobs({
+      kind: kind || undefined,
+      status: status || undefined,
+      limit: Number.isFinite(limit) ? limit : 25,
+    });
+    return Response.json({ ok: true, jobs });
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname.startsWith("/api/internal/jobs/") &&
+    !url.pathname.slice("/api/internal/jobs/".length).includes("/")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const id = decodeURIComponent(url.pathname.slice("/api/internal/jobs/".length)).trim();
+    const detail = await inspectStudioJobById(id);
+    if (!detail) return Response.json({ ok: false, error: `Job "${id}" not found` }, { status: 404 });
+    return Response.json({ ok: true, ...detail });
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.startsWith("/api/internal/jobs/") &&
+    url.pathname.endsWith("/nudge")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    try {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/internal/jobs/".length, -"/nudge".length)
+      ).trim();
+      const body = (await req.json().catch(() => ({}))) as {
+        message?: string;
+        mode?: "steer" | "follow_up";
+      };
+      const message = String(body.message || "").trim();
+      if (!message) return Response.json({ ok: false, error: "message is required" }, { status: 400 });
+      const mode = body.mode === "follow_up" ? "follow_up" : "steer";
+      const result = await nudgeStudioJobById(id, message, mode);
+      return Response.json(result);
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.startsWith("/api/internal/jobs/") &&
+    url.pathname.endsWith("/resume")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    try {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/internal/jobs/".length, -"/resume".length)
+      ).trim();
+      const result = await resumeStudioJobById(id);
+      return Response.json(result);
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.startsWith("/api/internal/jobs/") &&
+    url.pathname.endsWith("/cancel")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    try {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/internal/jobs/".length, -"/cancel".length)
+      ).trim();
+      const result = await cancelStudioJobById(id, "Otto");
       return Response.json(result);
     } catch (err) {
       return Response.json(

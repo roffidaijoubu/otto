@@ -20,6 +20,7 @@ import {
   type ClipPlanEntry,
   type ClipRecord,
 } from "../../agent/lib/studio-db.ts";
+import { cancelManagedWorker, runManagedRpcWorker } from "./rpc-worker.ts";
 
 export interface ClipWorkerHooks {
   ompBin: string;
@@ -86,6 +87,7 @@ export async function cancelBackgroundClipJob(
   onBusyChange: (busy: boolean) => void
 ): Promise<ClipJob | null> {
   cancelledJobs.add(jobId);
+  await cancelManagedWorker(jobId).catch(() => {});
   const proc = activeWorkers.get(jobId);
   if (proc) {
     try {
@@ -401,57 +403,45 @@ function launchClipWorkerLoop(
 
     const prompt = buildWorkerPrompt(effectiveJob, resumeRemaining, alreadySaved);
 
-    const proc = Bun.spawn(
-      [hooks.ompBin, "--no-session", "--tools", workerTools, "-p", prompt],
-      {
-        cwd: hooks.workDir,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        env: childEnv,
-      }
-    );
-
-    activeWorkers.set(job.id, proc);
-    hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
-
-    // Periodically notify connected Clips windows while the worker writes SQLite progress
+    // Periodically notify connected Clips windows while the worker writes progress
     const pollTimer = setInterval(() => {
       hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
     }, 2500);
 
-    let stderrTail = "";
-    (async () => {
-      if (!proc.stderr) return;
-      const reader = proc.stderr.getReader();
-      const decoder = new TextDecoder();
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          stderrTail = (stderrTail + decoder.decode(value, { stream: true })).slice(-1600);
-        }
-      } catch {
-        // ignore
-      }
-    })();
+    // Release preflight proc placeholder from activeWorkers — managed RPC registry now owns lifecycle
+    activeWorkers.delete(job.id);
+    hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
 
-    const code = await proc.exited;
+    const workerRes = await runManagedRpcWorker({
+      jobId: job.id,
+      kind: "clip",
+      tools: workerTools,
+      prompt,
+      env: childEnv,
+      ompBin: hooks.ompBin,
+      workDir: hooks.workDir,
+      timeoutMs: 30 * 60 * 1000,
+      onToolStart: () => {
+        hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
+        hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
+      },
+    });
+
     clearInterval(pollTimer);
     activeWorkers.delete(job.id);
-    const wasCancelled = cancelledJobs.delete(job.id);
+    const wasCancelled = cancelledJobs.delete(job.id) || workerRes.aborted;
     const current = await getClipJob(job.id);
 
     if (!wasCancelled && current && current.status === "running") {
       const savedForJob = await listClipRecords({ jobId: job.id, limit: 1 });
-      if (code === 0 && savedForJob.length > 0) {
+      if (workerRes.ok && savedForJob.length > 0) {
         await updateClipJob(job.id, {
           status: "done",
           stage: "Completed",
           logMessage: "Background clipper worker finished.",
         });
         await updateStudioJob(job.id, { status: "done", stage: "Completed", logMessage: "Clips ready." }).catch(() => {});
-      } else if (code === 0 && savedForJob.length === 0) {
+      } else if (workerRes.ok && savedForJob.length === 0) {
         const msg =
           current.progressLog[current.progressLog.length - 1]?.message ||
           "Worker finished without saving any clips.";
@@ -463,12 +453,12 @@ function launchClipWorkerLoop(
         });
         await updateStudioJob(job.id, { status: "failed", stage: "No clips produced", error: msg }).catch(() => {});
       } else {
-        const errText = stderrTail.trim() || `Worker exited with code ${code}`;
+        const errText = workerRes.error || `Worker exited with code ${workerRes.exitCode}`;
         await updateClipJob(job.id, {
           status: "failed",
           stage: "Failed",
           error: errText,
-          logMessage: `Background clipper worker exited with code ${code}.`,
+          logMessage: `Background clipper worker exited with error: ${errText.slice(0, 180)}`,
         });
         await updateStudioJob(job.id, { status: "failed", stage: "Failed", error: errText }).catch(() => {});
       }
