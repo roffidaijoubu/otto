@@ -1,10 +1,10 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
+import * as net from "net";
 import * as path from "path";
 import { HOME_DIR } from "./config.ts";
 import { buildAgentChildEnv } from "./child-env.ts";
 import { timingSafeStrEqual } from "./secure-compare.ts";
-import { isPrivateOrReservedIp } from "../../agent/lib/ssrf-guard.ts";
 
 const seenQStashTokens = new Map<string, number>();
 const MAX_SEEN_QSTASH_TOKENS = 2048;
@@ -13,19 +13,66 @@ export function resetSeenQStashTokens(): void {
   seenQStashTokens.clear();
 }
 
+function isLocalOrPrivateSocketIp(rawIp: string): boolean {
+  const clean = rawIp.trim().replace(/^\[|\]$/g, "").split("%")[0].toLowerCase();
+  const kind = net.isIP(clean);
+  if (kind === 4) {
+    const [a, b] = clean.split(".").map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+  if (kind === 6) {
+    if (clean === "::" || clean === "::1") return true;
+    if (clean.startsWith("::ffff:")) {
+      return isLocalOrPrivateSocketIp(clean.slice(7));
+    }
+    if (clean.startsWith("fc") || clean.startsWith("fd") || clean.startsWith("fe80:")) return true;
+    return false;
+  }
+  return true;
+}
+
+export interface VerifiedQStashToken {
+  ok: true;
+  replayKey: string;
+  expiresAtSec: number;
+}
+
+export function commitQStashReplayToken(replayKey: string, expiresAtSec: number): void {
+  const now = Math.floor(Date.now() / 1000);
+  if (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
+    for (const [k, expSec] of seenQStashTokens) {
+      if (expSec <= now) seenQStashTokens.delete(k);
+    }
+    while (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
+      const oldest = seenQStashTokens.keys().next().value;
+      if (oldest === undefined) break;
+      seenQStashTokens.delete(oldest);
+    }
+  }
+  seenQStashTokens.set(replayKey, expiresAtSec);
+}
+
 export function base64UrlDecode(str: string): Buffer {
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
   return Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
 }
 
-export function verifyQStashJwtWithKey(
+export function checkQStashJwtWithKey(
   token: string,
   rawBody: string,
   key: string,
   opts: { expectedSub?: string | null } = {}
-): boolean {
+): VerifiedQStashToken | null {
   const parts = token.split(".");
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return null;
   const [headerB64, payloadB64, sigB64] = parts;
 
   // Validate JWT header algorithm explicitly before trusting HMAC verification
@@ -33,28 +80,28 @@ export function verifyQStashJwtWithKey(
   try {
     header = JSON.parse(base64UrlDecode(headerB64).toString("utf8")) as Record<string, unknown>;
   } catch {
-    return false;
+    return null;
   }
-  if (header.alg !== "HS256") return false;
+  if (header.alg !== "HS256") return null;
 
   const expectedSig = crypto
     .createHmac("sha256", key)
     .update(`${headerB64}.${payloadB64}`)
     .digest("base64url");
-  if (!timingSafeStrEqual(sigB64, expectedSig)) return false;
+  if (!timingSafeStrEqual(sigB64, expectedSig)) return null;
 
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(base64UrlDecode(payloadB64).toString("utf8")) as Record<string, unknown>;
   } catch {
-    return false;
+    return null;
   }
 
   const now = Math.floor(Date.now() / 1000);
-  if (payload.iss !== "Upstash") return false;
-  if (typeof payload.exp === "number" && now > payload.exp + 30) return false;
-  if (typeof payload.nbf === "number" && now < payload.nbf - 30) return false;
-  if (typeof payload.body !== "string") return false;
+  if (payload.iss !== "Upstash") return null;
+  if (typeof payload.exp === "number" && now > payload.exp + 30) return null;
+  if (typeof payload.nbf === "number" && now < payload.nbf - 30) return null;
+  if (typeof payload.body !== "string") return null;
 
   // Enforce destination binding (fail-closed on missing or mismatched `sub`)
   const configuredPublicUrl = process.env.LMA_PUBLIC_URL?.trim();
@@ -66,18 +113,18 @@ export function verifyQStashJwtWithKey(
         : null;
   if (expectedSub) {
     if (typeof payload.sub !== "string" || payload.sub !== expectedSub) {
-      return false;
+      return null;
     }
   } else if (typeof payload.sub === "string") {
     // Even without LMA_PUBLIC_URL configured, block tokens minted for non-wakeup endpoints
     try {
       const subUrl = new URL(payload.sub);
-      if (subUrl.pathname.replace(/\/+$/, "") !== "/api/wakeup") return false;
+      if (subUrl.pathname.replace(/\/+$/, "") !== "/api/wakeup") return null;
     } catch {
-      return false;
+      return null;
     }
   } else {
-    return false;
+    return null;
   }
 
   const actualHashB64Url = crypto.createHash("sha256").update(rawBody).digest("base64url");
@@ -87,10 +134,11 @@ export function verifyQStashJwtWithKey(
     !timingSafeStrEqual(claimed, actualHashB64Url) &&
     !timingSafeStrEqual(payload.body, actualHashB64)
   ) {
-    return false;
+    return null;
   }
 
-  // Enforce single-use replay deduplication via `jti` (or full token SHA-256 fallback)
+  // Check single-use replay deduplication via `jti` (or token SHA-256 fallback)
+  // without consuming yet so retryable 503/500 responses do not poison legitimate QStash retries.
   const replayKey =
     typeof payload.jti === "string" && payload.jti.trim()
       ? `jti:${payload.jti.trim()}`
@@ -98,23 +146,25 @@ export function verifyQStashJwtWithKey(
   const existingExp = seenQStashTokens.get(replayKey);
   if (existingExp !== undefined) {
     if (existingExp > now) {
-      return false;
+      return null;
     }
     seenQStashTokens.delete(replayKey);
   }
-  if (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
-    for (const [k, expSec] of seenQStashTokens) {
-      if (expSec <= now) seenQStashTokens.delete(k);
-    }
-    while (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
-      const oldest = seenQStashTokens.keys().next().value;
-      if (oldest === undefined) break;
-      seenQStashTokens.delete(oldest);
-    }
-  }
   const expiresAtSec = typeof payload.exp === "number" ? payload.exp + 30 : now + 300;
-  seenQStashTokens.set(replayKey, expiresAtSec);
+  return { ok: true, replayKey, expiresAtSec };
+}
 
+export function verifyQStashJwtWithKey(
+  token: string,
+  rawBody: string,
+  key: string,
+  opts: { expectedSub?: string | null; consume?: boolean } = {}
+): boolean {
+  const verified = checkQStashJwtWithKey(token, rawBody, key, opts);
+  if (!verified) return false;
+  if (opts.consume !== false) {
+    commitQStashReplayToken(verified.replayKey, verified.expiresAtSec);
+  }
   return true;
 }
 
@@ -136,7 +186,7 @@ export function getClientKey(
   const socketIp = server?.requestIP(req)?.address?.trim() || "";
   // Direct public socket peers cannot spoof proxy headers; only trust Fly/XFF headers
   // when the peer socket is a local/private edge proxy (or unavailable in unit tests).
-  if (socketIp && !isPrivateOrReservedIp(socketIp)) {
+  if (socketIp && !isLocalOrPrivateSocketIp(socketIp)) {
     return socketIp;
   }
   const flyIp = req.headers.get("fly-client-ip")?.trim();
@@ -263,13 +313,27 @@ export function computeGuardrailStatus(): {
   };
 }
 
-export function verifyUpstashSignature(req: Request, rawBody: string): boolean {
+export function verifyUpstashSignatureWithReceipt(
+  req: Request,
+  rawBody: string
+): VerifiedQStashToken | null {
   const sig = req.headers.get("upstash-signature") || "";
-  if (!sig) return false;
+  if (!sig) return null;
   const keys = [
     process.env.QSTASH_CURRENT_SIGNING_KEY,
     process.env.QSTASH_NEXT_SIGNING_KEY,
   ].filter((k): k is string => Boolean(k));
-  if (keys.length === 0) return false;
-  return keys.some((k) => verifyQStashJwtWithKey(sig, rawBody, k));
+  if (keys.length === 0) return null;
+  for (const k of keys) {
+    const verified = checkQStashJwtWithKey(sig, rawBody, k);
+    if (verified) return verified;
+  }
+  return null;
+}
+
+export function verifyUpstashSignature(req: Request, rawBody: string): boolean {
+  const verified = verifyUpstashSignatureWithReceipt(req, rawBody);
+  if (!verified) return false;
+  commitQStashReplayToken(verified.replayKey, verified.expiresAtSec);
+  return true;
 }

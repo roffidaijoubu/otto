@@ -344,13 +344,15 @@ export class OmpRpcBridge {
       this.inFlightWatchdog = null;
       this.inFlightWatchdogMs = 0;
       if (!this.busy) return;
-      console.warn("[lma-web] In-flight RPC turn watchdog expired without agent_end; clearing busy flag.");
+      console.warn("[lma-web] Active RPC turn watchdog expired without agent_end; aborting turn and clearing busy flag.");
+      // Actively abort the hung omp turn so it cannot stream interleaved output into a subsequent prompt
+      void this.sendCommand("abort", {}, 5_000).catch(() => {});
       this.busy = false;
       this.activity = "Thinking...";
       this.releaseSpriteHold();
       broadcast({
         type: "error",
-        message: "Assistant turn timed out without completing; ready for next message.",
+        message: "Assistant turn timed out without completing; aborted and ready for next message.",
       });
       broadcast({ type: "done" });
     }, ms);
@@ -667,13 +669,17 @@ export class OmpRpcBridge {
     broadcast({ type: "activity", label: this.activity });
     try {
       await this.sendCommand("prompt", { message }, opts.ackTimeoutMs ?? 30_000);
+      // Arm silent-hang watchdog on the normal post-ack path too so provider stalls never wedge busy=true
+      if (this.busy) {
+        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS);
+      }
       return { accepted: true };
     } catch (err) {
       const isTimeout = err instanceof Error && /timed out/i.test(err.message);
       const procAlive = this.proc ? this.proc.exitCode === null : false;
       if (isTimeout && procAlive) {
         // Long multi-tool turns (e.g. VOD clipping) can exceed the initial RPC ack window while
-        // still streaming normally over SSE; keep busy + Sprite hold active and arm a silent-hang watchdog.
+        // still streaming normally over SSE; keep busy + Sprite hold active and arm the aborting watchdog.
         console.warn("[lma-web] prompt RPC ack window elapsed while turn is still active; continuing via SSE");
         this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS);
         return { accepted: true, inFlight: true };

@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fetchSafePublicHttpsBuffer, type PinnedHttpsFetchOptions } from "./ssrf-guard.ts";
 
 const GATEWAY_LIST_URL = "https://api.sprites.dev/v1/gateway/list";
 const AI_TAG_REGEX = /\b(ai[- ]?generated|midjourney|stable[- ]?diffusion|dall-?e|generative[- ]?ai)\b/i;
@@ -175,9 +176,20 @@ export async function searchPixabayBackgrounds(opts: {
   };
 }
 
+function assertPixabayHost(url: URL): void {
+  if (url.protocol !== "https:") {
+    throw new Error("Only HTTPS Pixabay URLs are allowed.");
+  }
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  if (host !== "pixabay.com" && host !== "cdn.pixabay.com" && !host.endsWith(".pixabay.com")) {
+    throw new Error(`Blocked non-Pixabay host: ${host}`);
+  }
+}
+
 export async function downloadPixabayImage(
   imageUrl: string,
-  destAbsPath: string
+  destAbsPath: string,
+  fetchOpts: Pick<PinnedHttpsFetchOptions, "lookupFn" | "requestImpl" | "maxBytes"> = {}
 ): Promise<{ size: number; destAbsPath: string; contentType: string }> {
   let parsed: URL;
   try {
@@ -185,26 +197,26 @@ export async function downloadPixabayImage(
   } catch {
     throw new Error("Invalid Pixabay image URL.");
   }
-  if (parsed.protocol !== "https:") {
-    throw new Error("Only HTTPS Pixabay URLs are allowed.");
-  }
-  const host = parsed.hostname.toLowerCase();
-  if (host !== "pixabay.com" && host !== "cdn.pixabay.com" && !host.endsWith(".pixabay.com")) {
-    throw new Error(`Blocked non-Pixabay host: ${host}`);
-  }
+  assertPixabayHost(parsed);
 
-  const res = await fetch(parsed.toString(), { signal: AbortSignal.timeout(30_000) });
-  if (!res.ok) {
-    throw new Error(`Failed to download Pixabay image (HTTP ${res.status})`);
-  }
-  const contentType = res.headers.get("content-type") || "image/jpeg";
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length === 0) throw new Error("Downloaded Pixabay image was empty.");
-  if (buf.length > 15 * 1024 * 1024) {
-    throw new Error("Downloaded Pixabay image exceeds 15 MiB limit.");
+  const fetched = await fetchSafePublicHttpsBuffer(parsed.toString(), {
+    maxBytes: fetchOpts.maxBytes ?? 15 * 1024 * 1024,
+    maxRedirects: 4,
+    timeoutMs: 30_000,
+    lookupFn: fetchOpts.lookupFn,
+    requestImpl: fetchOpts.requestImpl,
+  });
+  // Ensure any redirect destination remained on an allowed Pixabay host
+  assertPixabayHost(new URL(fetched.finalUrl));
+  if (fetched.bytes.length === 0) {
+    throw new Error("Downloaded Pixabay image was empty.");
   }
 
   fs.mkdirSync(path.dirname(destAbsPath), { recursive: true });
-  fs.writeFileSync(destAbsPath, buf);
-  return { size: buf.length, destAbsPath, contentType };
+  fs.writeFileSync(destAbsPath, fetched.bytes);
+  return {
+    size: fetched.bytes.length,
+    destAbsPath,
+    contentType: fetched.contentType || "image/jpeg",
+  };
 }

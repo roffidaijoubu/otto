@@ -1,4 +1,7 @@
-import { verifyUpstashSignature } from "../lib/qstash.ts";
+import {
+  commitQStashReplayToken,
+  verifyUpstashSignatureWithReceipt,
+} from "../lib/qstash.ts";
 import { syncAllMetrics, resolveTimezone } from "../lib/metrics-service.ts";
 import { runScheduledAutoSnapshot } from "../lib/checkpoints.ts";
 import { startSilentBackgroundJob } from "../lib/background-job.ts";
@@ -10,7 +13,8 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
   // Cryptographically signed Upstash QStash wake-up webhook
   if (req.method === "POST" && url.pathname === "/api/wakeup") {
     const rawBody = await req.text();
-    if (!verifyUpstashSignature(req, rawBody)) {
+    const receipt = verifyUpstashSignatureWithReceipt(req, rawBody);
+    if (!receipt) {
       return Response.json({ error: "Invalid Upstash-Signature" }, { status: 401 });
     }
     let payload: Record<string, unknown> = {};
@@ -24,6 +28,9 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     // Deterministic zero-LLM daily workspace snapshot (Fly.io Sprite Checkpoint)
     if (payload.mode === "checkpoint") {
       const res = await runScheduledAutoSnapshot();
+      if (res.ok) {
+        commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+      }
       return Response.json(
         { ok: res.ok, mode: "checkpoint", label, id: res.id, comment: res.comment, error: res.error },
         { status: res.ok ? 200 : 500 }
@@ -34,7 +41,10 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     if (payload.mode === "metrics_sync") {
       const { ytRes, socialRes } = await syncAllMetrics(resolveTimezone());
       const anyOk = ytRes.ok || socialRes.some((r) => r.ok);
-      if (anyOk) broadcast({ type: "db_changed" });
+      if (anyOk) {
+        commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+        broadcast({ type: "db_changed" });
+      }
       return Response.json(
         {
           ok: anyOk,
@@ -59,6 +69,7 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
           ? "background"
           : "wakeup";
 
+    // Do NOT consume replay token when busy: QStash retries after Retry-After with the same jti
     if (rpc.isAnyBusy()) {
       return Response.json(
         { error: "Agent busy; retry shortly" },
@@ -75,6 +86,7 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
         releaseBg();
         throw err;
       }
+      commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
       startSilentBackgroundJob({ label, prompt, jobType, releaseBg });
       return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
     }
@@ -89,11 +101,13 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
       console.error("[lma-web] wakeup prompt error:", errorMessage(err));
       rpc.busy = false;
       rpc.releaseSpriteHold();
+      // Do NOT consume replay token on 503 dispatch failure so QStash retry succeeds
       return Response.json(
         { error: "Failed to dispatch wake-up; retry shortly" },
         { status: 503, headers: { "Retry-After": "15" } }
       );
     }
+    commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
     return Response.json({ ok: true, mode: "chat", label });
   }
 

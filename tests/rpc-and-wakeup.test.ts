@@ -20,7 +20,7 @@ const {
 const { handleWakeupRoutes } = await import("../web/routes/wakeup.ts");
 const { resetSeenQStashTokens } = await import("../web/lib/qstash.ts");
 
-function signWakeupJwt(body: string, key: string): string {
+function signWakeupJwt(body: string, key: string, jti?: string): string {
   const now = Math.floor(Date.now() / 1000);
   const hash = crypto.createHash("sha256").update(body).digest("base64url");
   const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
@@ -28,6 +28,7 @@ function signWakeupJwt(body: string, key: string): string {
     JSON.stringify({
       iss: "Upstash",
       sub: "https://otto.sprites.app/api/wakeup",
+      ...(jti ? { jti } : {}),
       exp: now + 300,
       body: hash,
     })
@@ -158,16 +159,34 @@ describe("OmpRpcBridge concurrency, TOCTOU lock & long-turn timeout handling", (
     assert.equal(b.busy, false);
   });
 
-  it("auto-clears busy via silent-hang watchdog if an inFlight turn never emits agent_end", async () => {
-    const b = new OmpRpcBridge({ autoSpawn: false });
-    attachFakeRpcProc(b, { autoAck: false });
-
-    const res = await b.prompt("Silently hung turn", { ackTimeoutMs: 25, watchdogMs: 60 });
-    assert.deepEqual(res, { accepted: true, inFlight: true });
-    assert.equal(b.busy, true);
+  it("actively aborts and clears busy via watchdog on both ack-timeout and normal post-ack hangs", async () => {
+    // Case 1: Ack-timeout inFlight turn that hangs silently
+    const b1 = new OmpRpcBridge({ autoSpawn: false });
+    const { written: written1 } = attachFakeRpcProc(b1, { autoAck: false });
+    const res1 = await b1.prompt("Silently hung turn", { ackTimeoutMs: 25, watchdogMs: 60 });
+    assert.deepEqual(res1, { accepted: true, inFlight: true });
+    assert.equal(b1.busy, true);
 
     await new Promise((r) => setTimeout(r, 110));
-    assert.equal(b.busy, false);
+    assert.equal(b1.busy, false);
+    assert.ok(
+      written1.some((line) => JSON.parse(line).type === "abort"),
+      "Watchdog must send RPC abort to omp before clearing busy on ack-timeout hang"
+    );
+
+    // Case 2: Normal prompt ack succeeds quickly, then provider stalls with no agent_end
+    const b2 = new OmpRpcBridge({ autoSpawn: false });
+    const { written: written2 } = attachFakeRpcProc(b2, { autoAck: true });
+    const res2 = await b2.prompt("Post-ack hung turn", { ackTimeoutMs: 500, watchdogMs: 60 });
+    assert.deepEqual(res2, { accepted: true });
+    assert.equal(b2.busy, true);
+
+    await new Promise((r) => setTimeout(r, 110));
+    assert.equal(b2.busy, false);
+    assert.ok(
+      written2.some((line) => JSON.parse(line).type === "abort"),
+      "Watchdog must also abort and recover normal post-ack stalled turns"
+    );
   });
 
   it("clears busy and throws on explicit RPC failure", async () => {
@@ -222,18 +241,51 @@ describe("handleWakeupRoutes security & busy dispatch", () => {
     assert.equal(res503?.headers.get("retry-after"), "15");
   });
 
-  it("dispatches signed chat wake-up while holding rpc.busy continuously (no TOCTOU gap)", async () => {
+  it("dispatches signed chat wake-up while holding rpc.busy continuously (no TOCTOU gap) and keeps 503 retries unpoisoned while blocking post-200 replays", async () => {
     const { written } = attachFakeRpcProc(rpc, { autoAck: true });
     const body = JSON.stringify({ label: "T-1h Reminder", prompt: "Prep stream checklist" });
-    const req = new Request("https://otto.sprites.app/api/wakeup", {
-      method: "POST",
-      headers: { "upstash-signature": signWakeupJwt(body, "sig_wakeup_test_key") },
-      body,
-    });
-    const res = await handleWakeupRoutes(req, new URL(req.url));
-    assert.equal(res?.status, 200);
+    const signedJwt = signWakeupJwt(body, "sig_wakeup_test_key", "msg_retry_safe_001");
+
+    // 1. Agent is busy -> returns 503 Retry-After: 15 WITHOUT consuming the single-use jti
+    rpc.busy = true;
+    const busyRes = await handleWakeupRoutes(
+      new Request("https://otto.sprites.app/api/wakeup", {
+        method: "POST",
+        headers: { "upstash-signature": signedJwt },
+        body,
+      }),
+      new URL("https://otto.sprites.app/api/wakeup")
+    );
+    assert.equal(busyRes?.status, 503);
+    assert.equal(busyRes?.headers.get("retry-after"), "15");
+    assert.equal(written.length, 0);
+
+    // 2. QStash retries with the EXACT SAME jti once agent is free -> succeeds with 200 OK
+    rpc.busy = false;
+    const retryRes = await handleWakeupRoutes(
+      new Request("https://otto.sprites.app/api/wakeup", {
+        method: "POST",
+        headers: { "upstash-signature": signedJwt },
+        body,
+      }),
+      new URL("https://otto.sprites.app/api/wakeup")
+    );
+    assert.equal(retryRes?.status, 200);
     assert.equal(rpc.busy, true);
     assert.equal(written.length, 1);
     assert.match(written[0], /SCHEDULED WAKE-UP: T-1h Reminder/);
+
+    // 3. Replaying the already-accepted JWT/jti after 200 OK is rejected with 401
+    rpc.busy = false;
+    const replayRes = await handleWakeupRoutes(
+      new Request("https://otto.sprites.app/api/wakeup", {
+        method: "POST",
+        headers: { "upstash-signature": signedJwt },
+        body,
+      }),
+      new URL("https://otto.sprites.app/api/wakeup")
+    );
+    assert.equal(replayRes?.status, 401);
+    assert.equal(written.length, 1);
   });
 });

@@ -8,6 +8,8 @@
  *  3. Cleanly abort and kill stuck or cancelled workers
  */
 
+import { spawn as nodeSpawn } from "node:child_process";
+import { Readable } from "node:stream";
 import { OMP_BIN, WORK_DIR } from "./config.ts";
 import { buildAgentChildEnv } from "./child-env.ts";
 import {
@@ -18,6 +20,58 @@ import {
 } from "./rpc-bridge.ts";
 import { updateStudioJob, type StudioJobKind } from "../../agent/lib/studio-db.ts";
 import { broadcast } from "./sse.ts";
+
+interface SpawnedRpcProc {
+  stdin: { write: (data: string) => unknown; end: () => unknown } | null;
+  stdout: ReadableStream<Uint8Array> | null;
+  stderr: ReadableStream<Uint8Array> | null;
+  exited: Promise<number | null>;
+  kill: () => void;
+}
+
+function spawnRpcChild(
+  args: string[],
+  opts: { cwd: string; env: Record<string, string | undefined> }
+): SpawnedRpcProc {
+  if (typeof (globalThis as Record<string, unknown>).Bun !== "undefined") {
+    return Bun.spawn(args, {
+      cwd: opts.cwd,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: opts.env,
+    }) as unknown as SpawnedRpcProc;
+  }
+
+  const [cmd, ...rest] = args;
+  const child = nodeSpawn(cmd, rest, {
+    cwd: opts.cwd,
+    env: opts.env as NodeJS.ProcessEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const exited = new Promise<number | null>((resolve) => {
+    child.once("exit", (code) => resolve(code));
+    child.once("error", () => resolve(1));
+  });
+  return {
+    stdin: child.stdin
+      ? {
+          write: (data: string) => child.stdin!.write(data),
+          end: () => child.stdin!.end(),
+        }
+      : null,
+    stdout: child.stdout ? (Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>) : null,
+    stderr: child.stderr ? (Readable.toWeb(child.stderr) as unknown as ReadableStream<Uint8Array>) : null,
+    exited,
+    kill: () => {
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
 
 export interface LiveWorkerEvent {
   at: string;
@@ -42,7 +96,7 @@ export interface LiveWorkerSnapshot {
 interface ManagedWorkerHandle {
   jobId: string;
   kind: StudioJobKind;
-  proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+  proc: SpawnedRpcProc;
   startedAtMs: number;
   startedAt: string;
   currentTool: string | null;
@@ -178,6 +232,7 @@ export async function runManagedRpcWorker(opts: {
   prompt: string;
   env?: Record<string, string | undefined>;
   ompBin?: string;
+  command?: string[];
   workDir?: string;
   timeoutMs?: number;
   onToolStart?: (toolName: string, label: string) => void;
@@ -187,18 +242,14 @@ export async function runManagedRpcWorker(opts: {
   const childEnv = opts.env ?? buildAgentChildEnv();
   const ompBin = opts.ompBin || OMP_BIN;
   const workDir = opts.workDir || WORK_DIR;
-  const args = [ompBin, "--mode", "rpc", "--no-ui", "--no-session"];
-  if (opts.tools.trim()) {
+  const args = opts.command
+    ? [...opts.command]
+    : [ompBin, "--mode", "rpc", "--no-ui", "--no-session"];
+  if (!opts.command && opts.tools.trim()) {
     args.push("--tools", opts.tools.trim());
   }
 
-  const proc = Bun.spawn(args, {
-    cwd: workDir,
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: childEnv,
-  });
+  const proc = spawnRpcChild(args, { cwd: workDir, env: childEnv });
 
   const pending = new Map<string, PendingRequest>();
   let reqCounter = 0;
@@ -219,13 +270,14 @@ export async function runManagedRpcWorker(opts: {
     return new Promise((resolve) => {
       readyResolvers.push(resolve);
       // Safety fallback in case ready event was missed or delayed
-      setTimeout(() => {
+      const t = setTimeout(() => {
         if (!ready) {
           ready = true;
           for (const r of readyResolvers) r();
           readyResolvers = [];
         }
       }, 4000);
+      t.unref?.();
     });
   };
 
@@ -235,14 +287,15 @@ export async function runManagedRpcWorker(opts: {
     const id = `wreq-${++reqCounter}`;
     const line = JSON.stringify({ id, type, ...extra }) + "\n";
     const { promise, resolve, reject } = Promise.withResolvers<unknown>();
-    pending.set(id, { resolve, reject });
-    proc.stdin.write(line);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (pending.has(id)) {
         pending.delete(id);
         reject(new Error(`Worker RPC command "${type}" timed out`));
       }
     }, 20_000);
+    timer.unref?.();
+    pending.set(id, { resolve, reject, timer });
+    proc.stdin.write(line);
     return promise;
   };
 
@@ -330,6 +383,7 @@ export async function runManagedRpcWorker(opts: {
           if (ev.type === "response" && ev.id && pending.has(ev.id)) {
             const p = pending.get(ev.id)!;
             pending.delete(ev.id);
+            if (p.timer) clearTimeout(p.timer);
             if (ev.success === false) {
               p.reject(new Error(ev.error || `Worker command ${ev.command ?? "unknown"} failed`));
             } else {
@@ -438,6 +492,7 @@ export async function runManagedRpcWorker(opts: {
     }
     const [exitCode] = await Promise.all([proc.exited.catch(() => null), stdoutPromise, stderrPromise]);
     for (const [, p] of pending) {
+      if (p.timer) clearTimeout(p.timer);
       p.reject(new Error("Worker exited"));
     }
     pending.clear();
