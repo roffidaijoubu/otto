@@ -37,7 +37,11 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import CanvasRefiningOverlay from "@/components/CanvasRefiningOverlay.vue";
+import StudioRefineChat from "@/components/StudioRefineChat.vue";
+import { streamRefineRequest, type RefineChatMessage } from "@/lib/refine-stream";
 import { playSound } from "@/lib/sounds";
+import type { TraceStep } from "@/types/chat";
 
 interface ObsOverlayItem {
   slug: string;
@@ -104,13 +108,13 @@ const createAttachments = ref<UploadedAttachment[]>([]);
 const createFileInputRef = ref<HTMLInputElement | null>(null);
 
 // Isolated per-overlay Refine with Otto chat state (never pollutes main Otto Chat)
-const refineInput = ref("");
 const refining = ref(false);
 const refineAttachments = ref<UploadedAttachment[]>([]);
-const refineFileInputRef = ref<HTMLInputElement | null>(null);
 const uploadingImage = ref(false);
-const refineThreads = ref<Record<string, RefineMessage[]>>({});
-const refineScrollRef = ref<HTMLElement | null>(null);
+const refineThreads = ref<Record<string, RefineChatMessage[]>>({});
+const liveRefineText = ref("");
+const liveRefineThinking = ref("");
+const liveRefineSteps = ref<TraceStep[]>([]);
 
 // ResizeObserver for true 1920x1080 aspect-ratio scaling on Detail stage
 const stageWrapRef = ref<HTMLElement | null>(null);
@@ -260,13 +264,13 @@ async function copyUrl(ov: ObsOverlayItem, kind: "obs" | "remote") {
   }
 }
 
-async function sendRefine(instructionOverride?: string) {
+async function sendRefine(instruction: string) {
   const ov = selectedOverlay.value;
-  const text = (instructionOverride ?? refineInput.value).trim();
+  const text = instruction.trim();
   if (!ov || !text || refining.value) return;
 
   const slug = ov.slug;
-  const attachedPaths = instructionOverride ? [] : refineAttachments.value.map((a) => a.workspacePath);
+  const attachedPaths = refineAttachments.value.map((a) => a.workspacePath);
   const attachNote =
     attachedPaths.length > 0 ? ` [${attachedPaths.length} image${attachedPaths.length > 1 ? "s" : ""} attached]` : "";
 
@@ -281,38 +285,51 @@ async function sendRefine(instructionOverride?: string) {
     role: "user",
     text: text + attachNote,
   });
-  if (!instructionOverride) {
-    refineInput.value = "";
-    refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
-    refineAttachments.value = [];
-  }
+  refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+  refineAttachments.value = [];
+
   refining.value = true;
+  liveRefineText.value = "";
+  liveRefineThinking.value = "";
+  liveRefineSteps.value = [];
   playSound("chat_send");
-  await scrollRefineToBottom();
 
   try {
-    const res = await fetch(`/api/obs-overlays/${encodeURIComponent(slug)}/refine`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const out = await streamRefineRequest(
+      `/api/obs-overlays/${encodeURIComponent(slug)}/refine`,
+      {
         instruction: text,
         title: ov.title,
         attachedImages: attachedPaths,
         history: historySnapshot,
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      ok?: boolean;
-      reply?: string;
-      error?: string;
-    };
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || `Refine failed (${res.status})`);
-    }
+      },
+      {
+        onThinkingDelta: (delta) => {
+          liveRefineThinking.value += delta;
+        },
+        onTextDelta: (delta) => {
+          liveRefineText.value += delta;
+        },
+        onToolStart: (toolName, label) => {
+          liveRefineSteps.value = [
+            ...liveRefineSteps.value,
+            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, toolName, label, done: false },
+          ];
+        },
+        onToolEnd: (toolName) => {
+          const next = [...liveRefineSteps.value];
+          const open = [...next].reverse().find((s) => s.toolName === toolName && !s.done);
+          if (open) open.done = true;
+          liveRefineSteps.value = next;
+        },
+      }
+    );
     refineThreads.value[slug].push({
       id: `a_${Date.now()}`,
       role: "assistant",
-      text: data.reply || "Overlay updated.",
+      text: out.reply || "Overlay updated.",
+      thinking: liveRefineThinking.value.trim() || undefined,
+      steps: liveRefineSteps.value.length > 0 ? liveRefineSteps.value.map((s) => ({ ...s, done: true })) : undefined,
     });
     frameKey.value += 1;
     await loadOverlays(slug, true);
@@ -324,20 +341,22 @@ async function sendRefine(instructionOverride?: string) {
       id: `e_${Date.now()}`,
       role: "assistant",
       text: `Error: ${msg}`,
+      thinking: liveRefineThinking.value.trim() || undefined,
+      steps: liveRefineSteps.value.length > 0 ? liveRefineSteps.value.map((s) => ({ ...s, done: true })) : undefined,
     });
     playSound("error");
     toast.error(msg);
   } finally {
     refining.value = false;
-    await scrollRefineToBottom();
+    liveRefineText.value = "";
+    liveRefineThinking.value = "";
+    liveRefineSteps.value = [];
   }
 }
 
-function handleRefineKeydown(e: KeyboardEvent) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    void sendRefine();
-  }
+function removeRefineAttachmentByPath(workspacePath: string) {
+  const idx = refineAttachments.value.findIndex((a) => a.workspacePath === workspacePath);
+  if (idx >= 0) removeAttachment("refine", idx);
 }
 
 async function confirmDeleteOverlay() {
@@ -883,14 +902,7 @@ defineExpose({
                 />
               </div>
 
-              <!-- Subtle Refining Overlay Indicator -->
-              <div
-                v-if="refining"
-                class="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-black/15 bg-white/95 px-3 py-1.5 font-mono text-[11px] font-medium text-[#171717] shadow-sm"
-              >
-                <Loader2Icon class="size-3.5 animate-spin" />
-                <span>Otto is refining this overlay...</span>
-              </div>
+              <CanvasRefiningOverlay :active="refining" label="Refining..." />
             </div>
           </div>
 
@@ -910,153 +922,37 @@ defineExpose({
                 <ExternalLinkIcon class="size-3" />
               </a>
             </div>
-            <iframe
-              :key="`ctl-${selectedOverlay.slug}-${frameKey}`"
-              :src="selectedOverlay.controlUrl"
-              class="min-h-0 w-full flex-1 border-0 bg-[#FAFAFA]"
-              :title="`${selectedOverlay.title} Remote Control`"
-            />
+            <div class="relative flex min-h-0 flex-1 flex-col">
+              <iframe
+                :key="`ctl-${selectedOverlay.slug}-${frameKey}`"
+                :src="selectedOverlay.controlUrl"
+                class="min-h-0 w-full flex-1 border-0 bg-[#FAFAFA]"
+                :title="`${selectedOverlay.title} Remote Control`"
+              />
+              <CanvasRefiningOverlay :active="refining" label="Refining..." />
+            </div>
           </div>
         </div>
 
-        <!-- Right Sidebar: Isolated "Refine with Otto" Chat (Never Pollutes Main Otto Chat) -->
-        <aside
+        <!-- Right Sidebar: Standardized Isolated "Refine with Otto" Chat -->
+        <StudioRefineChat
           v-if="showRefinePanel"
-          class="flex h-[280px] w-full shrink-0 flex-col border-t border-[#E5E5E5] bg-white md:h-auto md:w-[330px] md:border-l md:border-t-0 lg:w-[370px]"
-        >
-          <div class="flex shrink-0 items-center justify-between border-b border-[#EDEDED] px-3.5 py-2.5">
-            <div class="flex items-center gap-1.5">
-              <SparklesIcon class="size-3.5 text-[#171717]" />
-              <span class="font-mono text-xs font-semibold text-[#171717]">
-                Refine with Otto
-              </span>
-            </div>
-            <span class="rounded-full bg-[#F2F2F2] px-2 py-0.5 font-mono text-[10px] text-neutral-500">
-              isolated
-            </span>
-          </div>
-
-          <!-- Per-Overlay Revision Messages -->
-          <div ref="refineScrollRef" class="min-h-0 flex-1 overflow-y-auto p-3.5">
-            <div
-              v-if="activeRefineMessages.length === 0"
-              class="flex flex-col gap-3"
-            >
-              <p class="text-xs leading-relaxed text-neutral-500">
-                Tell Otto how to tweak <strong class="font-mono text-[#171717]">{{ selectedOverlay.title }}</strong> — layout, colors, animations, or controller buttons. Runs in place without cluttering main Otto Chat.
-              </p>
-
-              <div class="flex flex-col gap-1.5">
-                <span class="font-mono text-[10px] uppercase text-neutral-400">Quick tweaks</span>
-                <button
-                  v-for="chip in quickRefineChips"
-                  :key="chip"
-                  type="button"
-                  class="rounded-xl border border-[#E5E5E5] bg-[#FAFAFA] px-3 py-2 text-left text-xs text-neutral-700 transition-colors hover:border-[#171717] hover:bg-white"
-                  :disabled="refining"
-                  @click="sendRefine(chip)"
-                >
-                  {{ chip }}
-                </button>
-              </div>
-            </div>
-
-            <div v-else class="flex flex-col gap-2.5">
-              <div
-                v-for="msg in activeRefineMessages"
-                :key="msg.id"
-                class="flex flex-col"
-                :class="msg.role === 'user' ? 'items-end' : 'items-start'"
-              >
-                <div
-                  class="max-w-[90%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap"
-                  :class="
-                    msg.role === 'user'
-                      ? 'bg-[#171717] text-white'
-                      : 'border border-[#EDEDED] bg-[#FAFAFA] text-[#171717]'
-                  "
-                >
-                  {{ msg.text }}
-                </div>
-              </div>
-
-              <div
-                v-if="refining"
-                class="flex items-center gap-2 rounded-2xl border border-[#EDEDED] bg-[#FAFAFA] px-3 py-2 font-mono text-[11px] text-neutral-500"
-              >
-                <Loader2Icon class="size-3.5 animate-spin" />
-                <span>Updating overlay on Fly Machine...</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Refine Input Composer -->
-          <form
-            class="shrink-0 border-t border-[#EDEDED] bg-[#FAFAFA] p-2.5"
-            @submit.prevent="sendRefine()"
-          >
-            <div v-if="refineAttachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
-              <div
-                v-for="(att, idx) in refineAttachments"
-                :key="att.workspacePath"
-                class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white py-1 pl-1 pr-1.5"
-              >
-                <img :src="att.previewUrl" :alt="att.originalName" class="size-6 rounded object-cover" />
-                <span class="max-w-[110px] truncate font-mono text-[10px] text-[#262626]">
-                  {{ att.originalName }}
-                </span>
-                <button
-                  type="button"
-                  class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
-                  @click="removeAttachment('refine', idx)"
-                >
-                  <XIcon class="size-3" />
-                </button>
-              </div>
-            </div>
-            <input
-              ref="refineFileInputRef"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-              multiple
-              class="hidden"
-              @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadOverlayImages(f, 'refine'); (e.target as HTMLInputElement).value = ''; }"
-            />
-            <div class="flex items-end gap-1.5 rounded-xl border border-[#E2E2E2] bg-white p-1.5 focus-within:border-[#171717]">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                class="size-8 shrink-0 text-neutral-600 hover:text-black"
-                title="Upload image (or paste with Ctrl+V)"
-                :disabled="refining || uploadingImage"
-                @click="refineFileInputRef?.click()"
-              >
-                <Loader2Icon v-if="uploadingImage" class="size-3.5 animate-spin" />
-                <PaperclipIcon v-else class="size-3.5" />
-              </Button>
-              <textarea
-                v-model="refineInput"
-                rows="2"
-                placeholder="Describe a change or paste/attach an image (Enter to refine)..."
-                class="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent px-1.5 py-1 text-xs text-[#171717] placeholder:text-neutral-400 focus:outline-none"
-                :disabled="refining"
-                @paste="(e) => handlePasteImage(e, 'refine')"
-                @keydown="handleRefineKeydown"
-              />
-              <Button
-                type="submit"
-                size="icon-xs"
-                class="size-8 shrink-0 rounded-lg bg-[#171717] text-white hover:bg-neutral-800"
-                :disabled="refining || !refineInput.trim()"
-                title="Send refinement to Otto"
-              >
-                <Loader2Icon v-if="refining" class="size-3.5 animate-spin" />
-                <SendIcon v-else class="size-3.5" />
-              </Button>
-            </div>
-          </form>
-        </aside>
+          title="Refine with Otto"
+          subtitle="Isolated thread · keeps Otto Chat clean"
+          :empty-description="`Tell Otto how to tweak ${selectedOverlay.title} — layout, colors, animations, or controller buttons.`"
+          placeholder="Describe a change or paste/attach an image..."
+          :quick-prompts="quickRefineChips"
+          :messages="activeRefineMessages"
+          :refining="refining"
+          :live-text="liveRefineText"
+          :live-thinking="liveRefineThinking"
+          :live-steps="liveRefineSteps"
+          :attachments="refineAttachments"
+          :uploading-image="uploadingImage"
+          @send="sendRefine"
+          @upload-file="(file) => uploadOverlayImages([file], 'refine')"
+          @remove-attachment="removeRefineAttachmentByPath"
+        />
       </div>
     </template>
 

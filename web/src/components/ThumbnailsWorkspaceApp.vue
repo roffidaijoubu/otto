@@ -36,7 +36,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import CanvasRefiningOverlay from "@/components/CanvasRefiningOverlay.vue";
+import StudioRefineChat from "@/components/StudioRefineChat.vue";
+import { streamRefineRequest, type RefineChatMessage } from "@/lib/refine-stream";
 import { playSound } from "@/lib/sounds";
+import type { TraceStep } from "@/types/chat";
 
 interface ThumbnailItem {
   slug: string;
@@ -94,13 +98,13 @@ const createAttachments = ref<UploadedAttachment[]>([]);
 const createFileInputRef = ref<HTMLInputElement | null>(null);
 
 // Isolated per-thumbnail Refine with Otto chat state
-const refineInput = ref("");
 const refining = ref(false);
 const refineAttachments = ref<UploadedAttachment[]>([]);
-const refineFileInputRef = ref<HTMLInputElement | null>(null);
 const uploadingImage = ref(false);
-const refineThreads = ref<Record<string, RefineMessage[]>>({});
-const refineScrollRef = ref<HTMLElement | null>(null);
+const refineThreads = ref<Record<string, RefineChatMessage[]>>({});
+const liveRefineText = ref("");
+const liveRefineThinking = ref("");
+const liveRefineSteps = ref<TraceStep[]>([]);
 
 // ResizeObserver for true 1280x720 aspect-ratio scaling on Detail stage
 const stageWrapRef = ref<HTMLElement | null>(null);
@@ -112,7 +116,7 @@ const selectedThumbnail = computed(
   () => thumbnails.value.find((t) => t.slug === selectedSlug.value) || null
 );
 
-const activeRefineMessages = computed<RefineMessage[]>(() => {
+const activeRefineMessages = computed<RefineChatMessage[]>(() => {
   if (!selectedSlug.value) return [];
   return refineThreads.value[selectedSlug.value] ?? [];
 });
@@ -345,52 +349,64 @@ async function submitCreate(promptText: string, label?: string) {
   }
 }
 
-async function sendRefine(instructionOverride?: string) {
+async function sendRefine(instruction: string) {
   const thumb = selectedThumbnail.value;
-  const text = (instructionOverride ?? refineInput.value).trim();
+  const text = instruction.trim();
   if (!thumb || !text || refining.value) return;
   playSound("send");
 
   const slug = thumb.slug;
-  const attachedPaths = instructionOverride ? [] : refineAttachments.value.map((a) => a.workspacePath);
+  const attachedPaths = refineAttachments.value.map((a) => a.workspacePath);
   const attachNote =
     attachedPaths.length > 0 ? ` [${attachedPaths.length} image${attachedPaths.length > 1 ? "s" : ""} attached]` : "";
 
   if (!refineThreads.value[slug]) refineThreads.value[slug] = [];
   const history = refineThreads.value[slug].map((m) => ({ role: m.role, text: m.text }));
   refineThreads.value[slug].push({ id: `${Date.now()}-u`, role: "user", text: text + attachNote });
-  if (!instructionOverride) {
-    refineInput.value = "";
-    refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
-    refineAttachments.value = [];
-  }
+  refineAttachments.value.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+  refineAttachments.value = [];
+
   refining.value = true;
-  await nextTick();
-  refineScrollRef.value?.scrollTo({ top: refineScrollRef.value.scrollHeight, behavior: "smooth" });
+  liveRefineText.value = "";
+  liveRefineThinking.value = "";
+  liveRefineSteps.value = [];
 
   try {
-    const res = await fetch(`/api/thumbnails/${encodeURIComponent(slug)}/refine`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const out = await streamRefineRequest(
+      `/api/thumbnails/${encodeURIComponent(slug)}/refine`,
+      {
         instruction: text,
         title: thumb.title,
         attachedImages: attachedPaths,
         history,
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      ok?: boolean;
-      reply?: string;
-      error?: string;
-    };
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || `Refine failed (${res.status})`);
-    }
+      },
+      {
+        onThinkingDelta: (delta) => {
+          liveRefineThinking.value += delta;
+        },
+        onTextDelta: (delta) => {
+          liveRefineText.value += delta;
+        },
+        onToolStart: (toolName, label) => {
+          liveRefineSteps.value = [
+            ...liveRefineSteps.value,
+            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, toolName, label, done: false },
+          ];
+        },
+        onToolEnd: (toolName) => {
+          const next = [...liveRefineSteps.value];
+          const open = [...next].reverse().find((s) => s.toolName === toolName && !s.done);
+          if (open) open.done = true;
+          liveRefineSteps.value = next;
+        },
+      }
+    );
     refineThreads.value[slug].push({
       id: `${Date.now()}-a`,
       role: "assistant",
-      text: data.reply || "Updated thumbnail.",
+      text: out.reply || "Updated thumbnail.",
+      thinking: liveRefineThinking.value.trim() || undefined,
+      steps: liveRefineSteps.value.length > 0 ? liveRefineSteps.value.map((s) => ({ ...s, done: true })) : undefined,
     });
     playSound("complete");
     await fetchThumbnails(slug);
@@ -402,13 +418,21 @@ async function sendRefine(instructionOverride?: string) {
       id: `${Date.now()}-e`,
       role: "assistant",
       text: `Error: ${msg}`,
+      thinking: liveRefineThinking.value.trim() || undefined,
+      steps: liveRefineSteps.value.length > 0 ? liveRefineSteps.value.map((s) => ({ ...s, done: true })) : undefined,
     });
     toast.error(msg);
   } finally {
     refining.value = false;
-    await nextTick();
-    refineScrollRef.value?.scrollTo({ top: refineScrollRef.value.scrollHeight, behavior: "smooth" });
+    liveRefineText.value = "";
+    liveRefineThinking.value = "";
+    liveRefineSteps.value = [];
   }
+}
+
+function removeRefineAttachmentByPath(workspacePath: string) {
+  const idx = refineAttachments.value.findIndex((a) => a.workspacePath === workspacePath);
+  if (idx >= 0) removeAttachment("refine", idx);
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -915,6 +939,7 @@ defineExpose({ selectThumbnail, notifyExternalJob, refresh: fetchThumbnails });
                 12:34
               </div>
             </div>
+            <CanvasRefiningOverlay :active="refining" label="Refining..." />
           </div>
         </div>
 
@@ -932,6 +957,7 @@ defineExpose({ selectThumbnail, notifyExternalJob, refresh: fetchThumbnails });
               <span class="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 font-mono text-[7px] text-white">
                 12:34
               </span>
+              <CanvasRefiningOverlay :active="refining" label="Refining" compact />
             </div>
             <div class="min-w-0">
               <div class="text-xs font-semibold">120px Mobile Squint Test</div>
@@ -955,117 +981,25 @@ defineExpose({ selectThumbnail, notifyExternalJob, refresh: fetchThumbnails });
         </div>
       </div>
 
-      <!-- RIGHT: ISOLATED REFINE WITH OTTO SIDEBAR -->
-      <div
+      <!-- RIGHT: STANDARDIZED ISOLATED REFINE WITH OTTO SIDEBAR -->
+      <StudioRefineChat
         v-if="showRefinePanel"
-        class="flex w-[310px] shrink-0 flex-col border-l border-black/8 bg-white"
-      >
-        <div class="flex items-center justify-between border-b border-black/6 px-3.5 py-2.5">
-          <div>
-            <div class="text-xs font-semibold">Refine with Otto</div>
-            <div class="text-[10px] text-[#737373]">Isolated thread · keeps Otto Chat clean</div>
-          </div>
-          <Badge v-if="refining" variant="secondary" class="gap-1 text-[10px]">
-            <Loader2Icon class="size-2.5 animate-spin" />
-            Refining
-          </Badge>
-        </div>
-
-        <div ref="refineScrollRef" class="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3">
-          <div v-if="activeRefineMessages.length === 0" class="space-y-2">
-            <p class="text-[11px] text-[#737373]">
-              Ask Otto to tweak typography, swap your character pose from Box
-              <span class="font-mono">Otto Assets</span>, or try a new Pixabay photo background:
-            </p>
-            <div class="flex flex-col gap-1.5">
-              <button
-                v-for="chip in quickRefineChips"
-                :key="chip"
-                type="button"
-                class="rounded-lg border border-black/10 bg-[#FAFAF9] px-2.5 py-1.5 text-left text-[11px] text-[#262626] transition hover:border-black/25 hover:bg-black/5"
-                :disabled="refining"
-                @click="sendRefine(chip)"
-              >
-                {{ chip }}
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-for="m in activeRefineMessages"
-            :key="m.id"
-            class="rounded-lg px-2.5 py-2 text-xs leading-relaxed"
-            :class="
-              m.role === 'user'
-                ? 'ml-4 bg-[#171717] text-white'
-                : 'mr-2 border border-black/8 bg-[#F5F5F4] text-[#171717]'
-            "
-          >
-            {{ m.text }}
-          </div>
-        </div>
-
-        <div class="border-t border-black/8 p-2.5">
-          <div v-if="refineAttachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
-            <div
-              v-for="(att, idx) in refineAttachments"
-              :key="att.workspacePath"
-              class="flex items-center gap-1.5 rounded-lg border border-black/10 bg-[#FAFAF9] py-1 pl-1 pr-1.5"
-            >
-              <img :src="att.previewUrl" :alt="att.originalName" class="size-6 rounded object-cover" />
-              <span class="max-w-[110px] truncate font-mono text-[10px] text-[#262626]">
-                {{ att.originalName }}
-              </span>
-              <button
-                type="button"
-                class="rounded p-0.5 text-neutral-500 hover:bg-black/10 hover:text-black"
-                @click="removeAttachment('refine', idx)"
-              >
-                <XIcon class="size-3" />
-              </button>
-            </div>
-          </div>
-          <input
-            ref="refineFileInputRef"
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-            multiple
-            class="hidden"
-            @change="(e) => { const f = (e.target as HTMLInputElement).files; if (f) uploadImageFiles(f, 'refine'); (e.target as HTMLInputElement).value = ''; }"
-          />
-          <div class="flex items-end gap-1.5 rounded-lg border border-black/15 bg-[#FAFAF9] p-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              class="size-7 shrink-0 text-neutral-600 hover:text-black"
-              title="Upload image (or paste with Ctrl+V)"
-              :disabled="refining || uploadingImage"
-              @click="refineFileInputRef?.click()"
-            >
-              <Loader2Icon v-if="uploadingImage" class="size-3.5 animate-spin" />
-              <PaperclipIcon v-else class="size-3.5" />
-            </Button>
-            <textarea
-              v-model="refineInput"
-              rows="2"
-              placeholder="e.g. Ganti background sama gambar ini, atau swap pose..."
-              class="min-h-[42px] flex-1 resize-none bg-transparent px-1 text-xs outline-none placeholder:text-[#A3A3A3]"
-              :disabled="refining"
-              @paste="(e) => handlePasteImage(e, 'refine')"
-              @keydown.enter.exact.prevent="sendRefine()"
-            />
-            <Button
-              size="icon"
-              class="size-7 shrink-0 bg-[#171717] text-white hover:bg-[#303030]"
-              :disabled="refining || !refineInput.trim()"
-              @click="sendRefine()"
-            >
-              <SendIcon class="size-3.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
+        title="Refine with Otto"
+        subtitle="Isolated thread · keeps Otto Chat clean"
+        empty-description="Ask Otto to tweak typography, fix framing, swap your character pose from Box Otto Assets, or try a new Pixabay photo background:"
+        placeholder="e.g. Rapihin biar teks ga nutupin muka, atau paste gambar..."
+        :quick-prompts="quickRefineChips"
+        :messages="activeRefineMessages"
+        :refining="refining"
+        :live-text="liveRefineText"
+        :live-thinking="liveRefineThinking"
+        :live-steps="liveRefineSteps"
+        :attachments="refineAttachments"
+        :uploading-image="uploadingImage"
+        @send="sendRefine"
+        @upload-file="(file) => uploadImageFiles([file], 'refine')"
+        @remove-attachment="removeRefineAttachmentByPath"
+      />
     </div>
 
     <!-- CREATE NEW THUMBNAIL MODAL -->

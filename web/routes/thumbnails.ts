@@ -345,13 +345,17 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
           `Instructions:`,
           `1. Call thumbnail_get(slug="${slug}") first to inspect the current 1280x720 HTML and assets.`,
           `2. If the creator wants a different character pose/expression, logo, or photo background, use box_list_assets + box_download_file or pixabay_search_backgrounds + pixabay_download_image, and inspect new assets with read.`,
-          `3. Update the 1280x720 HTML/CSS (strictly NO AI-generated images, keep bottom-right duration safe zone clear, optimize for 120px mobile readability) and call thumbnail_save with the EXACT same slug "${slug}" and any newly added workspace asset paths in assets.`,
-          `4. Reply concisely (1-2 plain sentences) summarizing what you refined on "${slug}".`,
+          `3. Update the 1280x720 HTML/CSS (strictly NO AI-generated images, keep headline strictly in its own side column so it NEVER overlaps the character's face/eyes, keep bottom-right 220x90px duration safe zone clear, optimize for 120px mobile readability) and call thumbnail_save with the EXACT same slug "${slug}" and any newly added workspace asset paths in assets.`,
+          `4. MANDATORY VISUAL SELF-CHECK: Call thumbnail_render(slug="${slug}", format="jpg") and then call read on the rendered JPG filePath to visually inspect the actual rendered thumbnail. Verify NO text overlaps the character's face/eyes and framing is clean; if any defect is visible, fix HTML/CSS, call thumbnail_save, and re-verify (up to 2 passes).`,
+          `5. Reply concisely (1-2 plain sentences) summarizing what you refined on "${slug}".`,
         ]
           .filter(Boolean)
           .join("\n");
 
-        return await runThumbnailWorker(slug, prompt);
+        const wantStream =
+          url.searchParams.get("stream") === "1" ||
+          (req.headers.get("accept") || "").includes("text/event-stream");
+        return await runThumbnailWorker(slug, prompt, wantStream);
       }
 
       if (sub === "export" && req.method === "POST") {

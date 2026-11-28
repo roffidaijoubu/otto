@@ -281,7 +281,10 @@ export async function handleObsOverlaysRoutes(req: Request, url: URL): Promise<R
           history: body.history,
         });
 
-        return await runOverlayRefine(slug, prompt);
+        const wantStream =
+          url.searchParams.get("stream") === "1" ||
+          (req.headers.get("accept") || "").includes("text/event-stream");
+        return await runOverlayRefine(slug, prompt, wantStream);
       }
       if (!sub && req.method === "DELETE") {
         const ok = await deleteHostedObsOverlay(slug);

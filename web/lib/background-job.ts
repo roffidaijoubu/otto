@@ -1,7 +1,7 @@
 import { OMP_BIN, WORK_DIR } from "./config.ts";
 import { buildAgentChildEnv } from "./child-env.ts";
 import { broadcast } from "./sse.ts";
-import { rpc } from "./rpc-bridge.ts";
+import { friendlyToolLabel, rpc, type RpcEvent } from "./rpc-bridge.ts";
 
 // ---------- Silent Isolated Background Job Runner ----------
 
@@ -55,7 +55,158 @@ export function startSilentBackgroundJob(opts: {
   })();
 }
 
-export async function runOverlayRefine(slug: string, prompt: string): Promise<Response> {
+export function runStreamingWorker(opts: {
+  tools: string;
+  prompt: string;
+  onFinishBroadcast?: () => void;
+  fallbackReply?: string;
+}): Response {
+  const childEnv = buildAgentChildEnv();
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: Record<string, unknown>) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        } catch {
+          // stream closed by client
+        }
+      };
+
+      rpc.backgroundBusy = true;
+      void rpc.holdSpriteActive();
+
+      let finalReply = "";
+      let stderrTail = "";
+      let buf = "";
+
+      try {
+        const proc = Bun.spawn(
+          [
+            OMP_BIN,
+            "--mode",
+            "json",
+            "--no-session",
+            "--tools",
+            opts.tools,
+            "-p",
+            opts.prompt,
+          ],
+          {
+            cwd: WORK_DIR,
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+            env: childEnv,
+          }
+        );
+
+        const stderrPromise = (async () => {
+          if (!proc.stderr) return;
+          const reader = proc.stderr.getReader();
+          const dec = new TextDecoder();
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              stderrTail = (stderrTail + dec.decode(value, { stream: true })).slice(-1200);
+            }
+          } catch {
+            // ignore
+          }
+        })();
+
+        if (proc.stdout) {
+          const reader = proc.stdout.getReader();
+          const dec = new TextDecoder();
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const rawLine of lines) {
+              const line = rawLine.trim();
+              if (!line) continue;
+              let ev: RpcEvent;
+              try {
+                ev = JSON.parse(line) as RpcEvent;
+              } catch {
+                continue;
+              }
+              if (ev.type === "message_update" && ev.assistantMessageEvent) {
+                const ame = ev.assistantMessageEvent;
+                if (ame.type === "thinking_delta" && typeof ame.delta === "string") {
+                  send({ type: "thinking_delta", delta: ame.delta });
+                } else if (ame.type === "text_delta" && typeof ame.delta === "string") {
+                  finalReply += ame.delta;
+                  send({ type: "text_delta", delta: ame.delta });
+                }
+              } else if (ev.type === "tool_execution_start" && typeof ev.toolName === "string") {
+                send({
+                  type: "tool_start",
+                  toolName: ev.toolName,
+                  label: friendlyToolLabel(ev.toolName),
+                });
+              } else if (ev.type === "tool_execution_end" && typeof ev.toolName === "string") {
+                send({ type: "tool_end", toolName: ev.toolName });
+              }
+            }
+          }
+        }
+
+        const [exitCode] = await Promise.all([proc.exited, stderrPromise]);
+        opts.onFinishBroadcast?.();
+
+        if (exitCode !== 0 && !finalReply.trim()) {
+          send({
+            type: "error",
+            error: stderrTail.trim() || `Refinement worker exited (${exitCode})`,
+          });
+        } else {
+          send({
+            type: "done",
+            reply: finalReply.trim() || opts.fallbackReply || "Done.",
+          });
+        }
+      } catch (err: unknown) {
+        send({
+          type: "error",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        rpc.backgroundBusy = false;
+        rpc.releaseSpriteHold();
+        try {
+          controller.close();
+        } catch {
+          // ignore
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+export async function runOverlayRefine(slug: string, prompt: string, stream = false): Promise<Response> {
+  const tools = "obs_overlay_list,obs_overlay_deploy,obs_overlay_control,box_list_assets,box_download_file,read";
+  if (stream) {
+    return runStreamingWorker({
+      tools,
+      prompt,
+      fallbackReply: `Updated overlay "${slug}".`,
+      onFinishBroadcast: () => broadcast({ type: "obs_overlays_changed", slug }),
+    });
+  }
   const childEnv = buildAgentChildEnv();
 
   rpc.backgroundBusy = true;
@@ -101,7 +252,17 @@ export async function runOverlayRefine(slug: string, prompt: string): Promise<Re
   }
 }
 
-export async function runThumbnailWorker(slug: string, prompt: string): Promise<Response> {
+export async function runThumbnailWorker(slug: string, prompt: string, stream = false): Promise<Response> {
+  const tools =
+    "thumbnail_save,thumbnail_list,thumbnail_get,thumbnail_delete,thumbnail_render,box_list_assets,box_download_file,pixabay_search_backgrounds,pixabay_download_image,critique_thumbnail,read";
+  if (stream) {
+    return runStreamingWorker({
+      tools,
+      prompt,
+      fallbackReply: `Updated thumbnail "${slug}".`,
+      onFinishBroadcast: () => broadcast({ type: "thumbnails_changed", slug }),
+    });
+  }
   const childEnv = buildAgentChildEnv();
 
   rpc.backgroundBusy = true;

@@ -47,6 +47,13 @@ export function friendlyToolLabel(toolName: string): string {
   if (/vod_cut_clip/i.test(toolName)) return "Cutting raw clip (.mp4 + .srt)...";
   if (/vod_prep_clip/i.test(toolName)) return "Normalizing clip for editor (CFR + -14 LUFS)...";
   if (/watch_clip/i.test(toolName)) return "Watching clip for visual & pacing critique...";
+  if (/thumbnail_render/i.test(toolName)) return "Rendering 1280×720 thumbnail for visual check...";
+  if (/thumbnail_save/i.test(toolName)) return "Saving thumbnail layout...";
+  if (/thumbnail_get|thumbnail_list/i.test(toolName)) return "Reading current thumbnail...";
+  if (/obs_overlay_deploy/i.test(toolName)) return "Deploying OBS overlay...";
+  if (/obs_overlay_control/i.test(toolName)) return "Updating overlay state...";
+  if (/obs_overlay_/i.test(toolName)) return "Checking OBS overlays...";
+  if (/pixabay/i.test(toolName)) return "Fetching Pixabay photography...";
   if (/critique_thumbnail/i.test(toolName)) return "Inspecting thumbnail...";
   if (/^box_/i.test(toolName)) return "Syncing files with Box...";
   if (/exa|firecrawl|web_search/i.test(toolName)) return "Researching...";

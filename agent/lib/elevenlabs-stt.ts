@@ -1,10 +1,13 @@
 /**
- * ElevenLabs Scribe v3 Speech-to-Text via Fly.io Sprites Zero-Key Custom API Connector.
+ * ElevenLabs Scribe v3 Speech-to-Text + Direct Gemini 3.5 Flash-Lite Context Typo-Fix Pass
+ * via Fly.io Sprites Zero-Key Connectors (NO `omp` subprocess required).
  *
- * Extracts compact mono MP3 audio from a video clip via ffmpeg (staying well under the
- * 8 MB Sprites Gateway request limit even for 3-5 minute clips), transcribes via
- * `POST /v1/speech-to-text` (`model_id: "scribe_v3"`), and writes a clean, readable
- * word-aligned `.srt` file for both the Clips Detail caption overlay and human editors.
+ * Pipeline:
+ * 1. Extracts compact mono 16kHz 48kbps MP3 from the video clip via ffmpeg (<8 MB Sprites Gateway cap).
+ * 2. Transcribes word-level audio via ElevenLabs `POST /v1/speech-to-text` (`model_id: "scribe_v3"`).
+ * 3. Runs a fast direct `gemini-3.5-flash-lite` pass via the zero-key Gemini Sprites Connector using
+ *    `~/.omp/agent/MEMORY.md` + `~/.omp/agent/APPEND_SYSTEM.md` context to fix proper nouns, Islamic/VTuber
+ *    terminology, and Indonesian/English code-switching typos while preserving exact Scribe v3 timestamps.
  */
 
 import { execFile } from "node:child_process";
@@ -15,7 +18,11 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-let cachedGatewayBaseUrl: string | null = null;
+const HOME = process.env.HOME || "/home/sprite";
+const GEMINI_TYPO_MODEL = process.env.LMA_GEMINI_FALLBACK_MODEL?.trim() || "gemini-3.5-flash-lite";
+
+let cachedElevenLabsUrl: string | null = null;
+let cachedGeminiUrl: string | null = null;
 
 interface ScribeWord {
   text?: string;
@@ -31,35 +38,57 @@ interface ScribeResponse {
   detail?: { message?: string };
 }
 
+export interface TimedSrtCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+interface GatewayConnection {
+  provider?: string;
+  display_name?: string;
+  provider_account_name?: string;
+  gateway_base_url?: string;
+}
+
+async function fetchSpritesConnections(): Promise<GatewayConnection[]> {
+  try {
+    const res = await fetch("https://api.sprites.dev/v1/gateway/list");
+    if (!res.ok) return [];
+    const data = (await res.json()) as { connections?: GatewayConnection[] };
+    return data.connections ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function discoverElevenLabsGatewayUrl(): Promise<string | null> {
   if (process.env.SPRITES_ELEVENLABS_GATEWAY_URL) {
     return process.env.SPRITES_ELEVENLABS_GATEWAY_URL.replace(/\/$/, "");
   }
-  if (cachedGatewayBaseUrl) return cachedGatewayBaseUrl;
+  if (cachedElevenLabsUrl) return cachedElevenLabsUrl;
+  const conns = await fetchSpritesConnections();
+  const conn = conns.find(
+    (c) =>
+      /elevenlabs/i.test(c.display_name ?? "") ||
+      /elevenlabs/i.test(c.provider_account_name ?? "") ||
+      c.provider === "elevenlabs"
+  );
+  if (!conn?.gateway_base_url) return null;
+  cachedElevenLabsUrl = conn.gateway_base_url.replace(/\/$/, "");
+  return cachedElevenLabsUrl;
+}
 
-  try {
-    const res = await fetch("https://api.sprites.dev/v1/gateway/list");
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      connections?: Array<{
-        provider?: string;
-        display_name?: string;
-        provider_account_name?: string;
-        gateway_base_url?: string;
-      }>;
-    };
-    const conn = data.connections?.find(
-      (c) =>
-        /elevenlabs/i.test(c.display_name ?? "") ||
-        /elevenlabs/i.test(c.provider_account_name ?? "") ||
-        c.provider === "elevenlabs"
-    );
-    if (!conn?.gateway_base_url) return null;
-    cachedGatewayBaseUrl = conn.gateway_base_url.replace(/\/$/, "");
-    return cachedGatewayBaseUrl;
-  } catch {
-    return null;
+export async function discoverGeminiGatewayUrl(): Promise<string | null> {
+  if (process.env.SPRITES_GEMINI_GATEWAY_URL) {
+    return process.env.SPRITES_GEMINI_GATEWAY_URL.replace(/\/$/, "");
   }
+  if (cachedGeminiUrl) return cachedGeminiUrl;
+  const conns = await fetchSpritesConnections();
+  const conn = conns.find((c) => c.provider === "gemini");
+  if (!conn?.gateway_base_url) return null;
+  cachedGeminiUrl = conn.gateway_base_url.replace(/\/$/, "");
+  return cachedGeminiUrl;
 }
 
 function formatSrtTime(sec: number): string {
@@ -72,7 +101,7 @@ function formatSrtTime(sec: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
 }
 
-export function buildSrtFromScribeWords(words: ScribeWord[]): { srt: string; cueCount: number } {
+export function buildCuesFromScribeWords(words: ScribeWord[]): TimedSrtCue[] {
   const tokens = words.filter(
     (w) =>
       w &&
@@ -84,13 +113,13 @@ export function buildSrtFromScribeWords(words: ScribeWord[]): { srt: string; cue
       typeof w.end === "number"
   );
 
-  if (tokens.length === 0) return { srt: "", cueCount: 0 };
+  if (tokens.length === 0) return [];
 
   const MAX_CHARS = 44;
   const MAX_DURATION_SEC = 4.2;
   const PAUSE_BREAK_SEC = 0.65;
 
-  const cues: Array<{ start: number; end: number; text: string }> = [];
+  const cues: TimedSrtCue[] = [];
   let curWords: string[] = [];
   let curStart = tokens[0].start!;
   let curEnd = tokens[0].end!;
@@ -143,24 +172,140 @@ export function buildSrtFromScribeWords(words: ScribeWord[]): { srt: string; cue
     }
   }
   flush();
+  return cues;
+}
 
-  const srt = cues
+export function serializeCuesToSrt(cues: TimedSrtCue[]): string {
+  return cues
     .map((c, idx) => `${idx + 1}\n${formatSrtTime(c.start)} --> ${formatSrtTime(c.end)}\n${c.text}\n`)
     .join("\n");
+}
 
-  return { srt, cueCount: cues.length };
+function readAgentContextSnippet(): string {
+  const agentDir = path.join(HOME, ".omp", "agent");
+  const parts: string[] = [];
+  for (const [filename, maxChars] of [
+    ["MEMORY.md", 4500],
+    ["APPEND_SYSTEM.md", 3000],
+  ] as const) {
+    const p = path.join(agentDir, filename);
+    if (fs.existsSync(p)) {
+      try {
+        const content = fs.readFileSync(p, "utf8").trim();
+        if (content) {
+          parts.push(`--- ${filename} ---\n${content.slice(0, maxChars)}`);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return parts.join("\n\n");
+}
+
+async function polishCuesWithGemini(cues: TimedSrtCue[]): Promise<{
+  cues: TimedSrtCue[];
+  polished: boolean;
+  error?: string;
+}> {
+  if (cues.length === 0) return { cues, polished: false };
+  const geminiBaseUrl = await discoverGeminiGatewayUrl();
+  if (!geminiBaseUrl) {
+    return { cues, polished: false, error: "Gemini Sprites Connector not available" };
+  }
+
+  const contextText = readAgentContextSnippet();
+  const indexed = cues.map((c, idx) => ({ i: idx + 1, text: c.text }));
+
+  const prompt = [
+    `You are a subtitle proofreader for a livestream clip. Fix speech-to-text typos, misheard proper nouns, brand/creator names, religious/cultural terms, and Indonesian/English code-switching errors using the creator context below.`,
+    ``,
+    `STRICT RULES:`,
+    `1. Keep the EXACT same array length (${indexed.length} items) and exact same index "i" (1..${indexed.length}).`,
+    `2. Do NOT merge, split, drop, or reorder cues. Each cue maps 1-to-1 to a timed video subtitle line.`,
+    `3. Keep the speaker's natural spoken language (Indonesian/English slang/code-switching). Do NOT translate or rewrite phrasing unless fixing an obvious ASR mishearing/typo or punctuation.`,
+    `4. Return ONLY valid JSON: { "cues": [{ "i": 1, "text": "..." }, ...] }`,
+    ``,
+    contextText ? `CREATOR CONTEXT:\n${contextText}\n` : "",
+    `INPUT CUES JSON:\n${JSON.stringify({ cues: indexed })}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 35_000);
+  try {
+    const endpoint = `${geminiBaseUrl}/v1beta/models/${encodeURIComponent(GEMINI_TYPO_MODEL)}:generateContent`;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return {
+        cues,
+        polished: false,
+        error: `Gemini ${GEMINI_TYPO_MODEL} HTTP ${res.status}: ${errText.slice(0, 180)}`,
+      };
+    }
+
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const rawText = (data.candidates?.[0]?.content?.parts || [])
+      .map((p) => p.text || "")
+      .join("")
+      .trim();
+    if (!rawText) {
+      return { cues, polished: false, error: "Gemini returned empty response" };
+    }
+
+    const parsed = JSON.parse(rawText) as { cues?: Array<{ i?: number; text?: string }> };
+    if (!Array.isArray(parsed.cues) || parsed.cues.length !== cues.length) {
+      return { cues, polished: false, error: "Gemini cue count mismatch" };
+    }
+
+    const updated: TimedSrtCue[] = cues.map((orig, idx) => {
+      const candidate = parsed.cues?.[idx];
+      const nextText = typeof candidate?.text === "string" ? candidate.text.trim() : "";
+      return {
+        start: orig.start,
+        end: orig.end,
+        text: nextText || orig.text,
+      };
+    });
+    return { cues: updated, polished: true };
+  } catch (err) {
+    return {
+      cues,
+      polished: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function transcribeClipToSrt(
   mp4Path: string,
   srtOutPath: string,
-  opts?: { languageCode?: string }
+  opts?: { languageCode?: string; skipGeminiPolish?: boolean }
 ): Promise<{
   ok: boolean;
   srtPath?: string;
   cueCount?: number;
   languageCode?: string;
   provider?: string;
+  geminiPolished?: boolean;
+  geminiWarning?: string;
   error?: string;
 }> {
   const gatewayBaseUrl = await discoverElevenLabsGatewayUrl();
@@ -183,7 +328,6 @@ export async function transcribeClipToSrt(
 
     let audioBytes = fs.readFileSync(tmpAudio);
     if (audioBytes.byteLength > 7.5 * 1024 * 1024) {
-      // Re-encode at 24kbps if clip is very long (>20 min)
       await execFileAsync(
         "ffmpeg",
         ["-y", "-i", mp4Path, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", tmpAudio],
@@ -218,19 +362,35 @@ export async function transcribeClipToSrt(
     }
 
     const data = (await res.json()) as ScribeResponse;
-    const { srt, cueCount } = buildSrtFromScribeWords(data.words ?? []);
-    if (cueCount === 0) {
+    const rawCues = buildCuesFromScribeWords(data.words ?? []);
+    if (rawCues.length === 0) {
       return { ok: false, error: "ElevenLabs Scribe returned 0 timed words" };
     }
 
+    let finalCues = rawCues;
+    let geminiPolished = false;
+    let geminiWarning: string | undefined;
+
+    if (!opts?.skipGeminiPolish) {
+      const polish = await polishCuesWithGemini(rawCues);
+      finalCues = polish.cues;
+      geminiPolished = polish.polished;
+      geminiWarning = polish.error;
+    }
+
+    const srt = serializeCuesToSrt(finalCues);
     fs.mkdirSync(path.dirname(srtOutPath), { recursive: true });
     fs.writeFileSync(srtOutPath, srt, "utf8");
     return {
       ok: true,
       srtPath: srtOutPath,
-      cueCount,
+      cueCount: finalCues.length,
       languageCode: data.language_code || undefined,
-      provider: "elevenlabs-scribe-v3",
+      provider: geminiPolished
+        ? `elevenlabs-scribe-v3+${GEMINI_TYPO_MODEL}`
+        : "elevenlabs-scribe-v3",
+      geminiPolished,
+      geminiWarning,
     };
   } catch (err) {
     return {

@@ -170,6 +170,8 @@ const jobs = ref<ClipJob[]>([]);
 const records = ref<ClipRecord[]>([]);
 const untrackedFiles = ref<UntrackedClipFile[]>([]);
 const boxUploadingId = ref<string | null>(null);
+const retranscribingId = ref<string | null>(null);
+const finishingPaths = ref<Record<string, boolean>>({});
 const copiedBoxId = ref<string | null>(null);
 const copiedNotes = ref(false);
 const expandedJobId = ref<string | null>(null);
@@ -419,12 +421,14 @@ function onDetailTimeUpdate(e: Event) {
   if (el) detailCurrentTime.value = el.currentTime;
 }
 
-async function loadSrtForClip(clip: UnifiedClip | null) {
+async function loadSrtForClip(clip: UnifiedClip | null, bustCache = false) {
   srtCues.value = [];
   if (!clip?.srtUrl) return;
   srtLoading.value = true;
   try {
-    const res = await fetch(clip.srtUrl);
+    const sep = clip.srtUrl.includes("?") ? "&" : "?";
+    const url = bustCache ? `${clip.srtUrl}${sep}t=${Date.now()}` : clip.srtUrl;
+    const res = await fetch(url);
     if (!res.ok) return;
     const raw = await res.text();
     srtCues.value = parseSrtContent(raw);
@@ -432,6 +436,68 @@ async function loadSrtForClip(clip: UnifiedClip | null) {
     // ignore
   } finally {
     srtLoading.value = false;
+  }
+}
+
+async function redoTranscription(clip: UnifiedClip) {
+  if (!clip.record || retranscribingId.value) return;
+  retranscribingId.value = clip.id;
+  try {
+    const res = await fetch(`/api/clips/records/${encodeURIComponent(clip.id)}/retranscribe`, {
+      method: "POST",
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      cueCount?: number;
+      provider?: string;
+      geminiPolished?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Redo SRT failed (${res.status})`);
+    }
+    playSound("job_complete");
+    toast.success(
+      `SRT refreshed (${data.cueCount ?? 0} lines · ${data.geminiPolished ? "Scribe v3 + Gemini typo fix" : "Scribe v3"}).`
+    );
+    await loadEcosystem(true);
+    if (selectedClip.value && selectedClip.value.id === clip.id) {
+      await loadSrtForClip(selectedClip.value, true);
+    }
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Redo SRT failed");
+  } finally {
+    retranscribingId.value = null;
+  }
+}
+
+async function finishIncompleteClip(clip: UnifiedClip) {
+  if (finishingPaths.value[clip.filePath]) return;
+  finishingPaths.value = { ...finishingPaths.value, [clip.filePath]: true };
+  try {
+    const res = await fetch("/api/clips/finish-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relPath: clip.filePath, videoId: clip.videoId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Could not start finish steps (${res.status})`);
+    }
+    playSound("toggle");
+    toast.success("Running remaining steps (prep -14 LUFS + Scribe v3 + Gemini SRT + hook review)...");
+    setTimeout(() => {
+      const next = { ...finishingPaths.value };
+      delete next[clip.filePath];
+      finishingPaths.value = next;
+    }, 30_000);
+  } catch (err) {
+    playSound("error");
+    toast.error(err instanceof Error ? err.message : "Failed to retry remaining steps");
+    const next = { ...finishingPaths.value };
+    delete next[clip.filePath];
+    finishingPaths.value = next;
   }
 }
 
@@ -1436,6 +1502,19 @@ onMounted(() => {
                   <Trash2 class="size-3.5" aria-hidden="true" />
                 </Button>
               </template>
+              <Button
+                v-else
+                size="sm"
+                type="button"
+                class="h-8 gap-1.5 rounded-lg bg-[#171717] px-3 text-xs text-white hover:bg-neutral-800"
+                :disabled="Boolean(finishingPaths[selectedClip.filePath])"
+                title="Run remaining steps: normalize -14 LUFS, Scribe v3 + Gemini SRT, hook review & save"
+                @click="finishIncompleteClip(selectedClip)"
+              >
+                <Loader2 v-if="finishingPaths[selectedClip.filePath]" class="size-3.5 animate-spin" aria-hidden="true" />
+                <RefreshCw v-else class="size-3.5" aria-hidden="true" />
+                <span>{{ finishingPaths[selectedClip.filePath] ? "Finishing..." : "Finish Steps" }}</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -1477,9 +1556,28 @@ onMounted(() => {
                 <FileText class="size-3.5 text-neutral-500" aria-hidden="true" />
                 Transcript
               </span>
-              <span v-if="srtCues.length > 0" class="font-mono text-[10.5px] text-neutral-400 tabular-nums">
-                {{ srtCues.length }} lines · click to seek
-              </span>
+              <div class="flex items-center gap-1.5">
+                <span v-if="srtCues.length > 0" class="font-mono text-[10.5px] text-neutral-400 tabular-nums">
+                  {{ srtCues.length }} lines
+                </span>
+                <Button
+                  v-if="selectedClip.record"
+                  variant="outline"
+                  size="xs"
+                  type="button"
+                  class="h-6 gap-1 rounded-md bg-white px-2 text-[10.5px] text-neutral-700 hover:bg-neutral-50"
+                  :disabled="retranscribingId === selectedClip.id"
+                  title="Re-run ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite typo-fix pass"
+                  @click="redoTranscription(selectedClip)"
+                >
+                  <RefreshCw
+                    class="size-3"
+                    :class="retranscribingId === selectedClip.id ? 'animate-spin' : ''"
+                    aria-hidden="true"
+                  />
+                  <span>{{ retranscribingId === selectedClip.id ? "Transcribing..." : "Redo SRT" }}</span>
+                </Button>
+              </div>
             </div>
 
             <div
@@ -1832,6 +1930,19 @@ onMounted(() => {
                   <Trash2 class="size-3.5" aria-hidden="true" />
                 </Button>
               </template>
+              <Button
+                v-else
+                size="sm"
+                type="button"
+                class="h-7 gap-1 rounded-lg bg-[#171717] px-2.5 text-[11px] text-white hover:bg-neutral-800"
+                :disabled="Boolean(finishingPaths[clip.filePath])"
+                title="Retry remaining steps: prep -14 LUFS + Scribe v3 + Gemini SRT + hook review"
+                @click="finishIncompleteClip(clip)"
+              >
+                <Loader2 v-if="finishingPaths[clip.filePath]" class="size-3 animate-spin" aria-hidden="true" />
+                <RefreshCw v-else class="size-3" aria-hidden="true" />
+                <span>{{ finishingPaths[clip.filePath] ? "Working..." : "Finish Steps" }}</span>
+              </Button>
             </div>
           </div>
         </div>
