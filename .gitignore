@@ -12,5 +12,6 @@ web/dist/
 .agents/
 skills-lock.json
 
-# Local scratch / logo generation workspace
+# Local scratch / logo generation / demo video workspace
 .tmp/
+.demo/

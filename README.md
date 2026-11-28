@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/Icp_tjjgmvI"><img src="https://img.shields.io/badge/demo_video-Watch_on_YouTube_(2:58)-FF0000?style=flat-square&logo=youtube&logoColor=white" alt="Watch Otto OS Demo on YouTube"></a>
   <img src="https://img.shields.io/badge/runtime-Fly.io_Sprites-7B3FE4?style=flat-square" alt="Fly.io Sprites">
   <img src="https://img.shields.io/badge/connectors-14_(Zero_Keys)-0F766E?style=flat-square" alt="14 Zero-Key Sprites Connectors">
   <img src="https://img.shields.io/badge/local_api_keys-0-16A34A?style=flat-square" alt="Zero Local API Keys">
@@ -19,9 +20,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero-desktop.png" alt="Otto Studio OS — 10-App Multi-Window Cloud Desktop" width="100%">
+  <a href="https://youtu.be/Icp_tjjgmvI">
+    <img src="docs/assets/demo-hero-play.png" alt="Watch the Otto OS 3-Minute Demo on YouTube" width="100%">
+  </a>
   <br>
-  <sub><b>Otto Studio OS</b>: a 10-app cloud desktop inside one Fly.io Sprite (Otto Chat, Clips &amp; Creator Archive, Thumbnail Studio, OBS Overlays, Studio Files, Ideas, Multi-Platform Analytics, Calendar, Contacts, System Settings) with live Desktop Widgets, TopMenuBar Background Jobs popover, unlimited installable Custom Studio Apps, <code>Cmd+K</code> Spotlight, and 6-digit PIN sign-in. <i>Live instance is PIN-protected to guard private OAuth/API quotas — demo PIN is included in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
+  <sub><b>▶ <a href="https://youtu.be/Icp_tjjgmvI">Watch the 3-minute walkthrough on YouTube (with English captions)</a></b> · <b>Otto Studio OS</b>: a 10-app cloud desktop inside one Fly.io Sprite (Otto Chat, Clips &amp; Creator Archive, Thumbnail Studio, OBS Overlays, Studio Files, Ideas, Multi-Platform Analytics, Calendar, Contacts, System Settings) with live Desktop Widgets, TopMenuBar Background Jobs popover, unlimited installable Custom Studio Apps, <code>Cmd+K</code> Spotlight, and 6-digit PIN sign-in. <i>Live instance is PIN-protected to guard private OAuth/API quotas — demo PIN is included in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
 </p>
 
 <br>
