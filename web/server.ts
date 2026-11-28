@@ -137,11 +137,12 @@ if (process.env.LMA_NO_LISTEN !== "1") {
     // Recursive fs.watch may be unsupported on some kernels; tool_execution_end + API mutations still broadcast live
   }
 
+  const listenPort = Number(process.env.PORT || PORT);
   Bun.serve({
-    port: PORT,
+    port: listenPort,
     idleTimeout: 255,
     fetch: handleServerRequest,
   });
 
-  console.log(`[lma-web] Otto Studio Web UI listening on http://0.0.0.0:${PORT}`);
+  console.log(`[lma-web] Otto Studio Web UI listening on http://0.0.0.0:${listenPort}`);
 }

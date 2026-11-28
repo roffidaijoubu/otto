@@ -181,6 +181,10 @@ export class OmpRpcBridge {
   private holdStartedAt = 0;
   private inFlightWatchdog: NodeJS.Timeout | null = null;
   private inFlightWatchdogMs = 0;
+  private turnGeneration = 0;
+  private activeTurnGen: number | null = null;
+  private activeAgentRuns = 0;
+  private abortingTurn = false;
   private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
   public busy = false;
   public activity = "Thinking...";
@@ -269,7 +273,7 @@ export class OmpRpcBridge {
   }
 
   public isAnyBusy(): boolean {
-    return this.busy || this.backgroundBusy || isClipWorkerBusy() || hasActiveManagedWorkers();
+    return this.busy || this.abortingTurn || this.backgroundBusy || isClipWorkerBusy() || hasActiveManagedWorkers();
   }
 
   public async holdSpriteActive(): Promise<void> {
@@ -334,34 +338,59 @@ export class OmpRpcBridge {
     this.inFlightWatchdogMs = 0;
   }
 
-  private armInFlightWatchdog(ms = OmpRpcBridge.MAX_HOLD_MS) {
+  private armInFlightWatchdog(ms = OmpRpcBridge.MAX_HOLD_MS, expectedGen?: number) {
     if (this.inFlightWatchdog) {
       clearTimeout(this.inFlightWatchdog);
       this.inFlightWatchdog = null;
     }
+    const gen = expectedGen ?? this.activeTurnGen;
     this.inFlightWatchdogMs = ms;
     this.inFlightWatchdog = setTimeout(() => {
       this.inFlightWatchdog = null;
       this.inFlightWatchdogMs = 0;
-      if (!this.busy) return;
-      console.warn("[lma-web] Active RPC turn watchdog expired without agent_end; aborting turn and clearing busy flag.");
-      // Actively abort the hung omp turn so it cannot stream interleaved output into a subsequent prompt
-      void this.sendCommand("abort", {}, 5_000).catch(() => {});
-      this.busy = false;
-      this.activity = "Thinking...";
-      this.releaseSpriteHold();
-      broadcast({
-        type: "error",
-        message: "Assistant turn timed out without completing; aborted and ready for next message.",
-      });
-      broadcast({ type: "done" });
+      if (!this.busy || this.abortingTurn) return;
+      if (gen !== null && this.activeTurnGen !== gen) return;
+      void this.abortStalledTurn(gen);
     }, ms);
     this.inFlightWatchdog.unref?.();
   }
 
+  private async abortStalledTurn(expectedGen: number | null): Promise<void> {
+    if (this.abortingTurn) return;
+    if (expectedGen !== null && this.activeTurnGen !== expectedGen) return;
+    this.abortingTurn = true;
+    this.activeTurnGen = null;
+    console.warn("[lma-web] Active RPC turn watchdog expired without agent_end; awaiting abort before releasing lock.");
+    try {
+      if (this.ready && this.proc && this.proc.exitCode === null) {
+        await this.sendCommand("abort", {}, 5_000).catch(() => {});
+      } else if (this.proc && this.proc.exitCode === null) {
+        // Subprocess never became ready or is wedged; force-terminate so exit handler restarts cleanly
+        try {
+          this.proc.kill();
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      this.abortingTurn = false;
+      // Only clear busy/hold if a newer turn has not taken ownership in the meantime
+      if (this.activeTurnGen === null) {
+        this.busy = false;
+        this.activity = "Thinking...";
+        this.releaseSpriteHold();
+        broadcast({
+          type: "error",
+          message: "Assistant turn timed out without completing; aborted and ready for next message.",
+        });
+        broadcast({ type: "done" });
+      }
+    }
+  }
+
   private touchInFlightWatchdog() {
     if (this.inFlightWatchdog && this.inFlightWatchdogMs > 0) {
-      this.armInFlightWatchdog(this.inFlightWatchdogMs);
+      this.armInFlightWatchdog(this.inFlightWatchdogMs, this.activeTurnGen ?? undefined);
     }
   }
 
@@ -382,6 +411,9 @@ export class OmpRpcBridge {
       console.error(`[lma-web] omp rpc exited with code ${code}; restarting in 1s...`);
       this.ready = false;
       this.busy = false;
+      this.abortingTurn = false;
+      this.activeTurnGen = null;
+      this.activeAgentRuns = 0;
       this.clearInFlightWatchdog();
       this.releaseSpriteHold();
       for (const [, p] of this.pending) {
@@ -460,6 +492,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "agent_start") {
+      this.activeAgentRuns += 1;
       this.busy = true;
       this.activity = "Thinking...";
       this.holdSpriteActive();
@@ -517,6 +550,14 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "agent_end" || ev.type === "session_settled") {
+      if (this.activeAgentRuns > 0) {
+        this.activeAgentRuns -= 1;
+      }
+      // Absorb late agent_end from a previously aborted turn while an abort or newer turn is active
+      if (this.abortingTurn || this.activeAgentRuns > 0) {
+        return;
+      }
+      this.activeTurnGen = null;
       this.busy = false;
       this.clearInFlightWatchdog();
       this.activity = "Thinking...";
@@ -657,12 +698,17 @@ export class OmpRpcBridge {
     message: string,
     opts: { lockAlreadyHeld?: boolean; ackTimeoutMs?: number; watchdogMs?: number } = {}
   ): Promise<{ accepted: true; inFlight?: boolean }> {
+    if (this.abortingTurn) {
+      throw new Error("Otto is aborting the previous turn. Wait a moment and retry.");
+    }
     if (!opts.lockAlreadyHeld) {
       if (this.busy) {
         throw new Error("Otto is still responding. Wait or click Stop.");
       }
       this.busy = true;
     }
+    const myGen = ++this.turnGeneration;
+    this.activeTurnGen = myGen;
     this.activity = "Thinking...";
     void this.holdSpriteActive();
     broadcast({ type: "user_message", text: stripHiddenTags(message) });
@@ -670,8 +716,8 @@ export class OmpRpcBridge {
     try {
       await this.sendCommand("prompt", { message }, opts.ackTimeoutMs ?? 30_000);
       // Arm silent-hang watchdog on the normal post-ack path too so provider stalls never wedge busy=true
-      if (this.busy) {
-        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS);
+      if (this.busy && this.activeTurnGen === myGen) {
+        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen);
       }
       return { accepted: true };
     } catch (err) {
@@ -681,22 +727,33 @@ export class OmpRpcBridge {
         // Long multi-tool turns (e.g. VOD clipping) can exceed the initial RPC ack window while
         // still streaming normally over SSE; keep busy + Sprite hold active and arm the aborting watchdog.
         console.warn("[lma-web] prompt RPC ack window elapsed while turn is still active; continuing via SSE");
-        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS);
+        if (this.busy && this.activeTurnGen === myGen) {
+          this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen);
+        }
         return { accepted: true, inFlight: true };
       }
-      this.busy = false;
-      this.clearInFlightWatchdog();
-      this.releaseSpriteHold();
+      if (this.activeTurnGen === myGen) {
+        this.activeTurnGen = null;
+        this.busy = false;
+        this.clearInFlightWatchdog();
+        this.releaseSpriteHold();
+      }
       throw err;
     }
   }
 
   async abort() {
-    await this.sendCommand("abort").catch(() => {});
-    this.busy = false;
+    this.abortingTurn = true;
+    this.activeTurnGen = null;
     this.clearInFlightWatchdog();
-    this.releaseSpriteHold();
-    broadcast({ type: "done" });
+    try {
+      await this.sendCommand("abort", {}, 5_000).catch(() => {});
+    } finally {
+      this.abortingTurn = false;
+      this.busy = false;
+      this.releaseSpriteHold();
+      broadcast({ type: "done" });
+    }
   }
 
   async newSession() {

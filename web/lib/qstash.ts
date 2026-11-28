@@ -331,9 +331,11 @@ export function verifyUpstashSignatureWithReceipt(
   return null;
 }
 
+/**
+ * Non-consuming convenience check for callers that only verify signature validity.
+ * Callers enforcing replay protection must use `verifyUpstashSignatureWithReceipt()`
+ * and invoke `commitQStashReplayToken()` only after terminal acceptance.
+ */
 export function verifyUpstashSignature(req: Request, rawBody: string): boolean {
-  const verified = verifyUpstashSignatureWithReceipt(req, rawBody);
-  if (!verified) return false;
-  commitQStashReplayToken(verified.replayKey, verified.expiresAtSec);
-  return true;
+  return verifyUpstashSignatureWithReceipt(req, rawBody) !== null;
 }

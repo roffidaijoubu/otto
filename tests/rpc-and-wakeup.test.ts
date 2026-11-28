@@ -37,22 +37,30 @@ function signWakeupJwt(body: string, key: string, jti?: string): string {
   return `${h}.${p}.${sig}`;
 }
 
-function attachFakeRpcProc(bridge: InstanceType<typeof OmpRpcBridge>, opts: { autoAck?: boolean; failMsg?: string } = {}) {
+function attachFakeRpcProc(
+  bridge: InstanceType<typeof OmpRpcBridge>,
+  opts: { autoAck?: boolean; autoAckAbort?: boolean; failMsg?: string } = {}
+) {
   const written: string[] = [];
   const fakeProc = {
     exitCode: null as number | null,
+    kill() {
+      this.exitCode = 1;
+    },
     stdin: {
       write(line: string) {
         written.push(line);
         const parsed = JSON.parse(line) as { id: string; type: string };
-        if (opts.autoAck) {
+        const shouldAck =
+          parsed.type === "abort" ? (opts.autoAckAbort ?? true) : Boolean(opts.autoAck);
+        if (shouldAck) {
           queueMicrotask(() => {
             (bridge as unknown as { handleEvent(ev: Record<string, unknown>): void }).handleEvent({
               type: "response",
               id: parsed.id,
               command: parsed.type,
-              success: !opts.failMsg,
-              error: opts.failMsg,
+              success: parsed.type === "abort" ? true : !opts.failMsg,
+              error: parsed.type === "abort" ? undefined : opts.failMsg,
               data: { ok: true },
             });
           });
@@ -187,6 +195,30 @@ describe("OmpRpcBridge concurrency, TOCTOU lock & long-turn timeout handling", (
       written2.some((line) => JSON.parse(line).type === "abort"),
       "Watchdog must also abort and recover normal post-ack stalled turns"
     );
+
+    // Case 3 (R2' regression): A late agent_end from an aborted turn must NOT clear the NEXT turn's busy/watchdog
+    const b3 = new OmpRpcBridge({ autoSpawn: false });
+    attachFakeRpcProc(b3, { autoAck: true, autoAckAbort: true });
+    const emit3 = (ev: Record<string, unknown>) =>
+      (b3 as unknown as { handleEvent(e: Record<string, unknown>): void }).handleEvent(ev);
+
+    await b3.prompt("Turn 1 (stalls after agent_start)", { ackTimeoutMs: 500, watchdogMs: 50 });
+    emit3({ type: "agent_start" }); // activeAgentRuns = 1
+    await new Promise((r) => setTimeout(r, 95)); // watchdog awaits abort ack, clears busy
+    assert.equal(b3.busy, false);
+
+    // User immediately starts Turn 2 before Turn 1's stale agent_end arrives
+    await b3.prompt("Turn 2 (active)", { ackTimeoutMs: 500, watchdogMs: 5000 });
+    emit3({ type: "agent_start" }); // activeAgentRuns = 2
+    assert.equal(b3.busy, true);
+
+    // Stale agent_end from aborted Turn 1 arrives -> must be absorbed; Turn 2 MUST remain busy!
+    emit3({ type: "agent_end" });
+    assert.equal(b3.busy, true);
+
+    // Real agent_end from Turn 2 arrives -> clears busy cleanly
+    emit3({ type: "agent_end" });
+    assert.equal(b3.busy, false);
   });
 
   it("clears busy and throws on explicit RPC failure", async () => {
@@ -287,5 +319,68 @@ describe("handleWakeupRoutes security & busy dispatch", () => {
     );
     assert.equal(replayRes?.status, 401);
     assert.equal(written.length, 1);
+  });
+
+  it("blocks concurrent duplicate checkpoint wake-up redeliveries while first snapshot is in flight (R1' atomic claim)", async () => {
+    const originalFetch = globalThis.fetch;
+    let releaseSnapshot!: () => void;
+    const snapshotGate = new Promise<void>((r) => {
+      releaseSnapshot = r;
+    });
+    let snapshotCalls = 0;
+
+    globalThis.fetch = (async () => {
+      snapshotCalls += 1;
+      await snapshotGate;
+      return new Response(JSON.stringify({ id: "v99" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const body = JSON.stringify({ mode: "checkpoint", label: "Daily Auto Snapshot" });
+      const jwt = signWakeupJwt(body, "sig_wakeup_test_key", "msg_ckpt_concurrent_1");
+
+      // Fire first delivery (stalls awaiting slow 60s checkpoint POST)
+      const p1 = handleWakeupRoutes(
+        new Request("https://otto.sprites.app/api/wakeup", {
+          method: "POST",
+          headers: { "upstash-signature": jwt },
+          body,
+        }),
+        new URL("https://otto.sprites.app/api/wakeup")
+      );
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Fire concurrent QStash redelivery with the SAME jti while first is still running -> 503 Retry-After, zero 2nd POST!
+      const dupRes = await handleWakeupRoutes(
+        new Request("https://otto.sprites.app/api/wakeup", {
+          method: "POST",
+          headers: { "upstash-signature": jwt },
+          body,
+        }),
+        new URL("https://otto.sprites.app/api/wakeup")
+      );
+      assert.equal(dupRes?.status, 503);
+      assert.equal(dupRes?.headers.get("retry-after"), "15");
+      assert.equal(snapshotCalls, 1);
+
+      // Let first snapshot finish -> 200 OK and commits jti
+      releaseSnapshot();
+      const firstRes = await p1;
+      assert.equal(firstRes?.status, 200);
+      assert.equal(snapshotCalls, 1);
+
+      // Replay after 200 OK is permanently rejected with 401
+      const afterReplay = await handleWakeupRoutes(
+        new Request("https://otto.sprites.app/api/wakeup", {
+          method: "POST",
+          headers: { "upstash-signature": jwt },
+          body,
+        }),
+        new URL("https://otto.sprites.app/api/wakeup")
+      );
+      assert.equal(afterReplay?.status, 401);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

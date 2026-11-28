@@ -1,8 +1,8 @@
 /**
  * Incremental Workspace <-> Box Sync Engine.
- * - Pulls Box `Otto Assets/` -> `/home/sprite/workspace/assets/` (incremental via size + modifiedAt)
- * - Pushes `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/` (explicit creator/agent sync only; boot uses `{ push: false }` pull-only)
- * - Tracks skipped >48 MiB files so Studio Files can flag them as "Local only (>48 MB)"
+ * - Pulls Box `Otto Assets/` (<= 48 MiB per file) -> `/home/sprite/workspace/assets/` (incremental via size + modifiedAt)
+ * - Pushes `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB per file) -> Box `Otto Handoffs/` (explicit creator/agent sync only; boot uses `{ push: false }` pull-only)
+ * - Tracks skipped >48 MiB files on both pull and push so Studio Files can flag them as "Local only (>48 MB)"
  */
 
 import fs from "node:fs";

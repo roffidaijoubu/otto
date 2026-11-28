@@ -9,6 +9,11 @@ import { rpc } from "../lib/rpc-bridge.ts";
 import { broadcast } from "../lib/sse.ts";
 import { errorMessage } from "../lib/http.ts";
 
+// Synchronous in-flight claims prevent concurrent QStash redeliveries from double-executing
+// slow deterministic jobs (`checkpoint`, `metrics_sync`) or racing before commit.
+const inFlightReplayKeys = new Set<string>();
+const inFlightDeterministicModes = new Set<"checkpoint" | "metrics_sync">();
+
 export async function handleWakeupRoutes(req: Request, url: URL): Promise<Response | null> {
   // Cryptographically signed Upstash QStash wake-up webhook
   if (req.method === "POST" && url.pathname === "/api/wakeup") {
@@ -17,6 +22,13 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     if (!receipt) {
       return Response.json({ error: "Invalid Upstash-Signature" }, { status: 401 });
     }
+    if (inFlightReplayKeys.has(receipt.replayKey)) {
+      return Response.json(
+        { error: "Wake-up delivery already in progress; retry shortly" },
+        { status: 503, headers: { "Retry-After": "15" } }
+      );
+    }
+
     let payload: Record<string, unknown> = {};
     try {
       payload = JSON.parse(rawBody) as Record<string, unknown>;
@@ -27,34 +39,71 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
 
     // Deterministic zero-LLM daily workspace snapshot (Fly.io Sprite Checkpoint)
     if (payload.mode === "checkpoint") {
-      const res = await runScheduledAutoSnapshot();
-      if (res.ok) {
-        commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+      if (inFlightDeterministicModes.has("checkpoint")) {
+        return Response.json(
+          { error: "Checkpoint snapshot already in progress; retry shortly" },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
       }
-      return Response.json(
-        { ok: res.ok, mode: "checkpoint", label, id: res.id, comment: res.comment, error: res.error },
-        { status: res.ok ? 200 : 500 }
-      );
+      inFlightReplayKeys.add(receipt.replayKey);
+      inFlightDeterministicModes.add("checkpoint");
+      const releaseBg = rpc.beginBackgroundJob("wakeup-checkpoint");
+      void rpc.holdSpriteActive();
+      try {
+        const res = await runScheduledAutoSnapshot();
+        if (res.ok) {
+          commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+        }
+        return Response.json(
+          { ok: res.ok, mode: "checkpoint", label, id: res.id, comment: res.comment, error: res.error },
+          { status: res.ok ? 200 : 500 }
+        );
+      } finally {
+        inFlightDeterministicModes.delete("checkpoint");
+        inFlightReplayKeys.delete(receipt.replayKey);
+        releaseBg();
+      }
     }
 
     // Deterministic zero-LLM daily multi-platform metrics sync (YouTube + TikTok + IG + X)
     if (payload.mode === "metrics_sync") {
-      const { ytRes, socialRes } = await syncAllMetrics(resolveTimezone());
-      const anyOk = ytRes.ok || socialRes.some((r) => r.ok);
-      if (anyOk) {
-        commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
-        broadcast({ type: "db_changed" });
+      if (inFlightDeterministicModes.has("metrics_sync")) {
+        return Response.json(
+          { error: "Metrics sync already in progress; retry shortly" },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
       }
-      return Response.json(
-        {
-          ok: anyOk,
-          mode: "metrics_sync",
-          label,
-          error: ytRes.error,
-          socials: socialRes.map((r) => ({ platform: r.platform, ok: r.ok, error: r.error })),
-        },
-        { status: anyOk ? 200 : 500 }
-      );
+      inFlightReplayKeys.add(receipt.replayKey);
+      inFlightDeterministicModes.add("metrics_sync");
+      const releaseBg = rpc.beginBackgroundJob("wakeup-metrics");
+      void rpc.holdSpriteActive();
+      try {
+        const { ytRes, socialRes } = await syncAllMetrics(resolveTimezone());
+        const anyOk = ytRes.ok || socialRes.some((r) => r.ok);
+        const allOk = ytRes.ok && socialRes.every((r) => r.ok);
+        if (anyOk) {
+          broadcast({ type: "db_changed" });
+        }
+        // Only commit replay token when every attempted leg succeeded so partial failures remain retryable
+        if (allOk) {
+          commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+        }
+        return Response.json(
+          {
+            ok: allOk,
+            partial: anyOk && !allOk,
+            mode: "metrics_sync",
+            label,
+            error: ytRes.error,
+            socials: socialRes.map((r) => ({ platform: r.platform, ok: r.ok, error: r.error })),
+          },
+          { status: allOk ? 200 : anyOk ? 503 : 500, headers: allOk ? {} : { "Retry-After": "15" } }
+        );
+      } finally {
+        inFlightDeterministicModes.delete("metrics_sync");
+        inFlightReplayKeys.delete(receipt.replayKey);
+        releaseBg();
+      }
     }
 
     const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
@@ -78,25 +127,31 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     }
 
     if (isSilent) {
-      // Claim background job slot synchronously before awaiting Tasks API hold so concurrent calls cannot race
+      // Claim replay key + background job slot synchronously before awaiting Tasks API hold
+      inFlightReplayKeys.add(receipt.replayKey);
       const releaseBg = rpc.beginBackgroundJob("wakeup-silent");
       try {
         await rpc.holdSpriteActive();
+        commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+        startSilentBackgroundJob({ label, prompt, jobType, releaseBg });
+        return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
       } catch (err) {
         releaseBg();
         throw err;
+      } finally {
+        inFlightReplayKeys.delete(receipt.replayKey);
       }
-      commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
-      startSilentBackgroundJob({ label, prompt, jobType, releaseBg });
-      return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
     }
 
-    // Claim busy synchronously before awaiting Tasks API hold and keep lock held into rpc.prompt() (no TOCTOU window)
+    // Claim replay key + busy synchronously before awaiting Tasks API hold and keep lock held into rpc.prompt()
+    inFlightReplayKeys.add(receipt.replayKey);
     rpc.busy = true;
     const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
     try {
       await rpc.holdSpriteActive();
       await rpc.prompt(wakeupMsg, { lockAlreadyHeld: true });
+      commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
+      return Response.json({ ok: true, mode: "chat", label });
     } catch (err) {
       console.error("[lma-web] wakeup prompt error:", errorMessage(err));
       rpc.busy = false;
@@ -106,9 +161,9 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
         { error: "Failed to dispatch wake-up; retry shortly" },
         { status: 503, headers: { "Retry-After": "15" } }
       );
+    } finally {
+      inFlightReplayKeys.delete(receipt.replayKey);
     }
-    commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
-    return Response.json({ ok: true, mode: "chat", label });
   }
 
   return null;
