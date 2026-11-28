@@ -19,7 +19,6 @@
 </p>
 
 <p align="center">
-  <!-- TODO: Capture fresh 16:9 hero screenshot of live Otto Studio OS -> docs/assets/hero-desktop.png -->
   <img src="docs/assets/hero-desktop.png" alt="Otto Studio OS — 10-App Multi-Window Cloud Desktop" width="100%">
   <br>
   <sub><b>Otto Studio OS</b>: a 10-app cloud desktop inside one Fly.io Sprite (Otto Chat, Clips &amp; Creator Archive, Thumbnail Studio, OBS Overlays, Studio Files, Ideas, Multi-Platform Analytics, Calendar, Contacts, System Settings) with live Desktop Widgets, TopMenuBar Background Jobs popover, unlimited installable Custom Studio Apps, <code>Cmd+K</code> Spotlight, and 6-digit PIN sign-in. <i>Live instance is PIN-protected to guard private OAuth/API quotas — demo PIN is included in the Hacksgiving submission form, or deploy your own in 1 prompt below.</i></sub>
@@ -63,10 +62,9 @@ flowchart LR
 Compose `1280×720` HTML/CSS thumbnails using real creator cutouts from Box `Otto Assets/`, CSS/SVG studio lighting, and non-AI Pixabay photography. Every background build runs an autonomous **headless Chrome `thumbnail_render` → multimodal `read` visual self-check loop** to catch face overlaps, framing flaws, or YouTube duration-badge collisions before saving — with 1-click Box handoff and direct YouTube Live waiting-room scheduling (`youtube_schedule_live_broadcast`).
 
 <p align="center">
-  <!-- TODO: Record 6-8s GIF of Thumbnail Studio streaming refine + headless JPG export -> docs/assets/demo-thumbnail-studio.gif -->
   <img src="docs/assets/demo-thumbnail-studio.gif" alt="Thumbnail Studio — Zero-AI 1280x720 Composition & Visual Self-Check" width="100%">
   <br>
-  <sub><i>Placeholder: Thumbnail Studio canvas, streaming Refine sidebar, and 1-click Box handoff.</i></sub>
+  <sub><b>Thumbnail Studio</b>: gallery of non-AI 1280×720 projects → full canvas with YouTube duration Safe Zone, 120px Mobile Squint Test, isolated Refine sidebar, and 1-click Box handoff.</sub>
 </p>
 
 <br>
@@ -76,10 +74,9 @@ Compose `1280×720` HTML/CSS thumbnails using real creator cutouts from Box `Ott
 A live OBS Browser Source cannot sleep when the agent does. `obs_overlay_deploy` drives the **Fly Machines API** directly: `POST /v1/apps`, shared IPv4 + IPv6, a `1 GB` Fly Volume, and a `256 MB` `shared-cpu-1x` Bun host injected via `config.files` — **zero Dockerfile, zero image build** — with `autostart: true`, `autostop: "stop"`, `min_machines_running: 0`. Control scenes, timers, and text live from the side-by-side OBS-dock controller or directly from Otto Chat over SSE ([`agent/lib/obs-overlays.ts`](agent/lib/obs-overlays.ts)).
 
 <p align="center">
-  <!-- TODO: Record 6-8s GIF of side-by-side 1920x1080 OBS preview + live SSE controller dock -> docs/assets/demo-obs-overlays.gif -->
   <img src="docs/assets/demo-obs-overlays.gif" alt="Live OBS Overlays — Fly Machine Host & Realtime SSE Remote Control" width="100%">
   <br>
-  <sub><i>Placeholder: Side-by-side transparent 1920×1080 OBS overlay preview and realtime SSE remote controller.</i></sub>
+  <sub><b>Two Machines, One Studio</b>: transparent 1920×1080 OBS canvas served by auto-stop Fly Machine #2 (<code>otto-obs-c8ae1adb</code>), driven live via SSE from the side-by-side OBS-dock controller.</sub>
 </p>
 
 <br>
@@ -89,10 +86,9 @@ A live OBS Browser Source cannot sleep when the agent does. `obs_overlay_deploy`
 Instead of feeding 4-hour VODs blindly into an LLM, a 12-thread InnerTube chat pull computes 4 rolling Z-scores with a 35-second lag pre-roll, cuts full-arc 45–210s clips, normalizes them to `-14 LUFS` CFR 30fps, transcribes word-level `.srt` captions via **ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite polish**, and runs a 480p/2fps FFmpeg multimodal hook review. Browse clips in a 3-page `VOD → Clips → Clip Viewer` UI with live SRT overlay, Redo SRT, and 1-click **Box** handoff for human editors ([`web/lib/clip-worker.ts`](web/lib/clip-worker.ts)).
 
 <p align="center">
-  <!-- TODO: Capture screenshot of Clips 3-page Clip Viewer with live SRT overlay + Hook Score + Box button -> docs/assets/demo-vod-clipper.png -->
   <img src="docs/assets/demo-vod-clipper.png" alt="Clips App — Clip Viewer with Live SRT Overlay & Editor Handoff" width="100%">
   <br>
-  <sub><i>Placeholder: Clips app Clip Viewer with live ElevenLabs Scribe SRT overlay, Hook Score, and Editor Notes.</i></sub>
+  <sub><b>Clips Viewer</b>: normalized CFR 30fps / −14 LUFS clip with live synced ElevenLabs Scribe SRT overlay, Hook Score, Editor Notes, Redo SRT, and 1-click Box handoff.</sub>
 </p>
 
 <br>
@@ -102,10 +98,9 @@ Instead of feeding 4-hour VODs blindly into an LLM, a 12-thread InnerTube chat p
 Every YouTube video, livestream VOD, and Short on the channel is chunked and indexed into a zero-key **Pinecone** serverless index (`multilingual-e5-large` + `bge-reranker-v2-m3`). Browse all indexed streams by category (`All / Livestreams / Videos / Shorts`) or search any topic or quote in Indonesian or English to jump to the exact YouTube timestamp — or hand that moment straight into the Clipper ([`agent/lib/pinecone-archive.ts`](agent/lib/pinecone-archive.ts)).
 
 <p align="center">
-  <!-- TODO: Record 5-7s GIF of Archive tab video grid -> semantic search -> Clip This Moment -> docs/assets/demo-creator-archive.gif -->
   <img src="docs/assets/demo-creator-archive.gif" alt="Creator Archive — Pinecone Semantic Search Across Past Streams" width="100%">
   <br>
-  <sub><i>Placeholder: Indexed channel archive grid and bilingual semantic timestamp search with Clipper handoff.</i></sub>
+  <sub><b>Creator Archive</b>: browse 80 indexed videos &amp; livestreams (3,097 moments) or run bilingual semantic search to jump straight to timestamps and clip moments.</sub>
 </p>
 
 <br>
@@ -115,10 +110,9 @@ Every YouTube video, livestream VOD, and Short on the channel is chunked and ind
 Long-running Clips, Thumbnails, OBS Overlays, and Archive Sync jobs run in isolated **`omp --mode rpc`** workers tracked in Neon `studio_jobs` and surfaced in the TopMenuBar Jobs popover. Because every worker keeps an open RPC stdin pipe in an in-memory registry, Otto can **peek live tool telemetry** (`studio_job_inspect`), **steer a running worker mid-flight without killing it** (`studio_job_nudge`), or resume failed jobs from saved checkpoints (`studio_job_resume`) ([`web/lib/rpc-worker.ts`](web/lib/rpc-worker.ts), [`agent/extensions/studio-jobs.ts`](agent/extensions/studio-jobs.ts)).
 
 <p align="center">
-  <!-- TODO: Capture screenshot of TopMenuBar Jobs popover + Otto Chat inspecting/nudging a live worker -> docs/assets/demo-jobs-rpc-nudge.png -->
   <img src="docs/assets/demo-jobs-rpc-nudge.png" alt="Unified Background Jobs Popover & Live RPC Worker Nudging" width="100%">
   <br>
-  <sub><i>Placeholder: TopMenuBar resumable Jobs popover paired with Otto inspecting and steering a live RPC worker.</i></sub>
+  <sub><b>Unified Neon Jobs Queue</b>: TopMenuBar popover tracking Thumbnails, Clips, OBS Overlays, and Archive Sync workers — all inspectable and nudgeable mid-flight by Otto over RPC.</sub>
 </p>
 
 <br>
@@ -128,10 +122,9 @@ Long-running Clips, Thumbnails, OBS Overlays, and Archive Sync jobs run in isola
 System Settings surfaces live security guardrails (`zeroLocalKeys`, `aiMediaDisabled`), **14 zero-key Sprites Connectors**, the **Hybrid LLM Router** (Ollama-first with automatic circuit-breaker failover to Gemini), and a **Sprite Time-Travel Checkpoints** UI backed by Fly.io copy-on-write snapshots and daily QStash auto-snapshots ([`web/lib/llm-router.ts`](web/lib/llm-router.ts), [`web/lib/checkpoints.ts`](web/lib/checkpoints.ts)).
 
 <p align="center">
-  <!-- TODO: Capture screenshot of System Settings (Connectors + Hybrid LLM Router + Checkpoints) -> docs/assets/demo-system-checkpoints.png -->
   <img src="docs/assets/demo-system-checkpoints.png" alt="System Settings — Zero-Key Connectors, Hybrid LLM Router & Time-Travel Checkpoints" width="100%">
   <br>
-  <sub><i>Placeholder: Runtime security guardrails, Ollama → Gemini circuit-breaker telemetry, and Sprite Time-Travel Checkpoints.</i></sub>
+  <sub><b>System Settings</b>: live security guardrails, Ollama → Gemini Hybrid LLM Router status, 14 zero-key Sprites Connectors, and 25 Time-Travel Checkpoints.</sub>
 </p>
 
 <br>
