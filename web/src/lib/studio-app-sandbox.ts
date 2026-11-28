@@ -18,29 +18,30 @@ function safeJson(value: unknown): string {
 
 const OTTO_DESIGN_STYLES = `
   :root {
-    --fg: #303030;
+    --fg: #171717;
     --fg-strong: #000000;
-    --fg-muted: #808080;
+    --fg-muted: #737373;
     --fg-subtle: #A3A3A3;
     --surface: #FFFFFF;
+    --surface-bar: #FAF9F6;
     --surface-alt: #F2F2F2;
     --surface-inset: #EDEDED;
-    --border: #EDEDED;
-    --border-strong: #D9D9D9;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.12);
     --highlight-yellow: #F9F5A2;
     --highlight-cyan: #C7F6FF;
     --error: #991B1B;
     --error-bg: #FDE8E8;
     --success: #166534;
     --success-bg: #E6F7EE;
-    --radius-card: 16px;
-    --radius-input: 25px;
-    --radius-pill: 9999px;
+    --radius-card: 12px;
+    --radius-input: 8px;
+    --radius-pill: 8px;
     --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   }
   *, *::before, *::after { box-sizing: border-box; }
-  html, body, #root { margin: 0; min-height: 100%; background: #FAFAFA; color: var(--fg); }
+  html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; min-height: 100%; background: #FFFFFF; color: var(--fg); }
   body {
     font-family: var(--font-sans);
     font-size: 13.5px;

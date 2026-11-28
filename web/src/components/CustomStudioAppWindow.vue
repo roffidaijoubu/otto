@@ -243,9 +243,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-[#FAFAFA]">
+  <div class="flex h-full min-h-0 flex-col bg-white">
     <!-- Subtle App Bar (No Download) -->
-    <div class="flex items-center justify-between gap-2 border-b border-[#EDEDED] bg-white px-3 py-1.5">
+    <div class="flex items-center justify-between gap-2 border-b border-black/[0.08] bg-[#FAF9F6] px-3 py-1.5">
       <div class="flex items-center gap-1.5">
         <ToggleGroup
           v-model="viewMode"
@@ -323,7 +323,7 @@ onBeforeUnmount(() => {
         :key="renderKey"
         :srcdoc="srcdoc"
         sandbox="allow-scripts"
-        class="h-full w-full border-0 bg-[#FAFAFA]"
+        class="h-full w-full border-0 bg-white"
         :title="title"
       />
 
