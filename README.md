@@ -221,6 +221,7 @@ Every external API routes through the organization-level [Fly.io Sprites Connect
 - **Agent-First Setup Guides:** [`docs/setup/README.md`](docs/setup/README.md) — provisioning playbooks for all 14 Sprites Connectors + `verify-all.sh` prerequisites, plus deep-dive guides in `docs/setup/`.
 - **Design System:** [`DESIGN.md`](DESIGN.md) — Otto Studio Bento OS tokens &amp; `shadcn-vue` / Reka UI desktop window rules.
 - **Verification &amp; E2E Playbooks:** [`scripts/verify-all.sh`](scripts/verify-all.sh) (28 deterministic checks) &amp; [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md) (5 Checkpoint Time-Travel behavioral playbooks).
+- **Build Log &amp; Changelog:** [`CHANGELOG.md`](CHANGELOG.md) — chronological progress across 138 commits (Nov 24–28, 2026), including architectural decisions and pruning.
 
 <br>
 
@@ -237,7 +238,7 @@ Every external API routes through the organization-level [Fly.io Sprites Connect
 ---
 
 <p align="center">
-  <a href="docs/architecture.md">Architecture Deep Dive</a> · <a href="docs/setup/README.md">Agent Setup Guides</a> · <a href="DESIGN.md">Design System</a> · <a href="AGENTS.md">Agentic Workflow</a> · <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a>
+  <a href="docs/architecture.md">Architecture Deep Dive</a> · <a href="docs/setup/README.md">Agent Setup Guides</a> · <a href="DESIGN.md">Design System</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="AGENTS.md">Agentic Workflow</a> · <a href="https://fly.io/hacksgiving">Fly.io Hacksgiving</a>
 </p>
 
 <p align="center">
