@@ -59,11 +59,11 @@ export default function (pi: ExtensionAPI) {
     name: "pixabay_download_image",
     label: "Download Pixabay Background to Workspace",
     description:
-      "Download a Pixabay photo URL (from pixabay_search_backgrounds) into /home/sprite/workspace/ (e.g. 'assets/backgrounds/dark-library.jpg') so it can be inspected with read and used in thumbnails or OBS overlays.",
+      "Download a Pixabay photo URL (from pixabay_search_backgrounds) into /home/sprite/workspace/ (e.g. 'assets/Backgrounds/dark-library.jpg') so it can be inspected with read and used in thumbnails or OBS overlays.",
     parameters: Type.Object({
       imageUrl: Type.String({ description: "HTTPS largeImageURL or webformatURL returned by pixabay_search_backgrounds." }),
       destWorkspacePath: Type.String({
-        description: "Workspace-relative destination path (e.g. 'assets/backgrounds/dark-library.jpg').",
+        description: "Workspace-relative destination path (e.g. 'assets/Backgrounds/dark-library.jpg').",
       }),
     }),
     async execute(_id, params) {

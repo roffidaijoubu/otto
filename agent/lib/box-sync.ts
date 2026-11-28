@@ -124,16 +124,33 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
       const localAssetsRoot = path.join(WORKSPACE_ROOT, "assets");
       fs.mkdirSync(localAssetsRoot, { recursive: true });
 
-      async function pullFolder(boxFolderId: string, relPrefix: string): Promise<void> {
+      function resolveCaseMatchedDir(parentDir: string, folderName: string): string {
+        const direct = path.join(parentDir, folderName);
+        if (fs.existsSync(direct)) return direct;
+        try {
+          const lower = folderName.toLowerCase();
+          for (const existing of fs.readdirSync(parentDir, { withFileTypes: true })) {
+            if (existing.isDirectory() && existing.name.toLowerCase() === lower) {
+              return path.join(parentDir, existing.name);
+            }
+          }
+        } catch {
+          // ignore
+        }
+        return direct;
+      }
+
+      async function pullFolder(boxFolderId: string, relPrefix: string, localDir: string): Promise<void> {
         const entries = await listBoxFolder(boxFolderId, 200);
         for (const entry of entries) {
           if (entry.name.startsWith(".")) continue;
           const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
-          const localAbs = path.join(localAssetsRoot, ...relPath.split("/"));
           if (entry.type === "folder") {
-            fs.mkdirSync(localAbs, { recursive: true });
-            await pullFolder(entry.id, relPath);
+            const nextDir = resolveCaseMatchedDir(localDir, entry.name);
+            fs.mkdirSync(nextDir, { recursive: true });
+            await pullFolder(entry.id, relPath, nextDir);
           } else if (entry.type === "file") {
+            const localAbs = path.join(localDir, entry.name);
             const size = entry.size ?? 0;
             if (size > BOX_MAX_UPLOAD_BYTES) {
               skippedOversize.push({ relPath: `assets/${relPath}`, sizeBytes: size });
@@ -161,7 +178,7 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
         }
       }
 
-      await pullFolder(assetsRoot.id, "");
+      await pullFolder(assetsRoot.id, "", localAssetsRoot);
 
       // 2. PUSH: `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/`
       const handoffRoot = await ensureBoxPath([BOX_HANDOFF_ROOT_NAME]);

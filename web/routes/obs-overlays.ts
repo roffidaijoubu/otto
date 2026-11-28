@@ -26,7 +26,7 @@ export function buildObsOverlayCreatePrompt(userPrompt: string, attachedImages: 
     `Instructions:`,
     `1. If the creator mentions their logo, character, brand colors, or matching visual style, call box_list_assets (e.g. subpath "Logos" or "Characters"), download the relevant PNG with box_download_file into "assets/..." inside /home/sprite/workspace/, and call read on that PNG so you can visually inspect its exact colors, motif, and outline style.`,
     `2. Follow obs-overlay-craft best practices: build a crisp, transparent 1920x1080 OBS Browser Source HTML (strictly zero controls inside the OBS HTML, zero AI-generated images). Reference any downloaded/uploaded brand PNG via <img src="/assets/<basename>" /> and derive your CSS palette & typography directly from the inspected asset.`,
-    `3. Call obs_overlay_deploy with a clean lowercase kebab-case slug, title, description, html, controls, initialState, and assets (array of workspace-relative paths like ["assets/logos/<file>.png"] whenever using local/Box/uploaded images).`,
+    `3. Call obs_overlay_deploy with a clean lowercase kebab-case slug, title, description, html, controls, initialState, and assets (array of workspace-relative paths like ["assets/Logos/<file>.png"] whenever using local/Box/uploaded images).`,
     `4. Reply concisely (1-2 plain sentences) summarizing the deployed overlay and its slug.`,
   ]
     .filter(Boolean)

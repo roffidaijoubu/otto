@@ -91,7 +91,7 @@ export default function (pi: ExtensionAPI) {
       assets: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            "Workspace-relative paths under /home/sprite/workspace/ (e.g. ['assets/characters/light-closeup-gloom-horrified.png', 'assets/backgrounds/dark-library.jpg', 'assets/logos/logo-lion-emblem.png']) to copy into the thumbnail project.",
+            "Workspace-relative paths under /home/sprite/workspace/ (e.g. ['assets/Characters/White_Light/light-closeup-gloom-horrified.png', 'assets/Backgrounds/dark-library.jpg', 'assets/Logos/logo-lion-emblem.png']) to copy into the thumbnail project.",
         })
       ),
       autoOpen: Type.Optional(

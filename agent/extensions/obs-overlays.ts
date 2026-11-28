@@ -133,7 +133,7 @@ export default function (pi: ExtensionAPI) {
       assets: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            "Optional workspace-relative image paths under /home/sprite/workspace/ (e.g. ['assets/logos/logo-full.png']) to upload to the Fly Machine so the overlay HTML can render them cleanly via <img src=\"/assets/<basename>\" />.",
+            "Optional workspace-relative image paths under /home/sprite/workspace/ (e.g. ['assets/Logos/logo-full.png']) to upload to the Fly Machine so the overlay HTML can render them cleanly via <img src=\"/assets/<basename>\" />.",
         })
       ),
       autoOpen: Type.Optional(
