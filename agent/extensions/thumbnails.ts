@@ -1,8 +1,11 @@
+import path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { exportWorkspaceEntryToBox } from "../lib/box.ts";
 import {
   deleteThumbnailProject,
   getThumbnailProject,
+  getThumbnailProjectDir,
   listThumbnailProjects,
   renderThumbnailHeadless,
   saveThumbnailProject,
@@ -36,67 +39,34 @@ async function notifyStudioThumbnail(
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: "thumbnail_start_job",
-    label: "Start Background Thumbnail Job (Isolated Worker)",
+    name: "thumbnail_export_box",
+    label: "Export Thumbnail to Box (1-Click Handoff)",
     description:
-      "Dispatch thumbnail creation or refinement to an isolated background OMP worker so main Otto Chat stays free and uncluttered while Thumbnail Studio displays a live in-progress card. ALWAYS prefer this from main Otto Chat whenever the creator asks to create or refine a thumbnail (pass a detailed brief + any uploaded workspace image paths in attachedImages).",
+      "Render (if not yet exported) and upload a 1280×720 Thumbnail Studio project to Box with a shareable handoff link.",
     parameters: Type.Object({
-      prompt: Type.String({
-        description:
-          "Detailed creative brief written by Otto (video topic, 2-4 word hook text, desired character expression/outfit from Otto Assets, mood/lighting, Pixabay background vibe, brand logo usage, etc.).",
-      }),
-      attachedImages: Type.Optional(
-        Type.Array(Type.String(), {
-          description:
-            "Optional workspace-relative image paths under /home/sprite/workspace/ (e.g. ['uploads/photo.png']) attached by the creator in chat.",
+      slug: Type.String({ description: "Thumbnail project slug." }),
+      format: Type.Optional(
+        Type.Union([Type.Literal("jpg"), Type.Literal("png")], {
+          description: "Output image format if rendering is needed (default 'jpg').",
         })
-      ),
-      slug: Type.Optional(
-        Type.String({ description: "Optional existing thumbnail slug to refine instead of creating a new one." })
-      ),
-      label: Type.Optional(
-        Type.String({ description: "Short progress title shown on the in-progress card (e.g. 'Building Horror Stream Thumbnail...')." })
       ),
     }),
     async execute(_id, params) {
-      const secret = process.env.LMA_INTERNAL_SECRET;
-      if (!secret) {
-        throw new Error("LMA_INTERNAL_SECRET unavailable — cannot dispatch background thumbnail job.");
+      let detail = getThumbnailProject(params.slug);
+      if (!detail) throw new Error(`Thumbnail "${params.slug}" not found.`);
+      if (!detail.exportedFile) {
+        await renderThumbnailHeadless({ slug: params.slug, format: params.format ?? "jpg" });
+        detail = getThumbnailProject(params.slug);
       }
-      const res = await fetch(`${getInternalBaseUrl()}/api/internal/thumbnails/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${secret}`,
-        },
-        body: JSON.stringify({
-          prompt: params.prompt,
-          attachedImages: params.attachedImages || [],
-          slug: params.slug,
-          label: params.label,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; jobId?: string; error?: string };
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || `Failed to start thumbnail job (HTTP ${res.status})`);
+      if (!detail?.exportedFile) {
+        throw new Error(`Could not export thumbnail "${params.slug}" before Box handoff.`);
       }
+      const absPath = path.join(getThumbnailProjectDir(params.slug), detail.exportedFile);
+      const relPath = `thumbnails/${params.slug}/${detail.exportedFile}`;
+      const result = await exportWorkspaceEntryToBox(absPath, relPath);
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                ok: true,
-                jobId: data.jobId,
-                dispatchedTo: "Thumbnail Studio (isolated background worker)",
-                note: "The thumbnail is now building in the background. Main Otto Chat is free immediately.",
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        details: { jobId: data.jobId },
+        content: [{ type: "text", text: JSON.stringify({ ok: true, slug: params.slug, ...result }, null, 2) }],
+        details: { slug: params.slug, url: result.url },
       };
     },
   });

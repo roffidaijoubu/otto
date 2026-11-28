@@ -132,4 +132,38 @@ export default function (pi: ExtensionAPI) {
       };
     },
   });
+
+  pi.registerTool({
+    name: "box_sync_workspace",
+    label: "Incremental Workspace ↔ Box Sync",
+    description:
+      "Check status or trigger an incremental two-way sync between /home/sprite/workspace/ and the creator's Box folder (with built-in file size guardrails).",
+    parameters: Type.Object({
+      action: Type.Optional(
+        Type.Union([Type.Literal("sync"), Type.Literal("status")], {
+          description: "'sync' (default) runs incremental sync; 'status' checks last sync state without modifying files.",
+        })
+      ),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const isStatus = params.action === "status";
+      const res = await fetch(
+        `http://127.0.0.1:${port}${isStatus ? "/api/internal/box-sync/status" : "/api/internal/box-sync"}`,
+        {
+          method: isStatus ? "GET" : "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+          signal: AbortSignal.timeout(60_000),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Box sync failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
+      };
+    },
+  });
 }

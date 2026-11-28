@@ -3,8 +3,10 @@ import { Type } from "@sinclair/typebox";
 import {
   deleteCustomStudioApp,
   getCustomStudioApp,
+  getCustomStudioAppState,
   listCustomStudioApps,
   saveCustomStudioApp,
+  saveCustomStudioAppState,
 } from "../lib/studio-apps.ts";
 
 function getInternalBaseUrl(): string {
@@ -64,7 +66,7 @@ export default function (pi: ExtensionAPI) {
       ),
       code: Type.String({
         description:
-          "Full source code. Follow the studio-app-craft skill (Otto DESIGN.md tokens + unslop-ui). Use `window.ottoApp.initialState` and `window.ottoApp.saveState(nextState)` to persist user data across refreshes.",
+          "Full source code. Follow the studio-app-craft skill strictly: full-bleed native desktop app UI (`h-screen w-full flex flex-col bg-white text-[#171717]`, `#FAF9F6` top toolbar/sidebar, `1px` hairline dividers, `#171717` primary actions, `IBM Plex Mono` `tabular-nums`, zero centered `max-w-*` webpage wrappers, outer grey margins, floating cards, or drop shadows; plus `unslop-ui`). Use `window.useOttoState` (React) or `window.ottoApp.initialState` + `window.ottoApp.saveState(nextState)` (HTML/JS) to persist user data across refreshes.",
       }),
       defaultWidth: Type.Optional(Type.Number({ description: "Preferred window width in px (420-1200, default 680)." })),
       defaultHeight: Type.Optional(Type.Number({ description: "Preferred window height in px (360-900, default 580)." })),
@@ -186,6 +188,42 @@ export default function (pi: ExtensionAPI) {
       await notifyStudioAppEvent("/api/internal/studio-app/changed", { slug: params.slug, deleted: true });
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, deleted: params.slug }, null, 2) }],
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "studio_app_state",
+    label: "Read or Update Custom Studio App State",
+    description:
+      "Read or patch the persistent JSON state of a local Custom Studio App (mirroring GET/PUT /api/studio-apps/:slug/state in the UI).",
+    parameters: Type.Object({
+      slug: Type.String({ description: "App slug." }),
+      patch: Type.Optional(
+        Type.Record(Type.String(), Type.Any(), {
+          description: "Optional JSON object to merge into (or replace when replace=true) the app's persistent state. Omit to read current state.",
+        })
+      ),
+      replace: Type.Optional(
+        Type.Boolean({ description: "If true, replace state wholesale instead of shallow-merging patch (default false)." })
+      ),
+    }),
+    async execute(_id, params) {
+      const app = getCustomStudioApp(params.slug);
+      if (!app) throw new Error(`Custom studio app '${params.slug}' was not found.`);
+      if (params.patch === undefined) {
+        const state = getCustomStudioAppState(params.slug);
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, slug: params.slug, state }, null, 2) }],
+        };
+      }
+      const next = params.replace
+        ? params.patch
+        : { ...getCustomStudioAppState(params.slug), ...params.patch };
+      const saved = saveCustomStudioAppState(params.slug, next);
+      await notifyStudioAppEvent("/api/internal/studio-app/changed", { slug: params.slug });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, slug: params.slug, state: saved }, null, 2) }],
       };
     },
   });

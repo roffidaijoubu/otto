@@ -144,7 +144,7 @@ check_grep() {
 }
 
 check_grep "All 9 skills symlinked" "CHECK_SKILLS:.*obs-overlay-craft.*onboarding.*raw-clip-finder.*social-promo.*stream-planner.*streaming-coaching.*studio-app-craft.*thumbnail-craft.*youtube-audit"
-check_grep "All 18 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*cloud-memory\.ts.*composio-youtube\.ts.*creator-archive\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*instagram\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*pixabay\.ts.*qstash-scheduler\.ts.*studio-apps\.ts.*studio-db\.ts.*thumbnails\.ts.*tiktok\.ts.*vod-clipper\.ts.*x-twitter\.ts"
+check_grep "All 22 extensions symlinked" "CHECK_EXTS:.*box-gateway\.ts.*calendar\.ts.*cloud-memory\.ts.*composio-youtube\.ts.*creator-archive\.ts.*exa-gateway\.ts.*firecrawl-gateway\.ts.*instagram\.ts.*media-reviewer\.ts.*new-session\.ts.*obs-overlays\.ts.*pixabay\.ts.*qstash-scheduler\.ts.*social-channels\.ts.*studio-apps\.ts.*studio-db\.ts.*studio-jobs\.ts.*studio-system\.ts.*thumbnails\.ts.*tiktok\.ts.*vod-clipper\.ts.*x-twitter\.ts"
 check_grep "Python clipper scripts compile cleanly" "CHECK_PY:OK"
 check_grep "Tasks API keep-alive hold (PUT 200 / DELETE 204)" "CHECK_TASKS:200:204"
 check_grep "GET /api/health returns ok:true" "CHECK_HEALTH:true"

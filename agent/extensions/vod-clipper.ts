@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
-  listClipJobs,
+  listClipRecords,
   updateClipJob,
   upsertClipRecord,
 } from "../lib/studio-db.ts";
@@ -322,54 +322,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "vod_start_clip_job",
-    label: "Start Background VOD Clipping Job",
-    description:
-      "Launch an isolated background VOD clipping job in the Clips app (never blocks or clutters the main Otto Chat thread). The background worker scans chat hype, cuts the best raw .mp4 + .srt clips, normalizes them to -14 LUFS CFR 30fps, watches each clip to write hook scores and human-editor notes, and saves them to the Clips gallery. Use this whenever the creator asks to clip a YouTube VOD.",
-    parameters: Type.Object({
-      url: Type.String({ description: "YouTube VOD URL or 11-character video ID" }),
-      title: Type.Optional(Type.String({ description: "Optional human-friendly stream/VOD title" })),
-      maxClips: Type.Optional(
-        Type.Number({ description: "0 = Full Auto (all worthy moments, default), or explicit cap 1-30" })
-      ),
-      focusNotes: Type.Optional(
-        Type.String({
-          description: "Optional focus instructions (e.g. 'funny moments', 'boss fight reactions', 'Q&A answers')",
-        })
-      ),
-    }),
-    async execute(_id, params) {
-      const videoId = extractVideoId(params.url);
-      const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const port = process.env.PORT || "8080";
-      const secret = process.env.LMA_INTERNAL_SECRET || "";
-      const res = await fetch(`http://127.0.0.1:${port}/api/internal/clip-jobs/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(secret ? { "X-LMA-Internal-Secret": secret } : {}),
-        },
-        body: JSON.stringify({
-          vodUrl: canonicalUrl,
-          videoId,
-          title: params.title || "",
-          maxClips: params.maxClips ?? 0,
-          focusNotes: params.focusNotes || "",
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Failed to start background clip job (${res.status}): ${err}`);
-      }
-      const data = await res.json();
-      return {
-        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-        details: data as Record<string, unknown>,
-      };
-    },
-  });
-
-  pi.registerTool({
     name: "vod_save_clip_plan",
     label: "Save Curated Clip Plan (Resumable Checkpoint)",
     description:
@@ -476,17 +428,110 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "vod_list_clip_jobs",
-    label: "List Background Clip Jobs",
-    description: "List recent background VOD clipping jobs and their current status/progress.",
+    name: "vod_list_clips",
+    label: "List Saved Clips",
+    description:
+      "List saved clip records in the Clips gallery (optionally filtered by videoId or jobId), including file paths, SRT paths, hook scores, editor notes, and Box share URLs.",
     parameters: Type.Object({
-      limit: Type.Optional(Type.Number({ description: "Max jobs to return (default: 10)" })),
+      videoId: Type.Optional(Type.String({ description: "Optional 11-character YouTube video ID filter." })),
+      jobId: Type.Optional(Type.String({ description: "Optional parent clip job ID filter." })),
+      limit: Type.Optional(Type.Number({ description: "Max clips to return (default 30)." })),
     }),
     async execute(_id, params) {
-      const jobs = await listClipJobs(params.limit ?? 10);
+      const clips = await listClipRecords({
+        videoId: params.videoId,
+        jobId: params.jobId,
+        limit: params.limit ?? 30,
+      });
       return {
-        content: [{ type: "text", text: JSON.stringify({ jobs }, null, 2) }],
-        details: { count: jobs.length },
+        content: [{ type: "text", text: JSON.stringify({ count: clips.length, clips }, null, 2) }],
+        details: { count: clips.length },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_retranscribe_clip",
+    label: "Re-Transcribe Clip Subtitles (ElevenLabs Scribe v3)",
+    description:
+      "Re-run ElevenLabs Scribe v3 transcription + Gemini typo cleanup on an existing saved clip record to regenerate its .srt subtitle file.",
+    parameters: Type.Object({
+      clipId: Type.String({ description: "Clip record ID (from vod_list_clips)." }),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/internal/clips/records/${encodeURIComponent(params.clipId.trim())}/retranscribe`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+          signal: AbortSignal.timeout(120_000),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Retranscribe failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_export_clip_box",
+    label: "Export Clip to Box (1-Click Handoff)",
+    description:
+      "Upload a saved clip (.mp4) to Box and save the resulting Box share link directly onto the clip record in the Clips gallery.",
+    parameters: Type.Object({
+      clipId: Type.String({ description: "Clip record ID (from vod_list_clips)." }),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/internal/clips/records/${encodeURIComponent(params.clipId.trim())}/box`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+          signal: AbortSignal.timeout(120_000),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Box export failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "vod_delete_clip",
+    label: "Delete Saved Clip Record",
+    description: "Delete a saved clip record from the Clips gallery database by clip ID.",
+    parameters: Type.Object({
+      clipId: Type.String({ description: "Clip record ID (from vod_list_clips)." }),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/internal/clips/records/${encodeURIComponent(params.clipId.trim())}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${secret}` },
+          signal: AbortSignal.timeout(15_000),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Delete clip failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
       };
     },
   });

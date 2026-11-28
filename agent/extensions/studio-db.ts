@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
   addChannelMetric,
+  deleteChannelMetric,
   deleteContact,
   deletePipelineItem,
   getStudioDbOverview,
@@ -264,6 +265,84 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: JSON.stringify({ count: metrics.length, metrics }, null, 2) }],
         details: { count: metrics.length },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "studio_metrics_delete",
+    label: "Delete Channel Metrics Snapshot",
+    description: "Delete an erroneous or duplicate channel metrics snapshot from the Studio DB by ID.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Metric snapshot ID (from studio_metrics_list)." }),
+    }),
+    async execute(_id, params) {
+      const deleted = await deleteChannelMetric(params.id);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: deleted, id: params.id }, null, 2) }],
+        details: { deleted },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "studio_metrics_sync",
+    label: "Sync Live Channel Metrics Programmatically",
+    description:
+      "Trigger a programmatic live metrics sync across YouTube, TikTok, Instagram, and/or X (via connected OAuth/Apify connectors) and save fresh snapshots into channel_metrics.",
+    parameters: Type.Object({
+      platform: Type.Optional(
+        Type.Union([
+          Type.Literal("all"),
+          Type.Literal("youtube"),
+          Type.Literal("tiktok"),
+          Type.Literal("instagram"),
+          Type.Literal("x"),
+        ], { description: "Target platform to sync (default: 'all')." })
+      ),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const res = await fetch(`http://127.0.0.1:${port}/api/internal/metrics/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ platform: params.platform ?? "all" }),
+        signal: AbortSignal.timeout(45_000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Metrics sync failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "studio_metrics_daily_config",
+    label: "Configure Daily Auto Metrics Sync",
+    description: "Enable or disable automatic daily QStash channel metrics syncing.",
+    parameters: Type.Object({
+      enabled: Type.Boolean({ description: "True to enable daily auto-sync, false to disable." }),
+      timezone: Type.Optional(Type.String({ description: "Optional IANA timezone." })),
+    }),
+    async execute(_id, params) {
+      const secret = process.env.LMA_INTERNAL_SECRET;
+      if (!secret) throw new Error("LMA_INTERNAL_SECRET unavailable — requires lma-web supervisor.");
+      const port = process.env.LMA_WEB_PORT || process.env.PORT || "8080";
+      const res = await fetch(`http://127.0.0.1:${port}/api/internal/metrics/daily-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ enabled: params.enabled, timezone: params.timezone }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `Daily config failed (HTTP ${res.status})`);
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: {},
       };
     },
   });

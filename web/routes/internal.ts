@@ -1,7 +1,35 @@
+import path from "node:path";
+import { BOX_MAX_UPLOAD_BYTES, exportWorkspaceEntryToBox } from "../../agent/lib/box.ts";
+import { getBoxSyncStatus, syncWorkspaceWithBox } from "../../agent/lib/box-sync.ts";
+import { transcribeClipToSrt } from "../../agent/lib/elevenlabs-stt.ts";
+import {
+  getSocialMetricsOverview,
+  syncAllSocialMetrics,
+  syncSocialPlatform,
+  type SocialPlatform,
+} from "../../agent/lib/social-metrics.ts";
+import {
+  deleteClipRecord,
+  listClipRecords,
+  updateClipBoxUrl,
+  upsertClipRecord,
+  type StudioJobKind,
+  type StudioJobStatus,
+} from "../../agent/lib/studio-db.ts";
+import {
+  getYouTubeMetricsWidgetState,
+  syncDailyMetricsQStashSchedule,
+  syncYouTubeMetrics,
+} from "../../agent/lib/youtube-metrics.ts";
+import {
+  configureAutoSnapshotSchedule,
+  createSpriteCheckpoint,
+  getAutoSnapshotConfig,
+  listSpriteCheckpoints,
+} from "../lib/checkpoints.ts";
+import { fetchGatewayList } from "../lib/gateway.ts";
+import { readSetupIdentity } from "../lib/identity.ts";
 import { requireInternalSecret } from "../lib/internal-auth.ts";
-import { handleHybridChatCompletions } from "../lib/llm-router.ts";
-import { startClipJob } from "../lib/clip-service.ts";
-import { startBackgroundArchiveSync } from "../lib/archive-worker.ts";
 import {
   cancelStudioJobById,
   dispatchStudioJob,
@@ -11,11 +39,10 @@ import {
   resumeStudioJobById,
   type DispatchStudioJobInput,
 } from "../lib/job-control.ts";
-import { dispatchObsOverlayBackgroundJob } from "./obs-overlays.ts";
-import { dispatchThumbnailBackgroundJob } from "./thumbnails.ts";
+import { getLlmRouterStatus, handleHybridChatCompletions, probeOllamaNow } from "../lib/llm-router.ts";
+import { computeGuardrailStatus } from "../lib/qstash.ts";
 import { broadcast } from "../lib/sse.ts";
-import { rpc } from "../lib/rpc-bridge.ts";
-import type { StudioJobKind, StudioJobStatus } from "../../agent/lib/studio-db.ts";
+import { resolveSafeWorkspacePath, WORKSPACE_ROOT } from "../lib/workspace.ts";
 
 export async function handleInternalRoutes(req: Request, url: URL): Promise<Response | null> {
   // Internal OpenAI-compatible Hybrid LLM Router (Ollama primary -> Gemini circuit-breaker fallback)
@@ -25,7 +52,7 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     return handleHybridChatCompletions(req);
   }
 
-  // Internal-only Studio App & OBS Overlay presentation endpoints for omp subprocess
+  // Internal-only Studio App, OBS Overlay & Thumbnail presentation endpoints for omp subprocess
   if (
     req.method === "POST" &&
     (url.pathname === "/api/internal/studio-app/open" ||
@@ -78,106 +105,7 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     return Response.json({ ok: true, slug });
   }
 
-  // Internal-only dispatchers so main Otto Chat offloads Thumbnails & OBS Overlays to isolated OMP workers
-  if (req.method === "POST" && url.pathname === "/api/internal/thumbnails/start") {
-    const denied = requireInternalSecret(req);
-    if (denied) return denied;
-    const body = (await req.json().catch(() => ({}))) as {
-      prompt?: string;
-      attachedImages?: string[];
-      slug?: string;
-      label?: string;
-    };
-    const prompt = String(body.prompt || "").trim();
-    if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
-    const job = dispatchThumbnailBackgroundJob({
-      prompt,
-      attachedImages: Array.isArray(body.attachedImages) ? body.attachedImages : [],
-      slug: body.slug ? String(body.slug) : undefined,
-      label: body.label ? String(body.label) : undefined,
-    });
-    return Response.json({ ok: true, ...job });
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/internal/obs-overlays/start") {
-    const denied = requireInternalSecret(req);
-    if (denied) return denied;
-    const body = (await req.json().catch(() => ({}))) as {
-      prompt?: string;
-      attachedImages?: string[];
-      slug?: string;
-      label?: string;
-    };
-    const prompt = String(body.prompt || "").trim();
-    if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
-    const job = dispatchObsOverlayBackgroundJob({
-      prompt,
-      attachedImages: Array.isArray(body.attachedImages) ? body.attachedImages : [],
-      slug: body.slug ? String(body.slug) : undefined,
-      label: body.label ? String(body.label) : undefined,
-    });
-    return Response.json({ ok: true, ...job });
-  }
-
-  // Internal-only endpoint for Otto chat (`vod_start_clip_job`) to dispatch isolated background clip jobs
-  if (req.method === "POST" && url.pathname === "/api/internal/clip-jobs/start") {
-    const denied = requireInternalSecret(req);
-    if (denied) return denied;
-    try {
-      const body = (await req.json()) as {
-        vodUrl?: string;
-        videoId?: string;
-        title?: string;
-        maxClips?: number;
-        focusNotes?: string;
-      };
-      if (!body.vodUrl) {
-        return Response.json({ error: "vodUrl is required" }, { status: 400 });
-      }
-      const job = await startClipJob(
-        {
-          vodUrl: String(body.vodUrl),
-          videoId: body.videoId ? String(body.videoId) : undefined,
-          title: body.title ? String(body.title) : undefined,
-          maxClips: typeof body.maxClips === "number" ? body.maxClips : 0,
-          focusNotes: body.focusNotes ? String(body.focusNotes) : "",
-        },
-        rpc
-      );
-      return Response.json({ ok: true, job });
-    } catch (err) {
-      return Response.json(
-        { error: err instanceof Error ? err.message : String(err) },
-        { status: 400 }
-      );
-    }
-  }
-
-  // Internal-only endpoint for Otto chat (`archive_sync_channel`) to trigger background Pinecone sync
-  if (req.method === "POST" && url.pathname === "/api/internal/archive/sync") {
-    const denied = requireInternalSecret(req);
-    if (denied) return denied;
-    try {
-      const body = (await req.json().catch(() => ({}))) as {
-        channelUrl?: string;
-        includeShorts?: boolean;
-        limit?: number;
-      };
-      const result = await startBackgroundArchiveSync({
-        channelUrl: body.channelUrl,
-        includeShorts: body.includeShorts !== false,
-        limit: typeof body.limit === "number" ? body.limit : undefined,
-      });
-      return Response.json(result);
-    } catch (err) {
-      return Response.json(
-        { ok: false, error: err instanceof Error ? err.message : String(err) },
-        { status: 400 }
-      );
-    }
-  }
-
-  // Internal-only Studio Jobs dispatch, visibility, live RPC nudging, resume, and cancel endpoints for Otto
+  // ==================== UNIFIED STUDIO JOBS ====================
   if (req.method === "POST" && url.pathname === "/api/internal/jobs/dispatch") {
     const denied = requireInternalSecret(req);
     if (denied) return denied;
@@ -291,6 +219,252 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
         { status: 400 }
       );
     }
+  }
+
+  // ==================== SYSTEM DIAGNOSTICS & CHECKPOINTS ====================
+  if (req.method === "GET" && url.pathname === "/api/internal/system/status") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const guardrails = computeGuardrailStatus();
+    const [gwResult, router] = await Promise.all([
+      fetchGatewayList(8000).catch(() => ({ ok: false as const, status: 0, connections: [] })),
+      getLlmRouterStatus(url.searchParams.get("refresh") === "1"),
+    ]);
+    const connectors = gwResult.ok
+      ? gwResult.connections.map((c) => ({
+          provider: c.provider || "custom_api",
+          displayName: c.display_name || c.provider || "Connector",
+          connectionType: c.connection_type || "api_key",
+          status: "connected",
+        }))
+      : [];
+    return Response.json({ ok: true, guardrails, connectors, router });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/system/probe-ollama") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const result = await probeOllamaNow();
+    return Response.json({ ok: true, ollamaHealthy: result.ok, router: result.status });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/internal/checkpoints") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const tz = readSetupIdentity().timezone || "UTC";
+    const [listed, autoSnapshot] = await Promise.all([
+      listSpriteCheckpoints(),
+      getAutoSnapshotConfig(tz),
+    ]);
+    return Response.json({
+      ok: true,
+      available: listed.available,
+      checkpoints: listed.checkpoints,
+      autoSnapshot,
+      error: listed.error,
+    });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/checkpoints") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const body = (await req.json().catch(() => ({}))) as { comment?: string };
+    const created = await createSpriteCheckpoint(String(body.comment ?? ""));
+    if (!created.ok) {
+      return Response.json({ ok: false, error: created.error || "Failed to create checkpoint" }, { status: 500 });
+    }
+    return Response.json({ ok: true, id: created.id, comment: created.comment });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/checkpoints/auto-config") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const body = (await req.json().catch(() => ({}))) as { enabled?: boolean; timezone?: string };
+    const tz =
+      typeof body.timezone === "string" && body.timezone.trim()
+        ? body.timezone.trim()
+        : readSetupIdentity().timezone || "UTC";
+    const result = await configureAutoSnapshotSchedule({
+      enabled: Boolean(body.enabled),
+      timezone: tz,
+    });
+    const autoSnapshot = await getAutoSnapshotConfig(tz);
+    return Response.json({ ...result, autoSnapshot });
+  }
+
+  // ==================== METRICS SYNC & DAILY CONFIG ====================
+  if (req.method === "POST" && url.pathname === "/api/internal/metrics/sync") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const tz = readSetupIdentity().timezone || "UTC";
+    const body = (await req.json().catch(() => ({}))) as { platform?: string };
+    const target = String(body.platform || "all").toLowerCase();
+
+    if (target === "all") {
+      const [ytRes, socialRes] = await Promise.all([
+        syncYouTubeMetrics({ timezone: tz }),
+        syncAllSocialMetrics(),
+      ]);
+      const anyOk = ytRes.ok || socialRes.some((r: { ok: boolean }) => r.ok);
+      if (anyOk) broadcast({ type: "db_changed" });
+      return Response.json({
+        ok: anyOk,
+        results: {
+          youtube: { ok: ytRes.ok, error: ytRes.error },
+          ...Object.fromEntries(
+            socialRes.map((r: { platform: string; ok: boolean; error?: string }) => [
+              r.platform,
+              { ok: r.ok, error: r.error },
+            ])
+          ),
+        },
+        socials: await getSocialMetricsOverview(),
+      });
+    }
+
+    if (target === "tiktok" || target === "instagram" || target === "x") {
+      const sRes = await syncSocialPlatform(target as SocialPlatform);
+      if (sRes.ok) broadcast({ type: "db_changed" });
+      return Response.json({ ok: sRes.ok, result: sRes, error: sRes.error });
+    }
+
+    const res = await syncYouTubeMetrics({ timezone: tz });
+    if (res.ok) broadcast({ type: "db_changed" });
+    return Response.json(res);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/metrics/daily-config") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const body = (await req.json().catch(() => ({}))) as { enabled?: boolean; timezone?: string };
+    const tz =
+      typeof body.timezone === "string" && body.timezone.trim()
+        ? body.timezone.trim()
+        : readSetupIdentity().timezone || "UTC";
+    const result = await syncDailyMetricsQStashSchedule({
+      enabled: Boolean(body.enabled),
+      timezone: tz,
+    });
+    broadcast({ type: "db_changed" });
+    return Response.json({ ...result, state: await getYouTubeMetricsWidgetState(tz) });
+  }
+
+  // ==================== CLIPS POST-PROCESSING & RECORDS ====================
+  if (
+    req.method === "POST" &&
+    url.pathname.startsWith("/api/internal/clips/records/") &&
+    url.pathname.endsWith("/retranscribe")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const id = decodeURIComponent(
+      url.pathname.slice("/api/internal/clips/records/".length, -"/retranscribe".length)
+    );
+    const all = await listClipRecords({ limit: 200 });
+    const rec = all.find((c) => c.id === id);
+    if (!rec) return Response.json({ ok: false, error: "Clip record not found" }, { status: 404 });
+    try {
+      const resolvedMp4 = resolveSafeWorkspacePath(rec.filePath, { allowMissing: false });
+      const base = path.basename(resolvedMp4.absPath, path.extname(resolvedMp4.absPath));
+      const targetSrtAbs = rec.srtPath
+        ? resolveSafeWorkspacePath(rec.srtPath, { allowMissing: true }).absPath
+        : path.join(path.dirname(resolvedMp4.absPath), `${base}.srt`);
+      const targetSrtRel = path.relative(WORKSPACE_ROOT, targetSrtAbs).split(path.sep).join("/");
+      const stt = await transcribeClipToSrt(resolvedMp4.absPath, targetSrtAbs);
+      if (!stt.ok) {
+        return Response.json({ ok: false, error: stt.error || "Transcription failed" }, { status: 500 });
+      }
+      if (!rec.srtPath || rec.srtPath !== targetSrtRel) {
+        await upsertClipRecord({
+          id: rec.id,
+          jobId: rec.jobId,
+          videoId: rec.videoId,
+          title: rec.title,
+          filePath: rec.filePath,
+          srtPath: targetSrtRel,
+          startSec: rec.startSec,
+          endSec: rec.endSec,
+          durationSec: rec.durationSec,
+          hookScore: rec.hookScore,
+          editorNotes: rec.editorNotes,
+          youtubeUrl: rec.youtubeUrl,
+          boxUrl: rec.boxUrl,
+          status: rec.status,
+        });
+      }
+      broadcast({ type: "clips_changed" });
+      return Response.json({
+        ok: true,
+        srtPath: targetSrtRel,
+        cueCount: stt.cueCount ?? 0,
+        provider: stt.provider ?? "elevenlabs-scribe-v3",
+        geminiPolished: stt.geminiPolished ?? false,
+      });
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.startsWith("/api/internal/clips/records/") &&
+    url.pathname.endsWith("/box")
+  ) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const id = decodeURIComponent(
+      url.pathname.slice("/api/internal/clips/records/".length, -"/box".length)
+    );
+    const all = await listClipRecords({ limit: 200 });
+    const rec = all.find((c) => c.id === id);
+    if (!rec) return Response.json({ ok: false, error: "Clip record not found" }, { status: 404 });
+    try {
+      const resolved = resolveSafeWorkspacePath(rec.filePath, { allowMissing: false });
+      const uploaded = await exportWorkspaceEntryToBox(resolved.absPath, resolved.relPath);
+      const updated = await updateClipBoxUrl(rec.id, uploaded.url);
+      broadcast({ type: "clips_changed" });
+      return Response.json({ ok: true, clip: updated, boxUrl: uploaded.url });
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/internal/clips/records/")) {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const id = decodeURIComponent(url.pathname.slice("/api/internal/clips/records/".length));
+    const ok = await deleteClipRecord(id);
+    if (ok) broadcast({ type: "clips_changed" });
+    return Response.json({ ok, id });
+  }
+
+  // ==================== WORKSPACE BOX INCREMENTAL SYNC ====================
+  if (req.method === "GET" && url.pathname === "/api/internal/box-sync/status") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const status = await getBoxSyncStatus();
+    return Response.json({ ok: true, maxUploadBytes: BOX_MAX_UPLOAD_BYTES, sync: status });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/internal/box-sync") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    const summary = await syncWorkspaceWithBox();
+    if (summary.pulledCount > 0 || summary.pushedCount > 0) {
+      broadcast({ type: "workspace_changed" });
+    }
+    return Response.json({
+      ok: !summary.lastError,
+      maxUploadBytes: BOX_MAX_UPLOAD_BYTES,
+      sync: summary,
+      error: summary.lastError || undefined,
+    });
   }
 
   return null;
