@@ -4,7 +4,12 @@ import {
   buildAuthCookieHeader,
   isAuthenticated,
 } from "../lib/auth.ts";
-import { getClientKey, isLoginRateLimited, recordLoginFailure } from "../lib/qstash.ts";
+import {
+  getClientKey,
+  isLoginRateLimited,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from "../lib/qstash.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 
 export async function handlePublicRoutes(
@@ -50,6 +55,7 @@ export async function handlePublicRoutes(
       recordLoginFailure(clientKey);
       return Response.json({ error: "Invalid PIN" }, { status: 401 });
     }
+    recordLoginSuccess(clientKey);
     return new Response(JSON.stringify({ ok: true }), {
       headers: {
         "Content-Type": "application/json",

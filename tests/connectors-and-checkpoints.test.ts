@@ -51,10 +51,34 @@ describe("Sprites Gateway discovery & /api/connectors diagnostics", () => {
     const req = new Request("http://localhost:8080/api/connectors");
     const res = await handleConnectorsRoutes(req, new URL(req.url));
     assert.ok(res);
-    const body = (await res.json()) as { connectors: unknown[]; warning?: string; zeroOutboundApiKeys: boolean };
+    const body = (await res.json()) as {
+      ok: boolean;
+      connectors: unknown[];
+      warning?: string;
+      zeroOutboundApiKeys: boolean;
+      gateway: { ok: boolean; status: number | null; latencyMs: number; endpoint: string };
+    };
+    assert.equal(body.ok, true);
     assert.deepEqual(body.connectors, []);
     assert.match(body.warning || "", /No Sprites Connectors returned/i);
     assert.equal(typeof body.zeroOutboundApiKeys, "boolean");
+    assert.equal(body.gateway.ok, true);
+    assert.equal(body.gateway.status, 200);
+    assert.equal(body.gateway.endpoint, "https://api.sprites.dev/v1/gateway/list");
+    assert.equal(typeof body.gateway.latencyMs, "number");
+
+    // Verify structured failure diagnostic telemetry when gateway returns 502
+    globalThis.fetch = (async () => new Response("Bad Gateway", { status: 502 })) as unknown as typeof fetch;
+    const failRes = await handleConnectorsRoutes(req, new URL(req.url));
+    const failBody = (await failRes!.json()) as {
+      ok: boolean;
+      gateway: { ok: boolean; status: number | null };
+      warning?: string;
+    };
+    assert.equal(failBody.ok, false);
+    assert.equal(failBody.gateway.ok, false);
+    assert.equal(failBody.gateway.status, 502);
+    assert.match(failBody.warning || "", /Gateway HTTP 502/i);
   });
 
   it("resolves matching provider gateway URLs and strips trailing slash", async () => {

@@ -6,6 +6,7 @@ import {
   makeEventId,
   publishQStashWakeup,
   saveCalendar,
+  type CalendarEvent,
 } from "../lib/scheduler-core.ts";
 export type { CalendarEvent, CalendarEventType, CalendarWakeupHook, GoogleReminderOverride, LifecycleHookPreset } from "../lib/scheduler-core.ts";
 

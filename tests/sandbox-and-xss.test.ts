@@ -32,11 +32,14 @@ describe("Sandbox security, prompt-injection isolation & policy contracts", () =
     assert.match(html, /tok_1234567890abcdef/);
   });
 
-  it("enforces zero filesystem tools (--no-tools) and untrusted delimiters on /api/contacts/draft-outreach", () => {
+  it("enforces zero filesystem tools and untrusted delimiters across both isolated AI endpoints", () => {
     const src = fs.readFileSync(path.join(REPO_ROOT, "web", "routes", "isolated-ai.ts"), "utf8");
     assert.match(src, /noTools:\s*true/);
     assert.match(src, /<untrusted_contact_data>/);
-    assert.equal(/runIsolatedQuickTask\(\{\s*tools:\s*"read"/.test(src), false);
+    assert.match(src, /<untrusted_analytics_input>/);
+    assert.match(src, /tools:\s*"studio_metrics_history,studio_db_overview"/);
+    // Neither endpoint may grant the filesystem `read` tool to prompts carrying client text
+    assert.equal(/tools:\s*"[^"]*\bread\b/.test(src), false);
   });
 
   it("keeps CustomStudioAppWindow iframe strictly opaque (sandbox=allow-scripts without allow-same-origin)", () => {

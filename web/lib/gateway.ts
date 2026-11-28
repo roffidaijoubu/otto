@@ -8,7 +8,7 @@ export interface GatewayConnection {
 }
 
 export type GatewayListResult =
-  | { ok: true; connections: GatewayConnection[] }
+  | { ok: true; status: number; connections: GatewayConnection[] }
   | { ok: false; status: number };
 
 export async function fetchGatewayList(timeoutMs = 8000): Promise<GatewayListResult> {
@@ -19,7 +19,7 @@ export async function fetchGatewayList(timeoutMs = 8000): Promise<GatewayListRes
     return { ok: false, status: res.status };
   }
   const data = (await res.json()) as { connections?: GatewayConnection[] };
-  return { ok: true, connections: data.connections ?? [] };
+  return { ok: true, status: res.status, connections: data.connections ?? [] };
 }
 
 export async function resolveGatewayBaseUrl(

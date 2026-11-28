@@ -55,7 +55,7 @@ export default function (pi: ExtensionAPI) {
       let detail = getThumbnailProject(params.slug);
       if (!detail) throw new Error(`Thumbnail "${params.slug}" not found.`);
       if (!detail.exportedFile) {
-        await renderThumbnailHeadless({ slug: params.slug, format: params.format ?? "jpg" });
+        renderThumbnailHeadless(params.slug, params.format ?? "jpg");
         detail = getThumbnailProject(params.slug);
       }
       if (!detail?.exportedFile) {

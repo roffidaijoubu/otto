@@ -141,7 +141,7 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_id, params) {
-      const resolvedAssets = (params.assets || []).map((rel) => {
+      const resolvedAssets = (params.assets || []).map((rel: string) => {
         const { absPath } = resolveJailedWorkspaceFile(rel);
         return { absPath, name: path.basename(absPath) };
       });

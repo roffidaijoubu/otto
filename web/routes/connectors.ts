@@ -19,12 +19,17 @@ export async function handleConnectorsRoutes(
 
   if (req.method === "GET" && url.pathname === "/api/connectors") {
     const guardrails = computeGuardrailStatus();
+    const startedAt = Date.now();
+    const endpoint = "https://api.sprites.dev/v1/gateway/list";
     try {
       const gwResult = await fetchGatewayList(8000);
+      const latencyMs = Date.now() - startedAt;
       if (!gwResult.ok) {
         return Response.json({
+          ok: false,
           connectors: [],
           ...guardrails,
+          gateway: { ok: false, status: gwResult.status, latencyMs, endpoint },
           warning: `Gateway HTTP ${gwResult.status}`,
         });
       }
@@ -37,8 +42,10 @@ export async function handleConnectorsRoutes(
         status: "connected",
       }));
       return Response.json({
+        ok: true,
         connectors,
         ...guardrails,
+        gateway: { ok: true, status: gwResult.status, latencyMs, endpoint, count: connectors.length },
         ...(connectors.length === 0
           ? {
               warning:
@@ -47,10 +54,13 @@ export async function handleConnectorsRoutes(
           : {}),
       });
     } catch (err: unknown) {
+      const errMsg = errorMessage(err);
       return Response.json({
+        ok: false,
         connectors: [],
         ...guardrails,
-        warning: errorMessage(err),
+        gateway: { ok: false, status: null, latencyMs: Date.now() - startedAt, endpoint, error: errMsg },
+        warning: errMsg,
       });
     }
   }

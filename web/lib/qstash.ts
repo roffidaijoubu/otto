@@ -4,6 +4,14 @@ import * as path from "path";
 import { HOME_DIR } from "./config.ts";
 import { buildAgentChildEnv } from "./child-env.ts";
 import { timingSafeStrEqual } from "./secure-compare.ts";
+import { isPrivateOrReservedIp } from "../../agent/lib/ssrf-guard.ts";
+
+const seenQStashTokens = new Map<string, number>();
+const MAX_SEEN_QSTASH_TOKENS = 2048;
+
+export function resetSeenQStashTokens(): void {
+  seenQStashTokens.clear();
+}
 
 export function base64UrlDecode(str: string): Buffer {
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
@@ -81,21 +89,56 @@ export function verifyQStashJwtWithKey(
   ) {
     return false;
   }
+
+  // Enforce single-use replay deduplication via `jti` (or full token SHA-256 fallback)
+  const replayKey =
+    typeof payload.jti === "string" && payload.jti.trim()
+      ? `jti:${payload.jti.trim()}`
+      : `tok:${crypto.createHash("sha256").update(token).digest("hex")}`;
+  const existingExp = seenQStashTokens.get(replayKey);
+  if (existingExp !== undefined) {
+    if (existingExp > now) {
+      return false;
+    }
+    seenQStashTokens.delete(replayKey);
+  }
+  if (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
+    for (const [k, expSec] of seenQStashTokens) {
+      if (expSec <= now) seenQStashTokens.delete(k);
+    }
+    while (seenQStashTokens.size >= MAX_SEEN_QSTASH_TOKENS) {
+      const oldest = seenQStashTokens.keys().next().value;
+      if (oldest === undefined) break;
+      seenQStashTokens.delete(oldest);
+    }
+  }
+  const expiresAtSec = typeof payload.exp === "number" ? payload.exp + 30 : now + 300;
+  seenQStashTokens.set(replayKey, expiresAtSec);
+
   return true;
 }
 
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const loginSuccesses = new Map<string, { count: number; resetAt: number }>();
 const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_FAILURES = 5;
+const LOGIN_MAX_SUCCESSES_PER_MIN = 20;
 
 export function resetLoginRateLimits(): void {
   loginFailures.clear();
+  loginSuccesses.clear();
 }
 
 export function getClientKey(
   req: Request,
   server?: { requestIP(r: Request): { address: string } | null }
 ): string {
+  const socketIp = server?.requestIP(req)?.address?.trim() || "";
+  // Direct public socket peers cannot spoof proxy headers; only trust Fly/XFF headers
+  // when the peer socket is a local/private edge proxy (or unavailable in unit tests).
+  if (socketIp && !isPrivateOrReservedIp(socketIp)) {
+    return socketIp;
+  }
   const flyIp = req.headers.get("fly-client-ip")?.trim();
   if (flyIp) return flyIp;
   const xff = req.headers.get("x-forwarded-for");
@@ -104,17 +147,28 @@ export function getClientKey(
     const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
     if (parts.length > 0) return parts[parts.length - 1];
   }
-  return server?.requestIP(req)?.address || "local";
+  return socketIp || "local";
 }
 
 export function isLoginRateLimited(key: string): boolean {
+  const now = Date.now();
   const entry = loginFailures.get(key);
-  if (!entry) return false;
-  if (Date.now() > entry.resetAt) {
-    loginFailures.delete(key);
-    return false;
+  if (entry) {
+    if (now > entry.resetAt) {
+      loginFailures.delete(key);
+    } else if (entry.count >= LOGIN_MAX_FAILURES) {
+      return true;
+    }
   }
-  return entry.count >= LOGIN_MAX_FAILURES;
+  const succ = loginSuccesses.get(key);
+  if (succ) {
+    if (now > succ.resetAt) {
+      loginSuccesses.delete(key);
+    } else if (succ.count >= LOGIN_MAX_SUCCESSES_PER_MIN) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function recordLoginFailure(key: string): void {
@@ -127,6 +181,21 @@ export function recordLoginFailure(key: string): void {
   const entry = loginFailures.get(key);
   if (!entry || now > entry.resetAt) {
     loginFailures.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    entry.count += 1;
+  }
+}
+
+export function recordLoginSuccess(key: string): void {
+  const now = Date.now();
+  if (loginSuccesses.size > 500) {
+    for (const [k, v] of loginSuccesses) {
+      if (now > v.resetAt) loginSuccesses.delete(k);
+    }
+  }
+  const entry = loginSuccesses.get(key);
+  if (!entry || now > entry.resetAt) {
+    loginSuccesses.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
   } else {
     entry.count += 1;
   }

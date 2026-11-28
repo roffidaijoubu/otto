@@ -18,6 +18,7 @@ const {
   rpc,
 } = await import("../web/lib/rpc-bridge.ts");
 const { handleWakeupRoutes } = await import("../web/routes/wakeup.ts");
+const { resetSeenQStashTokens } = await import("../web/lib/qstash.ts");
 
 function signWakeupJwt(body: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
@@ -157,6 +158,18 @@ describe("OmpRpcBridge concurrency, TOCTOU lock & long-turn timeout handling", (
     assert.equal(b.busy, false);
   });
 
+  it("auto-clears busy via silent-hang watchdog if an inFlight turn never emits agent_end", async () => {
+    const b = new OmpRpcBridge({ autoSpawn: false });
+    attachFakeRpcProc(b, { autoAck: false });
+
+    const res = await b.prompt("Silently hung turn", { ackTimeoutMs: 25, watchdogMs: 60 });
+    assert.deepEqual(res, { accepted: true, inFlight: true });
+    assert.equal(b.busy, true);
+
+    await new Promise((r) => setTimeout(r, 110));
+    assert.equal(b.busy, false);
+  });
+
   it("clears busy and throws on explicit RPC failure", async () => {
     const b = new OmpRpcBridge({ autoSpawn: false });
     attachFakeRpcProc(b, { autoAck: true, failMsg: "Invalid session" });
@@ -173,6 +186,7 @@ describe("handleWakeupRoutes security & busy dispatch", () => {
   const origReady = (rpc as unknown as { ready: boolean }).ready;
 
   beforeEach(() => {
+    resetSeenQStashTokens();
     process.env.QSTASH_CURRENT_SIGNING_KEY = "sig_wakeup_test_key";
     process.env.LMA_PUBLIC_URL = "https://otto.sprites.app";
     rpc.busy = false;

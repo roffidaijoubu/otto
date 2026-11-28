@@ -5,9 +5,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { assertSafePublicHttpsUrl, isPrivateOrReservedIp } from "../lib/ssrf-guard.ts";
+import {
+  assertSafePublicHttpsUrl,
+  fetchSafePublicHttpsBuffer,
+  isPrivateOrReservedIp,
+} from "../lib/ssrf-guard.ts";
 
-export { assertSafePublicHttpsUrl, isPrivateOrReservedIp };
+export { assertSafePublicHttpsUrl, fetchSafePublicHttpsBuffer, isPrivateOrReservedIp };
 
 const execFileAsync = promisify(execFile);
 
@@ -61,28 +65,6 @@ function resolveClipFile(localPath: string): string {
     throw new Error(`Media path is not a regular file: ${path.basename(realTarget)}`);
   }
   return realTarget;
-}
-
-async function readStreamWithLimit(res: Response, maxBytes: number): Promise<Buffer> {
-  const contentLen = Number(res.headers.get("content-length") || 0);
-  if (contentLen > maxBytes) {
-    throw new Error(`Remote image exceeds ${(maxBytes / 1024 / 1024).toFixed(0)} MB limit.`);
-  }
-  const reader = res.body?.getReader();
-  if (!reader) return Buffer.alloc(0);
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
-      throw new Error(`Remote image exceeded ${(maxBytes / 1024 / 1024).toFixed(0)} MB stream cap.`);
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks);
 }
 
 async function getGeminiGatewayBaseUrl(): Promise<string> {
@@ -265,27 +247,16 @@ export default function (pi: ExtensionAPI) {
       let mimeType: string;
 
       if (/^https?:\/\//i.test(target)) {
-        let currentUrl = await assertSafePublicHttpsUrl(target);
-        let imgRes: Response | null = null;
-        for (let hop = 0; hop < 4; hop++) {
-          imgRes = await fetch(currentUrl.toString(), {
-            redirect: "manual",
-            signal: AbortSignal.timeout(15_000),
-          });
-          if (imgRes.status >= 300 && imgRes.status < 400) {
-            const loc = imgRes.headers.get("location");
-            if (!loc) break;
-            currentUrl = await assertSafePublicHttpsUrl(new URL(loc, currentUrl).toString());
-            continue;
-          }
-          break;
-        }
-        if (!imgRes || !imgRes.ok) {
-          throw new Error(`Failed to fetch thumbnail URL (${imgRes?.status ?? "no response"}): ${currentUrl.hostname}`);
-        }
-        const ct = imgRes.headers.get("content-type")?.split(";")[0]?.trim();
-        mimeType = ct && ct.startsWith("image/") ? ct : guessMimeType(target, "image/jpeg");
-        bytes = await readStreamWithLimit(imgRes, MAX_INLINE_BYTES);
+        const fetched = await fetchSafePublicHttpsBuffer(target, {
+          maxBytes: MAX_INLINE_BYTES,
+          maxRedirects: 4,
+          timeoutMs: 15_000,
+        });
+        mimeType =
+          fetched.contentType && fetched.contentType.startsWith("image/")
+            ? fetched.contentType
+            : guessMimeType(fetched.finalUrl, "image/jpeg");
+        bytes = fetched.bytes;
       } else {
         const safePath = resolveClipFile(target);
         const st = fs.statSync(safePath);

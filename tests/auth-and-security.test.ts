@@ -208,6 +208,25 @@ describe("public routes: /api/health privacy & /api/auth/login rate limiting", (
     assert.equal(blockedRes?.status, 429);
     assert.equal(blockedRes?.headers.get("retry-after"), "60");
   });
+
+  it("caps rapid successful-login session churn at 20/min per client IP with HTTP 429", async () => {
+    for (let i = 0; i < 20; i++) {
+      const req = new Request("http://localhost:8080/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "fly-client-ip": "198.51.100.88" },
+        body: JSON.stringify({ password: "246810" }),
+      });
+      const res = await handlePublicRoutes(req, new URL(req.url));
+      assert.equal(res?.status, 200);
+    }
+    const floodReq = new Request("http://localhost:8080/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "fly-client-ip": "198.51.100.88" },
+      body: JSON.stringify({ password: "246810" }),
+    });
+    const floodRes = await handlePublicRoutes(floodReq, new URL(floodReq.url));
+    assert.equal(floodRes?.status, 429);
+  });
 });
 
 describe("buildAgentChildEnv secret isolation", () => {
@@ -262,9 +281,11 @@ describe("atomic private web.env password rotation", () => {
     initWebPassword();
   });
 
-  it("calls updatePrivateWebPassword() to atomically replace plaintext PIN with scrypt hash and revoke prior sessions", () => {
+  it("calls updatePrivateWebPassword() to atomically replace plaintext PIN with scrypt hash, chmod 0600, and revoke prior sessions", () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "otto-auth-rot-"));
+    const savedHome = process.env.HOME;
     try {
+      process.env.HOME = tmpHome;
       const envDir = path.join(tmpHome, ".config", "lma");
       fs.mkdirSync(envDir, { recursive: true });
       const envFile = path.join(envDir, "web.env");
@@ -281,13 +302,16 @@ describe("atomic private web.env password rotation", () => {
         true
       );
 
-      // Rotate password via production updatePrivateWebPassword()
-      updatePrivateWebPassword("987654", { homeDir: tmpHome });
+      // Rotate password via production 1-arg updatePrivateWebPassword() (no test-only seam)
+      updatePrivateWebPassword("987654");
 
       const written = fs.readFileSync(envFile, "utf8");
       assert.equal(written.includes("LMA_WEB_PASSWORD="), false);
       assert.match(written, /^LMA_PUBLIC_URL=https:\/\/otto\.sprites\.app$/m);
       assert.match(written, /^LMA_WEB_PASSWORD_HASH=scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/m);
+      if (process.platform !== "win32") {
+        assert.equal(fs.statSync(envFile).mode & 0o777, 0o600);
+      }
       assert.equal(process.env.LMA_WEB_PASSWORD, undefined);
       assert.equal(verifyWebPassword("987654"), true);
       assert.equal(verifyWebPassword("oldpin"), false);
@@ -298,6 +322,8 @@ describe("atomic private web.env password rotation", () => {
         false
       );
     } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }
   });

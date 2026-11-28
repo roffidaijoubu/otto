@@ -1,6 +1,9 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import type https from "node:https";
+import type { IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,7 +14,11 @@ const {
   ensureOverlayMachine,
   resetFlyConnectorCacheForTests,
 } = await import("../agent/lib/obs-overlays.ts");
-const { isPrivateOrReservedIp, assertSafePublicHttpsUrl } = await import("../agent/lib/ssrf-guard.ts");
+const {
+  isPrivateOrReservedIp,
+  assertSafePublicHttpsUrl,
+  fetchSafePublicHttpsBuffer,
+} = await import("../agent/lib/ssrf-guard.ts");
 
 describe("Fly Machine #2 zero-Docker OBS Overlay provisioning (agent/lib/obs-overlays.ts)", () => {
   const originalFetch = globalThis.fetch;
@@ -163,5 +170,100 @@ describe("Hardened HTTPS SSRF guard (agent/lib/ssrf-guard.ts)", () => {
       { address: "93.184.216.34" },
     ]);
     assert.equal(safe.hostname, "cdn.example.com");
+  });
+
+  it("pins connect-time socket lookup to the single validated public IP (eliminates DNS-rebinding TOCTOU) and re-checks redirects & byte caps", async () => {
+    let lookupCalls = 0;
+    let connectedIp = "";
+    let connectedSni = "";
+
+    // Even if an attacker's DNS would rebind to 169.254.169.254 on a 2nd lookup,
+    // fetchSafePublicHttpsBuffer resolves ONCE and passes the pinned public IP to https.request's lookup callback.
+    const rebindingLookup = async () => {
+      lookupCalls += 1;
+      if (lookupCalls === 1) return [{ address: "93.184.216.34" }];
+      return [{ address: "169.254.169.254" }];
+    };
+
+    const fakeRequestImpl = ((options: https.RequestOptions, cb?: (res: IncomingMessage) => void) => {
+      connectedSni = String((options as { servername?: string }).servername || "");
+      const customLookup = options.lookup as
+        | ((h: string, o: Record<string, unknown>, fn: (err: Error | null, addr: string, fam: number) => void) => void)
+        | undefined;
+      assert.equal(typeof customLookup, "function");
+      customLookup!(String(options.hostname), {}, (_err, addr) => {
+        connectedIp = addr;
+      });
+      const reqEmitter = Object.assign(new EventEmitter(), {
+        setTimeout: () => reqEmitter,
+        destroy: () => reqEmitter,
+        end: () => {
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200,
+            headers: { "content-type": "image/jpeg; charset=binary" },
+            resume: () => {},
+            destroy: () => {},
+          }) as unknown as IncomingMessage;
+          cb?.(res);
+          queueMicrotask(() => {
+            res.emit("data", Buffer.from("JPEG_OK_BYTES"));
+            res.emit("end");
+          });
+        },
+      });
+      return reqEmitter as unknown as ReturnType<typeof https.request>;
+    }) as unknown as typeof https.request;
+
+    const ok = await fetchSafePublicHttpsBuffer("https://i.ytimg.com/vi/abc12345678/maxresdefault.jpg", {
+      lookupFn: rebindingLookup,
+      requestImpl: fakeRequestImpl,
+    });
+    assert.equal(lookupCalls, 1);
+    assert.equal(connectedIp, "93.184.216.34");
+    assert.equal(connectedSni, "i.ytimg.com");
+    assert.equal(ok.pinnedAddress, "93.184.216.34");
+    assert.equal(ok.contentType, "image/jpeg");
+    assert.equal(ok.bytes.toString("utf8"), "JPEG_OK_BYTES");
+
+    // Redirect pointing to cloud metadata IP must be blocked before any 2nd socket connects
+    let hopRequests = 0;
+    const redirectToPrivateImpl = ((_options: https.RequestOptions, cb?: (res: IncomingMessage) => void) => {
+      hopRequests += 1;
+      const reqEmitter = Object.assign(new EventEmitter(), {
+        setTimeout: () => reqEmitter,
+        destroy: () => reqEmitter,
+        end: () => {
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 302,
+            headers: { location: "https://169.254.169.254/latest/meta-data/" },
+            resume: () => {},
+            destroy: () => {},
+          }) as unknown as IncomingMessage;
+          cb?.(res);
+        },
+      });
+      return reqEmitter as unknown as ReturnType<typeof https.request>;
+    }) as unknown as typeof https.request;
+
+    await assert.rejects(
+      () =>
+        fetchSafePublicHttpsBuffer("https://cdn.example.com/hop.jpg", {
+          lookupFn: async () => [{ address: "93.184.216.34" }],
+          requestImpl: redirectToPrivateImpl,
+        }),
+      /Refused private\/reserved/i
+    );
+    assert.equal(hopRequests, 1);
+
+    // Stream exceeding maxBytes is aborted immediately
+    await assert.rejects(
+      () =>
+        fetchSafePublicHttpsBuffer("https://cdn.example.com/big.jpg", {
+          maxBytes: 4,
+          lookupFn: async () => [{ address: "93.184.216.34" }],
+          requestImpl: fakeRequestImpl,
+        }),
+      /stream cap/i
+    );
   });
 });

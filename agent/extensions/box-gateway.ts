@@ -68,7 +68,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, params) {
       const segments = (params.subpath || "")
         .split("/")
-        .map((s) => s.trim())
+        .map((s: string) => s.trim())
         .filter(Boolean);
       const folder = await ensureBoxAssetsFolder(segments);
       const entries = await listBoxFolder(folder.id, params.limit ?? 100);

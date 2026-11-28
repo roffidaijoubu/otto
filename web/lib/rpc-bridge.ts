@@ -179,6 +179,8 @@ export class OmpRpcBridge {
   private reqCounter = 0;
   private holdHeartbeat: NodeJS.Timeout | null = null;
   private holdStartedAt = 0;
+  private inFlightWatchdog: NodeJS.Timeout | null = null;
+  private inFlightWatchdogMs = 0;
   private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
   public busy = false;
   public activity = "Thinking...";
@@ -324,6 +326,43 @@ export class OmpRpcBridge {
       }
     });
   }
+  private clearInFlightWatchdog() {
+    if (this.inFlightWatchdog) {
+      clearTimeout(this.inFlightWatchdog);
+      this.inFlightWatchdog = null;
+    }
+    this.inFlightWatchdogMs = 0;
+  }
+
+  private armInFlightWatchdog(ms = OmpRpcBridge.MAX_HOLD_MS) {
+    if (this.inFlightWatchdog) {
+      clearTimeout(this.inFlightWatchdog);
+      this.inFlightWatchdog = null;
+    }
+    this.inFlightWatchdogMs = ms;
+    this.inFlightWatchdog = setTimeout(() => {
+      this.inFlightWatchdog = null;
+      this.inFlightWatchdogMs = 0;
+      if (!this.busy) return;
+      console.warn("[lma-web] In-flight RPC turn watchdog expired without agent_end; clearing busy flag.");
+      this.busy = false;
+      this.activity = "Thinking...";
+      this.releaseSpriteHold();
+      broadcast({
+        type: "error",
+        message: "Assistant turn timed out without completing; ready for next message.",
+      });
+      broadcast({ type: "done" });
+    }, ms);
+    this.inFlightWatchdog.unref?.();
+  }
+
+  private touchInFlightWatchdog() {
+    if (this.inFlightWatchdog && this.inFlightWatchdogMs > 0) {
+      this.armInFlightWatchdog(this.inFlightWatchdogMs);
+    }
+  }
+
   private spawn() {
     this.ready = false;
     const childEnv = buildAgentChildEnv();
@@ -341,6 +380,7 @@ export class OmpRpcBridge {
       console.error(`[lma-web] omp rpc exited with code ${code}; restarting in 1s...`);
       this.ready = false;
       this.busy = false;
+      this.clearInFlightWatchdog();
       this.releaseSpriteHold();
       for (const [, p] of this.pending) {
         if (p.timer) clearTimeout(p.timer);
@@ -427,12 +467,14 @@ export class OmpRpcBridge {
 
     if (ev.type === "tool_execution_start") {
       this.busy = true;
+      this.touchInFlightWatchdog();
       this.activity = friendlyToolLabel(String(ev.toolName || ""));
       broadcast({ type: "tool_start", label: this.activity });
       return;
     }
 
     if (ev.type === "tool_execution_end") {
+      this.touchInFlightWatchdog();
       const tName = String(ev.toolName || "");
       if ((tName === "todo" || tName === "todo_write") && ev.result?.details) {
         this.todos = normalizeTodoPhases(ev.result.details.phases);
@@ -454,6 +496,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "message_update") {
+      this.touchInFlightWatchdog();
       const ame = ev.assistantMessageEvent;
       if (ame?.type === "thinking_delta" && typeof ame.delta === "string") {
         broadcast({ type: "thinking_delta", delta: ame.delta });
@@ -473,6 +516,7 @@ export class OmpRpcBridge {
 
     if (ev.type === "agent_end" || ev.type === "session_settled") {
       this.busy = false;
+      this.clearInFlightWatchdog();
       this.activity = "Thinking...";
       this.releaseSpriteHold();
       broadcast({ type: "done" });
@@ -609,7 +653,7 @@ export class OmpRpcBridge {
 
   async prompt(
     message: string,
-    opts: { lockAlreadyHeld?: boolean; ackTimeoutMs?: number } = {}
+    opts: { lockAlreadyHeld?: boolean; ackTimeoutMs?: number; watchdogMs?: number } = {}
   ): Promise<{ accepted: true; inFlight?: boolean }> {
     if (!opts.lockAlreadyHeld) {
       if (this.busy) {
@@ -629,11 +673,13 @@ export class OmpRpcBridge {
       const procAlive = this.proc ? this.proc.exitCode === null : false;
       if (isTimeout && procAlive) {
         // Long multi-tool turns (e.g. VOD clipping) can exceed the initial RPC ack window while
-        // still streaming normally over SSE; keep busy + Sprite hold active instead of returning HTTP 400.
+        // still streaming normally over SSE; keep busy + Sprite hold active and arm a silent-hang watchdog.
         console.warn("[lma-web] prompt RPC ack window elapsed while turn is still active; continuing via SSE");
+        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS);
         return { accepted: true, inFlight: true };
       }
       this.busy = false;
+      this.clearInFlightWatchdog();
       this.releaseSpriteHold();
       throw err;
     }
@@ -642,6 +688,7 @@ export class OmpRpcBridge {
   async abort() {
     await this.sendCommand("abort").catch(() => {});
     this.busy = false;
+    this.clearInFlightWatchdog();
     this.releaseSpriteHold();
     broadcast({ type: "done" });
   }

@@ -1,6 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "node:url";
 import { HOME_DIR } from "./config.ts";
+
+const IDENTITY_LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export function readSetupIdentity(): { creatorName: string; timezone: string } {
   const memPath = path.join(HOME_DIR, ".omp", "agent", "MEMORY.md");
@@ -27,7 +30,7 @@ export function writeIdentityToMemoryMd(creatorName: string, timezone: string): 
   if (fs.existsSync(memPath)) {
     md = fs.readFileSync(memPath, "utf8");
   } else {
-    const examplePath = path.resolve(import.meta.dir, "..", "..", "agent", "MEMORY.md.example");
+    const examplePath = path.resolve(IDENTITY_LIB_DIR, "..", "..", "agent", "MEMORY.md.example");
     md = fs.existsSync(examplePath)
       ? fs.readFileSync(examplePath, "utf8")
       : `# Talent Dossier\n\n## Profile\n- **Name / Persona:** (not set)\n- **Timezone:** (not set)\n`;

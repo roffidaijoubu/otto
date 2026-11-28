@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 const {
   verifyQStashJwtWithKey,
   verifyUpstashSignature,
+  resetSeenQStashTokens,
   getClientKey,
   computeGuardrailStatus,
 } = await import("../web/lib/qstash.ts");
@@ -37,6 +38,7 @@ describe("QStash JWT verification (HS256 + alg check + sub binding + SHA-256 bod
   const savedNextKey = process.env.QSTASH_NEXT_SIGNING_KEY;
 
   beforeEach(() => {
+    resetSeenQStashTokens();
     delete process.env.LMA_PUBLIC_URL;
     delete process.env.QSTASH_CURRENT_SIGNING_KEY;
     delete process.env.QSTASH_NEXT_SIGNING_KEY;
@@ -144,19 +146,95 @@ describe("QStash JWT verification (HS256 + alg check + sub binding + SHA-256 bod
     assert.equal(verifyUpstashSignature(req, BODY), true);
     assert.equal(verifyUpstashSignature(new Request("https://otto.sprites.app/api/wakeup"), BODY), false);
   });
+
+  it("rejects immediate replay of previously verified JWTs (with or without jti)", () => {
+    const withJti = signTestJwt(
+      { alg: "HS256", typ: "JWT" },
+      {
+        iss: "Upstash",
+        sub: "https://otto.sprites.app/api/wakeup",
+        jti: "msg_unique_001",
+        exp: NOW + 300,
+        body: BODY_HASH_URL,
+      },
+      KEY1
+    );
+    // First delivery succeeds; immediate replay with identical jti is rejected
+    assert.equal(verifyQStashJwtWithKey(withJti, BODY, KEY1), true);
+    assert.equal(verifyQStashJwtWithKey(withJti, BODY, KEY1), false);
+
+    // Distinct token reusing the same jti is also rejected
+    const reusedJti = signTestJwt(
+      { alg: "HS256", typ: "JWT" },
+      {
+        iss: "Upstash",
+        sub: "https://otto.sprites.app/api/wakeup",
+        jti: "msg_unique_001",
+        exp: NOW + 301,
+        body: BODY_HASH_URL,
+      },
+      KEY1
+    );
+    assert.equal(verifyQStashJwtWithKey(reusedJti, BODY, KEY1), false);
+
+    // Token without explicit jti falls back to token SHA-256 deduplication
+    const noJti = signTestJwt(
+      { alg: "HS256", typ: "JWT" },
+      { iss: "Upstash", sub: "https://otto.sprites.app/api/wakeup", exp: NOW + 300, body: BODY_HASH_URL },
+      KEY1
+    );
+    assert.equal(verifyQStashJwtWithKey(noJti, BODY, KEY1), true);
+    assert.equal(verifyQStashJwtWithKey(noJti, BODY, KEY1), false);
+
+    // Invalid signature attempt must NOT poison a jti before genuine delivery arrives
+    const badSig = signTestJwt(
+      { alg: "HS256", typ: "JWT" },
+      {
+        iss: "Upstash",
+        sub: "https://otto.sprites.app/api/wakeup",
+        jti: "msg_not_poisoned",
+        exp: NOW + 300,
+        body: BODY_HASH_URL,
+      },
+      KEY2
+    );
+    const goodSig = signTestJwt(
+      { alg: "HS256", typ: "JWT" },
+      {
+        iss: "Upstash",
+        sub: "https://otto.sprites.app/api/wakeup",
+        jti: "msg_not_poisoned",
+        exp: NOW + 300,
+        body: BODY_HASH_URL,
+      },
+      KEY1
+    );
+    assert.equal(verifyQStashJwtWithKey(badSig, BODY, KEY1), false);
+    assert.equal(verifyQStashJwtWithKey(goodSig, BODY, KEY1), true);
+  });
 });
 
 describe("getClientKey & computeGuardrailStatus", () => {
-  it("prefers fly-client-ip and takes rightmost hop from x-forwarded-for", () => {
+  it("ignores spoofed proxy headers from direct public peers and trusts fly-client-ip/rightmost-XFF only behind private proxy sockets", () => {
+    const spoofedReq = new Request("https://otto.sprites.app/", {
+      headers: { "fly-client-ip": "1.1.1.1", "x-forwarded-for": "8.8.8.8" },
+    });
+    // Direct public peer socket IP wins over attacker-supplied headers
+    const directPublicServer = { requestIP: () => ({ address: "93.184.216.34" }) };
+    assert.equal(getClientKey(spoofedReq, directPublicServer), "93.184.216.34");
+
+    // Behind local/private Fly edge proxy (127.0.0.1 or fdaa::), fly-client-ip is honored
+    const privateProxyServer = { requestIP: () => ({ address: "127.0.0.1" }) };
     const reqFly = new Request("https://otto.sprites.app/", {
       headers: { "fly-client-ip": "198.51.100.5", "x-forwarded-for": "1.2.3.4, 5.6.7.8" },
     });
-    assert.equal(getClientKey(reqFly), "198.51.100.5");
+    assert.equal(getClientKey(reqFly, privateProxyServer), "198.51.100.5");
 
     const reqXff = new Request("https://otto.sprites.app/", {
       headers: { "x-forwarded-for": "spoofed.attacker, 203.0.113.42" },
     });
-    assert.equal(getClientKey(reqXff), "203.0.113.42");
+    assert.equal(getClientKey(reqXff, privateProxyServer), "203.0.113.42");
+    assert.equal(getClientKey(new Request("https://otto.sprites.app/"), privateProxyServer), "127.0.0.1");
   });
 
   it("reports zeroOutboundApiKeys and inboundSigningKeysConfigured transparently", () => {

@@ -1377,19 +1377,27 @@ export async function upsertClipRecord(input: {
   return rowToClipRecord(saved);
 }
 
-export async function listClipRecords(opts?: { jobId?: string; limit?: number }): Promise<ClipRecord[]> {
+export async function listClipRecords(opts?: {
+  videoId?: string;
+  jobId?: string;
+  limit?: number;
+}): Promise<ClipRecord[]> {
   const db = await getDb();
   const limit = Math.max(1, Math.min(200, opts?.limit ?? 60));
+  const clauses: string[] = [];
+  const params: Array<string | number> = [];
   if (opts?.jobId) {
-    const rows = await db.all<Record<string, unknown>>(
-      "SELECT * FROM clips WHERE job_id = ? ORDER BY created_at DESC LIMIT ?",
-      opts.jobId,
-      limit
-    );
-    return rows.map(rowToClipRecord);
+    clauses.push("job_id = ?");
+    params.push(opts.jobId);
   }
+  if (opts?.videoId) {
+    clauses.push("video_id = ?");
+    params.push(opts.videoId);
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")} ` : "";
   const rows = await db.all<Record<string, unknown>>(
-    "SELECT * FROM clips ORDER BY created_at DESC LIMIT ?",
+    `SELECT * FROM clips ${where}ORDER BY created_at DESC LIMIT ?`,
+    ...params,
     limit
   );
   return rows.map(rowToClipRecord);

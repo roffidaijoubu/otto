@@ -4,6 +4,8 @@
  */
 
 import dns from "node:dns/promises";
+import https from "node:https";
+import type { IncomingMessage } from "node:http";
 import net from "node:net";
 
 function isPrivateOrReservedIpv4(ip: string): boolean {
@@ -101,11 +103,17 @@ export function isPrivateOrReservedIp(ip: string): boolean {
   return true;
 }
 
-export async function assertSafePublicHttpsUrl(
+export interface SafeHttpsTarget {
+  url: URL;
+  address: string;
+  family: 4 | 6;
+}
+
+export async function resolveSafePublicHttpsTarget(
   rawUrl: string,
   lookupFn: (host: string) => Promise<Array<{ address: string }>> = (host) =>
     dns.lookup(host, { all: true, verbatim: true })
-): Promise<URL> {
+): Promise<SafeHttpsTarget> {
   const u = new URL(rawUrl);
   if (u.protocol !== "https:") {
     throw new Error("Thumbnail URL must use https://");
@@ -124,11 +132,12 @@ export async function assertSafePublicHttpsUrl(
     throw new Error(`Refused private/internal thumbnail host: ${host || "(empty)"}`);
   }
 
-  if (net.isIP(host) !== 0) {
+  const literalKind = net.isIP(host);
+  if (literalKind !== 0) {
     if (isPrivateOrReservedIp(host)) {
       throw new Error(`Refused private/reserved thumbnail IP: ${host}`);
     }
-    return u;
+    return { url: u, address: host, family: literalKind === 6 ? 6 : 4 };
   }
 
   const records = await lookupFn(host);
@@ -140,5 +149,178 @@ export async function assertSafePublicHttpsUrl(
       throw new Error(`Refused private/reserved resolved IP (${rec.address}) for host ${host}`);
     }
   }
-  return u;
+  const first = records[0].address;
+  const firstKind = net.isIP(first);
+  if (firstKind === 0) {
+    throw new Error(`Thumbnail host resolved to invalid IP address: ${first}`);
+  }
+  return { url: u, address: first, family: firstKind === 6 ? 6 : 4 };
+}
+
+export async function assertSafePublicHttpsUrl(
+  rawUrl: string,
+  lookupFn?: (host: string) => Promise<Array<{ address: string }>>
+): Promise<URL> {
+  const target = await resolveSafePublicHttpsTarget(rawUrl, lookupFn);
+  return target.url;
+}
+
+export interface PinnedHttpsFetchOptions {
+  maxBytes?: number;
+  maxRedirects?: number;
+  timeoutMs?: number;
+  lookupFn?: (host: string) => Promise<Array<{ address: string }>>;
+  requestImpl?: typeof https.request;
+}
+
+export interface PinnedHttpsFetchResult {
+  bytes: Buffer;
+  contentType: string | null;
+  finalUrl: string;
+  pinnedAddress: string;
+}
+
+/**
+ * DNS-pinned HTTPS fetcher that eliminates DNS-rebinding TOCTOU by validating
+ * every resolved address once per hop and pinning the TLS socket's `lookup`
+ * callback directly to that validated public IP while preserving TLS SNI.
+ */
+export async function fetchSafePublicHttpsBuffer(
+  rawUrl: string,
+  opts: PinnedHttpsFetchOptions = {}
+): Promise<PinnedHttpsFetchResult> {
+  const maxBytes = opts.maxBytes ?? 14 * 1024 * 1024;
+  const maxRedirects = opts.maxRedirects ?? 4;
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const requestFn = opts.requestImpl ?? https.request;
+
+  let currentRaw = rawUrl;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const target = await resolveSafePublicHttpsTarget(currentRaw, opts.lookupFn);
+    const { url, address, family } = target;
+
+    const response = await new Promise<{
+      statusCode: number;
+      headers: IncomingMessage["headers"];
+      bytes: Buffer;
+    }>((resolve, reject) => {
+      let settled = false;
+      const done = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
+      const pinnedLookup = (
+        _hostname: string,
+        lookupOpts: unknown,
+        cb?: (...args: unknown[]) => void
+      ) => {
+        const callback = typeof lookupOpts === "function" ? (lookupOpts as (...a: unknown[]) => void) : cb;
+        const all =
+          typeof lookupOpts === "object" &&
+          lookupOpts !== null &&
+          Boolean((lookupOpts as { all?: boolean }).all);
+        if (!callback) return;
+        if (all) {
+          callback(null, [{ address, family }]);
+        } else {
+          callback(null, address, family);
+        }
+      };
+
+      const req = requestFn(
+        {
+          protocol: "https:",
+          hostname: url.hostname,
+          port: url.port ? Number(url.port) : 443,
+          path: `${url.pathname}${url.search}`,
+          method: "GET",
+          servername: url.hostname,
+          headers: {
+            "User-Agent": "OttoStudio/1.0",
+            Accept: "image/*,*/*;q=0.8",
+          },
+          lookup: pinnedLookup as unknown as https.RequestOptions["lookup"],
+        },
+        (res: IncomingMessage) => {
+          const statusCode = res.statusCode ?? 0;
+          if (statusCode >= 300 && statusCode < 400 && res.headers.location) {
+            res.resume();
+            done(() => resolve({ statusCode, headers: res.headers, bytes: Buffer.alloc(0) }));
+            return;
+          }
+
+          const contentLen = Number(res.headers["content-length"] || 0);
+          if (contentLen > maxBytes) {
+            res.destroy();
+            done(() =>
+              reject(new Error(`Remote image exceeds ${(maxBytes / 1024 / 1024).toFixed(0)} MB limit.`))
+            );
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          let total = 0;
+          res.on("data", (chunk: Buffer | Uint8Array | string) => {
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            total += buf.byteLength;
+            if (total > maxBytes) {
+              res.destroy();
+              done(() =>
+                reject(
+                  new Error(`Remote image exceeded ${(maxBytes / 1024 / 1024).toFixed(0)} MB stream cap.`)
+                )
+              );
+              return;
+            }
+            chunks.push(buf);
+          });
+          res.on("end", () => {
+            done(() => resolve({ statusCode, headers: res.headers, bytes: Buffer.concat(chunks) }));
+          });
+          res.on("error", (err) => {
+            done(() => reject(err));
+          });
+        }
+      );
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`HTTPS request timed out after ${timeoutMs}ms: ${url.hostname}`));
+      });
+      req.on("error", (err) => {
+        done(() => reject(err));
+      });
+      req.end();
+    });
+
+    if (response.statusCode >= 300 && response.statusCode < 400) {
+      const locHeader = response.headers.location;
+      const loc = Array.isArray(locHeader) ? locHeader[0] : locHeader;
+      if (!loc) {
+        throw new Error(`Failed to fetch thumbnail URL (${response.statusCode}): ${url.hostname}`);
+      }
+      if (hop >= maxRedirects) {
+        throw new Error(`Too many redirects fetching thumbnail URL: ${url.hostname}`);
+      }
+      currentRaw = new URL(loc, url).toString();
+      continue;
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error(`Failed to fetch thumbnail URL (${response.statusCode}): ${url.hostname}`);
+    }
+
+    const ctRaw = response.headers["content-type"];
+    const ctFirst = Array.isArray(ctRaw) ? ctRaw[0] : ctRaw;
+    const contentType = ctFirst ? ctFirst.split(";")[0].trim() : null;
+    return {
+      bytes: response.bytes,
+      contentType,
+      finalUrl: url.toString(),
+      pinnedAddress: address,
+    };
+  }
+
+  throw new Error("Too many redirects fetching thumbnail URL.");
 }
