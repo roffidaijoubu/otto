@@ -29,6 +29,36 @@ function buildDaily04Cron(timezone: string): string {
   return `CRON_TZ=${tz} 0 4 * * *`;
 }
 
+const ACTIVE_CHECKPOINT_META_KEY = "active_checkpoint_ref_v1";
+
+interface ActiveCheckpointRef {
+  id: string;
+  at: string;
+}
+
+async function readActiveCheckpointRef(): Promise<ActiveCheckpointRef | null> {
+  try {
+    const raw = await getStudioMeta(ACTIVE_CHECKPOINT_META_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ActiveCheckpointRef>;
+    if (typeof parsed.id === "string" && /^v\d+$/.test(parsed.id) && typeof parsed.at === "string") {
+      return { id: parsed.id, at: parsed.at };
+    }
+  } catch {
+    // ignore malformed or unavailable DB in isolated tests
+  }
+  return null;
+}
+
+async function writeActiveCheckpointRef(id: string): Promise<void> {
+  try {
+    const ref: ActiveCheckpointRef = { id, at: new Date().toISOString() };
+    await setStudioMeta(ACTIVE_CHECKPOINT_META_KEY, JSON.stringify(ref));
+  } catch {
+    // non-fatal if DB unavailable
+  }
+}
+
 export async function listSpriteCheckpoints(): Promise<{
   available: boolean;
   checkpoints: SpriteCheckpointItem[];
@@ -48,6 +78,7 @@ export async function listSpriteCheckpoints(): Promise<{
       create_time?: string;
       comment?: string;
       is_auto?: boolean;
+      is_current?: boolean;
     }>;
     const list = Array.isArray(raw) ? raw : [];
     const currentRow = list.find((c) => c.id === "Current");
@@ -60,9 +91,26 @@ export async function listSpriteCheckpoints(): Promise<{
         createTime: String(c.create_time || ""),
         comment: String(c.comment || ""),
         isAuto: Boolean(c.is_auto),
-        isCurrent: Boolean(currentTime && c.create_time === currentTime),
+        isCurrent: Boolean(c.is_current) || Boolean(currentTime && c.create_time === currentTime),
       }))
       .sort((a, b) => Date.parse(b.createTime) - Date.parse(a.createTime));
+
+    // Sprites API often omits a synthetic "Current" row or gives it wall-clock time; derive
+    // current marker deterministically from stored active ref (create/restore) or latest snapshot.
+    if (checkpoints.length > 0 && !checkpoints.some((c) => c.isCurrent)) {
+      const ref = await readActiveCheckpointRef();
+      const latestTs = Date.parse(checkpoints[0].createTime);
+      const refTs = ref ? Date.parse(ref.at) : NaN;
+      const refMatch =
+        ref && (!Number.isFinite(latestTs) || !Number.isFinite(refTs) || latestTs <= refTs)
+          ? checkpoints.find((c) => c.id === ref.id)
+          : undefined;
+      if (refMatch) {
+        refMatch.isCurrent = true;
+      } else {
+        checkpoints[0].isCurrent = true;
+      }
+    }
 
     return { available: true, checkpoints };
   } catch (err) {
@@ -147,6 +195,7 @@ export async function createSpriteCheckpoint(comment = ""): Promise<{
         error: `Checkpoint API succeeded (HTTP ${res.status}) but returned no parseable checkpoint ID`,
       };
     }
+    await writeActiveCheckpointRef(parsedId);
     return {
       ok: true,
       id: parsedId,
@@ -184,6 +233,7 @@ export async function restoreSpriteCheckpoint(id: string): Promise<{
       error: text.trim().slice(0, 220) || `Restore failed (HTTP ${res.status})`,
     };
   }
+  await writeActiveCheckpointRef(cleanId);
   return { ok: true, id: cleanId };
 }
 

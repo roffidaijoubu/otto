@@ -149,6 +149,13 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
     try {
       await rpc.holdSpriteActive();
+      if (!rpc.busy) {
+        rpc.releaseSpriteHold();
+        return Response.json(
+          { error: "Wake-up cancelled before dispatch; retry shortly" },
+          { status: 503, headers: { "Retry-After": "15" } }
+        );
+      }
       await rpc.prompt(wakeupMsg, { lockAlreadyHeld: true });
       commitQStashReplayToken(receipt.replayKey, receipt.expiresAtSec);
       return Response.json({ ok: true, mode: "chat", label });

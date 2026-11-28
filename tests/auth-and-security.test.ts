@@ -161,6 +161,7 @@ describe("public routes: /api/health privacy & /api/auth/login rate limiting", (
       assert.deepEqual(body, { ok: true, status: "healthy" });
       assert.equal("busy" in body, false);
       assert.equal("hold" in body, false);
+      assert.equal("buildSha" in body, false);
       assert.equal("activeBackgroundJobs" in body, false);
     } finally {
       rpc.busy = false;
@@ -188,6 +189,7 @@ describe("public routes: /api/health privacy & /api/auth/login rate limiting", (
     assert.equal(typeof body.busy, "boolean");
     assert.equal(typeof body.activeBackgroundJobs, "number");
     assert.ok(body.hold && typeof body.hold === "object");
+    assert.ok(body.buildSha === null || typeof body.buildSha === "string");
   });
 
   it("blocks brute-force logins after 5 failures with HTTP 429 and Retry-After", async () => {

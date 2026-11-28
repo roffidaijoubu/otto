@@ -9,10 +9,12 @@ process.env.LMA_FORCE_SQLITE = "1";
 const { fetchGatewayList, resolveGatewayBaseUrl } = await import("../web/lib/gateway.ts");
 const { handleConnectorsRoutes } = await import("../web/routes/connectors.ts");
 const {
+  listSpriteCheckpoints,
   parseCheckpointIdFromResponse,
   createSpriteCheckpoint,
   restoreSpriteCheckpoint,
 } = await import("../web/lib/checkpoints.ts");
+const { resetStudioDbForTests } = await import("../agent/lib/studio-db.ts");
 const {
   CURATED_APIFY_ACTORS,
   clampApifyLimit,
@@ -96,9 +98,22 @@ describe("Sprites Gateway discovery & /api/connectors diagnostics", () => {
 
 describe("Fly.io Sprites Checkpoints parsing & fail-closed validation", () => {
   const originalFetch = globalThis.fetch;
+  let ckptTmpDir = "";
+  let savedDbPath: string | undefined;
+
+  beforeEach(() => {
+    ckptTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "otto-ckpt-meta-"));
+    savedDbPath = process.env.LMA_STUDIO_DB_PATH;
+    process.env.LMA_STUDIO_DB_PATH = path.join(ckptTmpDir, "studio.db");
+    resetStudioDbForTests();
+  });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    resetStudioDbForTests();
+    if (savedDbPath === undefined) delete process.env.LMA_STUDIO_DB_PATH;
+    else process.env.LMA_STUDIO_DB_PATH = savedDbPath;
+    if (ckptTmpDir) fs.rmSync(ckptTmpDir, { recursive: true, force: true });
   });
 
   it("parses checkpoint IDs from JSON, NDJSON, and human-readable text, and returns null on junk", () => {
@@ -131,6 +146,55 @@ describe("Fly.io Sprites Checkpoints parsing & fail-closed validation", () => {
     globalThis.fetch = (async () => new Response("restored", { status: 200 })) as unknown as typeof fetch;
     const restored = await restoreSpriteCheckpoint("v25");
     assert.deepEqual(restored, { ok: true, id: "v25" });
+  });
+
+  it("marks isCurrent accurately when Sprites API omits synthetic Current row and after restore/create", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "otto-ckpt-curr-"));
+    const savedDb = process.env.LMA_STUDIO_DB_PATH;
+    process.env.LMA_STUDIO_DB_PATH = path.join(tmpDir, "studio.db");
+    resetStudioDbForTests();
+
+    const apiRows = [
+      { id: "v205", create_time: "2026-11-28T08:00:00Z", comment: "older baseline", is_auto: false },
+      { id: "v209", create_time: "2026-11-28T09:35:41Z", comment: "latest baseline", is_auto: false },
+    ];
+    try {
+      // 1. API omits synthetic "Current" row -> latest snapshot (v209) is marked isCurrent=true (never 0/N)
+      globalThis.fetch = (async () => Response.json(apiRows)) as unknown as typeof fetch;
+      const list1 = await listSpriteCheckpoints();
+      assert.equal(list1.available, true);
+      assert.equal(list1.checkpoints.length, 2);
+      assert.equal(list1.checkpoints[0].id, "v209");
+      assert.equal(list1.checkpoints[0].isCurrent, true);
+      assert.equal(list1.checkpoints[1].isCurrent, false);
+
+      // 2. Restoring older snapshot v205 moves isCurrent marker to v205
+      globalThis.fetch = (async () => new Response("ok", { status: 200 })) as unknown as typeof fetch;
+      await restoreSpriteCheckpoint("v205");
+      globalThis.fetch = (async () => Response.json(apiRows)) as unknown as typeof fetch;
+      const list2 = await listSpriteCheckpoints();
+      assert.equal(list2.checkpoints.find((c) => c.id === "v205")?.isCurrent, true);
+      assert.equal(list2.checkpoints.find((c) => c.id === "v209")?.isCurrent, false);
+
+      // 3. Creating a newer snapshot v210 moves isCurrent marker to v210
+      globalThis.fetch = (async () => new Response('{"id":"v210"}', { status: 200 })) as unknown as typeof fetch;
+      await createSpriteCheckpoint("live: v8");
+      const futureIso = new Date(Date.now() + 60_000).toISOString();
+      globalThis.fetch = (async () =>
+        Response.json([
+          ...apiRows,
+          { id: "v210", create_time: futureIso, comment: "live: v8", is_auto: false },
+        ])) as unknown as typeof fetch;
+      const list3 = await listSpriteCheckpoints();
+      assert.equal(list3.checkpoints[0].id, "v210");
+      assert.equal(list3.checkpoints[0].isCurrent, true);
+      assert.equal(list3.checkpoints.filter((c) => c.isCurrent).length, 1);
+    } finally {
+      resetStudioDbForTests();
+      if (savedDb === undefined) delete process.env.LMA_STUDIO_DB_PATH;
+      else process.env.LMA_STUDIO_DB_PATH = savedDb;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

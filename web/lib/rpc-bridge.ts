@@ -14,6 +14,7 @@ export interface TodoPhase {
 export interface RpcEvent {
   type?: string;
   id?: string;
+  turnGen?: number;
   command?: string;
   success?: boolean;
   error?: string;
@@ -174,6 +175,8 @@ export function summarizeSessionFile(filePath: string, activePath: string | null
 export class OmpRpcBridge {
   private proc: Bun.Subprocess<"pipe", "pipe", "pipe"> | null = null;
   private autoSpawn = true;
+  private spawnFactory?: () => Bun.Subprocess<"pipe", "pipe", "pipe">;
+  private respawnDelayOverrideMs?: number;
   private respawnTimer: NodeJS.Timeout | null = null;
   private ready = false;
   private readyResolvers: Array<() => void> = [];
@@ -187,10 +190,14 @@ export class OmpRpcBridge {
   private turnState: "idle" | "running" | "aborting" = "idle";
   private turnGeneration = 0;
   private activeTurnGen: number | null = null;
+  private awaitingTurnStart = false;
+  private pendingTrailingSettled = false;
   private abortSettledResolver: (() => void) | null = null;
   private activeAbortPromise: Promise<void> | null = null;
   private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
-  private static readonly DEFAULT_ABORT_GRACE_MS = 1_500;
+  private static readonly DEFAULT_WATCHDOG_ABORT_GRACE_MS = 1_500;
+  private static readonly DEFAULT_MANUAL_ABORT_GRACE_MS = 10_000;
+  private static readonly DEFAULT_ABORT_RPC_TIMEOUT_MS = 5_000;
   public busy = false;
   public activity = "Thinking...";
   public todos: TodoPhase[] = [];
@@ -201,10 +208,31 @@ export class OmpRpcBridge {
   private lastHoldError: string | null = null;
   private lastHoldAt: string | null = null;
 
-  constructor(opts: { autoSpawn?: boolean } = {}) {
+  constructor(
+    opts: {
+      autoSpawn?: boolean;
+      spawnFactory?: () => Bun.Subprocess<"pipe", "pipe", "pipe">;
+      respawnDelayMs?: number;
+    } = {}
+  ) {
     this.autoSpawn = opts.autoSpawn !== false;
+    this.spawnFactory = opts.spawnFactory;
+    this.respawnDelayOverrideMs = opts.respawnDelayMs;
     if (this.autoSpawn) {
       this.spawn();
+    }
+  }
+
+  public dispose(): void {
+    this.autoSpawn = false;
+    if (this.respawnTimer) {
+      clearTimeout(this.respawnTimer);
+      this.respawnTimer = null;
+    }
+    this.clearInFlightWatchdog();
+    if (this.holdHeartbeat) {
+      clearInterval(this.holdHeartbeat);
+      this.holdHeartbeat = null;
     }
   }
 
@@ -357,7 +385,7 @@ export class OmpRpcBridge {
   private armInFlightWatchdog(
     ms = OmpRpcBridge.MAX_HOLD_MS,
     expectedGen?: number,
-    abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS
+    abortGraceMs = OmpRpcBridge.DEFAULT_WATCHDOG_ABORT_GRACE_MS
   ) {
     if (this.inFlightWatchdog) {
       clearTimeout(this.inFlightWatchdog);
@@ -378,12 +406,13 @@ export class OmpRpcBridge {
 
   private scheduleRespawn(delayMs = 1000) {
     if (!this.autoSpawn || this.proc || this.respawnTimer) return;
+    const waitMs = this.respawnDelayOverrideMs ?? delayMs;
     this.respawnTimer = setTimeout(() => {
       this.respawnTimer = null;
       if (!this.proc && this.autoSpawn) {
         this.spawn();
       }
-    }, delayMs);
+    }, waitMs);
     this.respawnTimer.unref?.();
   }
 
@@ -392,6 +421,8 @@ export class OmpRpcBridge {
     if (!doomed || doomed.exitCode !== null) return;
     this.proc = null;
     this.ready = false;
+    this.awaitingTurnStart = false;
+    this.pendingTrailingSettled = false;
     for (const [, p] of this.pending) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(new Error(reason));
@@ -409,6 +440,7 @@ export class OmpRpcBridge {
     if (this.activeAbortPromise) return this.activeAbortPromise;
     this.turnState = "aborting";
     this.activeTurnGen = null;
+    this.awaitingTurnStart = false;
     this.clearInFlightWatchdog();
 
     let sawCleanEnd = false;
@@ -423,7 +455,11 @@ export class OmpRpcBridge {
       try {
         const procRef = this.proc;
         if (this.ready && procRef && procRef.exitCode === null) {
-          await this.sendCommand("abort", {}, Math.min(5_000, Math.max(250, abortGraceMs))).catch(() => {});
+          const ackTimeoutMs = Math.min(
+            OmpRpcBridge.DEFAULT_ABORT_RPC_TIMEOUT_MS,
+            Math.max(250, abortGraceMs)
+          );
+          await this.sendCommand("abort", {}, ackTimeoutMs).catch(() => {});
           if (!sawCleanEnd) {
             let graceTimer: NodeJS.Timeout | null = null;
             await Promise.race([
@@ -465,7 +501,7 @@ export class OmpRpcBridge {
 
   private async abortStalledTurn(
     expectedGen: number | null,
-    abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS
+    abortGraceMs = OmpRpcBridge.DEFAULT_WATCHDOG_ABORT_GRACE_MS
   ): Promise<void> {
     if (this.turnState !== "running") return;
     if (expectedGen !== null && this.activeTurnGen !== expectedGen) return;
@@ -489,17 +525,18 @@ export class OmpRpcBridge {
       this.respawnTimer = null;
     }
     this.ready = false;
-    const childEnv = buildAgentChildEnv();
-    const spawned = Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
-      cwd: WORK_DIR,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: childEnv,
-    });
+    const spawned = this.spawnFactory
+      ? this.spawnFactory()
+      : Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
+          cwd: WORK_DIR,
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: buildAgentChildEnv(),
+        });
     this.proc = spawned;
-    this.readStdout(spawned.stdout, spawned);
-    this.readStderr(spawned.stderr);
+    if (spawned.stdout) this.readStdout(spawned.stdout, spawned);
+    if (spawned.stderr) this.readStderr(spawned.stderr);
 
     spawned.exited.then((code) => {
       // Ignore delayed exit notifications from an already-detached/replaced worker
@@ -511,6 +548,8 @@ export class OmpRpcBridge {
         this.busy = false;
         this.turnState = "idle";
         this.activeTurnGen = null;
+        this.awaitingTurnStart = false;
+        this.pendingTrailingSettled = false;
         this.abortSettledResolver?.();
         this.abortSettledResolver = null;
         this.clearInFlightWatchdog();
@@ -597,6 +636,8 @@ export class OmpRpcBridge {
 
     if (ev.type === "agent_start") {
       if (this.turnState !== "running") return;
+      if (ev.turnGen !== undefined && ev.turnGen !== this.activeTurnGen) return;
+      this.awaitingTurnStart = false;
       this.busy = true;
       this.activity = "Thinking...";
       this.holdSpriteActive();
@@ -660,15 +701,31 @@ export class OmpRpcBridge {
 
     if (ev.type === "agent_end" || ev.type === "session_settled") {
       if (this.turnState === "aborting") {
+        if (ev.type === "agent_end") this.pendingTrailingSettled = true;
+        else this.pendingTrailingSettled = false;
         this.abortSettledResolver?.();
         return;
       }
       // Strictly ignore duplicate session_settled or stray events when no turn is actively running
       if (this.turnState !== "running") {
+        if (ev.type === "session_settled") this.pendingTrailingSettled = false;
+        return;
+      }
+      // Reject terminal events explicitly tagged for a non-active turn generation
+      if (ev.turnGen !== undefined && ev.turnGen !== this.activeTurnGen) {
+        return;
+      }
+      // FIFO pipe provenance guard (Failure A'): a trailing session_settled emitted after the
+      // prior turn's agent_end (or before the successor's agent_start) belongs to the prior turn;
+      // absorb it without clearing the live turn's busy flag or watchdog.
+      if (ev.type === "session_settled" && (this.pendingTrailingSettled || this.awaitingTurnStart)) {
+        this.pendingTrailingSettled = false;
         return;
       }
       this.turnState = "idle";
       this.activeTurnGen = null;
+      this.awaitingTurnStart = false;
+      this.pendingTrailingSettled = ev.type === "agent_end";
       this.busy = false;
       this.clearInFlightWatchdog();
       this.activity = "Thinking...";
@@ -826,11 +883,12 @@ export class OmpRpcBridge {
     const myGen = ++this.turnGeneration;
     this.turnState = "running";
     this.activeTurnGen = myGen;
+    this.awaitingTurnStart = true;
     this.activity = "Thinking...";
     void this.holdSpriteActive();
     broadcast({ type: "user_message", text: stripHiddenTags(message) });
     broadcast({ type: "activity", label: this.activity });
-    const graceMs = opts.abortGraceMs ?? OmpRpcBridge.DEFAULT_ABORT_GRACE_MS;
+    const graceMs = opts.abortGraceMs ?? OmpRpcBridge.DEFAULT_WATCHDOG_ABORT_GRACE_MS;
     try {
       await this.sendCommand("prompt", { message }, opts.ackTimeoutMs ?? 30_000);
       // Arm silent-hang watchdog on the normal post-ack path too so provider stalls never wedge busy=true
@@ -853,6 +911,7 @@ export class OmpRpcBridge {
       if (this.activeTurnGen === myGen) {
         this.turnState = "idle";
         this.activeTurnGen = null;
+        this.awaitingTurnStart = false;
         this.busy = false;
         this.clearInFlightWatchdog();
         this.releaseSpriteHold();
@@ -861,9 +920,14 @@ export class OmpRpcBridge {
     }
   }
 
-  async abort(abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS) {
+  async abort(abortGraceMs = OmpRpcBridge.DEFAULT_MANUAL_ABORT_GRACE_MS) {
     if (this.activeAbortPromise) return this.activeAbortPromise;
-    if (this.turnState === "idle" && !this.busy) {
+    // Derive abort action strictly from authoritative turnState (not publicly mutable busy):
+    // if omp is not running a turn (idle or wakeup pre-prompt claim window), release busy
+    // cleanly without issuing an abort RPC or killing a healthy worker.
+    if (this.turnState !== "running") {
+      this.busy = false;
+      this.awaitingTurnStart = false;
       this.clearInFlightWatchdog();
       this.releaseSpriteHold();
       broadcast({ type: "done" });

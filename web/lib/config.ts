@@ -12,7 +12,6 @@ export function getPort(): number {
   return Number(process.env.PORT || 8080);
 }
 
-export const PORT = getPort();
 export const DIST_DIR = path.join(LIB_DIR, "..", "dist");
 export const HOME_DIR = process.env.HOME || process.env.USERPROFILE || os.homedir() || "/home/sprite";
 export const LOCAL_BIN = path.join(HOME_DIR, ".local", "bin");

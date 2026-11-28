@@ -266,24 +266,172 @@ describe("OmpRpcBridge concurrency, TOCTOU lock & long-turn timeout handling", (
     assert.equal(b3.busy, false);
     assert.equal(freshProc.killed, false);
 
-    // Case 4 (R2' Failure A & resurrection guard): stray events while idle cannot resurrect busy
-    // or corrupt a subsequent turn, and idle abort() must not kill a healthy worker
-    emit3({ type: "agent_end" });
-    emit3({ type: "session_settled" });
-    emit3({ type: "agent_start" });
-    emit3({ type: "tool_execution_start", toolName: "bash" });
-    assert.equal(b3.busy, false);
+    // Case 4 (R2' Failure A' & resurrection guard):
+    // 4a. Stale trailing session_settled from cleanly-aborted Turn 1 arriving AFTER Turn 2 starts
+    //     MUST NOT clear Turn 2's busy flag, disarm its watchdog, or admit a 2nd prompt into stdin!
+    const b4 = new OmpRpcBridge({ autoSpawn: false });
+    const { fakeProc: proc4, written: written4 } = attachFakeRpcProc(b4, {
+      autoAck: true,
+      autoAckAbort: true,
+      emitAgentEndOnAbort: true,
+    });
+    const emit4 = (ev: Record<string, unknown>) =>
+      (b4 as unknown as { handleEvent(e: Record<string, unknown>): void }).handleEvent(ev);
 
-    await b3.abort(40);
-    assert.equal(freshProc.killed, false, "Manual abort while already idle must not kill healthy worker");
+    await b4.prompt("Turn 1 (aborts cleanly via agent_end)", {
+      ackTimeoutMs: 500,
+      watchdogMs: 40,
+      abortGraceMs: 80,
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(b4.busy, false);
+    assert.equal(proc4.killed, false);
 
-    await b3.prompt("Turn 3 clean", { ackTimeoutMs: 500, watchdogMs: 5000 });
-    assert.equal(b3.busy, true);
-    emit3({ type: "agent_end" });
-    assert.equal(b3.busy, false);
-    // Duplicate trailing session_settled after agent_end must remain a safe no-op
-    emit3({ type: "session_settled" });
-    assert.equal(b3.busy, false);
+    // Turn 2 starts immediately before Turn 1's trailing session_settled arrives on stdout
+    await b4.prompt("Turn 2 (live successor)", { ackTimeoutMs: 500, watchdogMs: 5000 });
+    assert.equal(b4.busy, true);
+    assert.equal(b4.hasActiveWatchdog(), true);
+
+    // Trailing session_settled from Turn 1 arrives -> MUST be absorbed!
+    emit4({ type: "session_settled" });
+    assert.equal(b4.busy, true, "Stale trailing session_settled must not clear successor busy");
+    assert.equal(b4.hasActiveWatchdog(), true, "Stale trailing session_settled must not disarm watchdog");
+    assert.equal(b4.isAnyBusy(), true);
+    await assert.rejects(() => b4.prompt("Intruder concurrent prompt"), /still responding/i);
+
+    // Explicit mismatched turnGen terminal event is also rejected
+    emit4({ type: "agent_start" });
+    emit4({ type: "agent_end", turnGen: 1 });
+    assert.equal(b4.busy, true);
+    assert.equal(b4.hasActiveWatchdog(), true);
+
+    // Turn 2's real agent_end settles cleanly
+    emit4({ type: "agent_end" });
+    assert.equal(b4.busy, false);
+    assert.equal(b4.hasActiveWatchdog(), false);
+
+    // 4b. Stray events while idle cannot resurrect busy
+    emit4({ type: "agent_end" });
+    emit4({ type: "session_settled" });
+    emit4({ type: "agent_start" });
+    emit4({ type: "tool_execution_start", toolName: "bash" });
+    assert.equal(b4.busy, false);
+
+    // 4c. Manual abort() during idle OR wakeup's pre-prompt claim window (busy=true, turnState=idle)
+    //     MUST derive from authoritative turnState and NEVER kill a healthy worker!
+    const preAbortWrites = written4.length;
+    b4.busy = true; // simulates web/routes/wakeup.ts:148 while awaiting holdSpriteActive()
+    await b4.abort(40);
+    assert.equal(b4.busy, false);
+    assert.equal(proc4.killed, false, "abort() in busy=true/turnState=idle window must not kill healthy worker");
+    assert.equal((b4 as unknown as { proc: unknown }).proc, proc4);
+    assert.equal(written4.length, preAbortWrites, "abort() with no running turn must not send RPC abort");
+
+    // 4d. Case 5: autoSpawn=true real respawn, readStdout(owner) cutoff & delayed exited guard
+    const enc = new TextEncoder();
+    const spawnedWorkers: Array<{
+      killed: boolean;
+      pushLine: (obj: Record<string, unknown>) => void;
+      resolveExit: (code: number) => void;
+    }> = [];
+
+    const b5 = new OmpRpcBridge({
+      autoSpawn: true,
+      respawnDelayMs: 25,
+      spawnFactory: () => {
+        let stdoutCtrl!: ReadableStreamDefaultController<Uint8Array>;
+        let resolveExit!: (code: number) => void;
+        const stdout = new ReadableStream<Uint8Array>({
+          start(controller) {
+            stdoutCtrl = controller;
+          },
+        });
+        const stderr = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        });
+        const exited = new Promise<number>((r) => {
+          resolveExit = r;
+        });
+        const worker = {
+          exitCode: null as number | null,
+          killed: false,
+          stdout,
+          stderr,
+          exited,
+          kill() {
+            this.killed = true;
+            this.exitCode = 1;
+          },
+          stdin: {
+            write(line: string) {
+              const parsed = JSON.parse(line) as { id: string; type: string };
+              // Both workers ack prompt/abort responses, but worker #1 never emits agent_end on abort
+              queueMicrotask(() => {
+                stdoutCtrl.enqueue(
+                  enc.encode(
+                    JSON.stringify({
+                      type: "response",
+                      id: parsed.id,
+                      command: parsed.type,
+                      success: true,
+                      data: { ok: true },
+                    }) + "\n"
+                  )
+                );
+              });
+            },
+          },
+        };
+        const record = {
+          get killed() {
+            return worker.killed;
+          },
+          pushLine(obj: Record<string, unknown>) {
+            stdoutCtrl.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
+          },
+          resolveExit(code: number) {
+            resolveExit(code);
+          },
+        };
+        spawnedWorkers.push(record);
+        queueMicrotask(() => record.pushLine({ type: "ready" }));
+        return worker as unknown as Bun.Subprocess<"pipe", "pipe", "pipe">;
+      },
+    });
+
+    try {
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(spawnedWorkers.length, 1);
+
+      // Turn 1 wedges on worker #1 -> watchdog kills & detaches worker #1, auto-respawns worker #2
+      await b5.prompt("Turn 1 wedged", { ackTimeoutMs: 500, watchdogMs: 40, abortGraceMs: 35 });
+      await new Promise((r) => setTimeout(r, 150));
+      assert.equal(spawnedWorkers[0].killed, true);
+      assert.equal(spawnedWorkers.length, 2, "scheduleRespawn must spawn replacement worker automatically");
+      assert.equal(b5.busy, false);
+
+      // Start Turn 2 on fresh worker #2
+      await b5.prompt("Turn 2 on respawned worker", { ackTimeoutMs: 500, watchdogMs: 5000 });
+      assert.equal(b5.busy, true);
+      assert.equal(b5.hasActiveWatchdog(), true);
+
+      // Detached worker #1 emits a late agent_end on its old stdout pipe AND fires delayed exited -> MUST be ignored!
+      spawnedWorkers[0].pushLine({ type: "agent_end" });
+      spawnedWorkers[0].resolveExit(137);
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(b5.busy, true, "Detached worker stdout & delayed exited must never disrupt replacement worker");
+      assert.equal(b5.hasActiveWatchdog(), true);
+      assert.equal(spawnedWorkers.length, 2, "Delayed exited from replaced worker must not trigger duplicate spawn");
+
+      // Replacement worker #2 finishes Turn 2 cleanly
+      spawnedWorkers[1].pushLine({ type: "agent_end" });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(b5.busy, false);
+    } finally {
+      b5.dispose();
+    }
   });
 
   it("clears busy and throws on explicit RPC failure", async () => {
