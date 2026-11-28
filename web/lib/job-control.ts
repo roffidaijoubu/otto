@@ -15,7 +15,7 @@ import {
   type StudioJobStatus,
 } from "../../agent/lib/studio-db.ts";
 import { cancelArchiveSync, startBackgroundArchiveSync } from "./archive-worker.ts";
-import { resumeClipJob } from "./clip-service.ts";
+import { resumeClipJob, startClipJob } from "./clip-service.ts";
 import { cancelBackgroundClipJob } from "./clip-worker.ts";
 import { rpc } from "./rpc-bridge.ts";
 import {
@@ -88,6 +88,78 @@ export async function nudgeStudioJobById(
     modeUsed: res.modeUsed,
     snapshot: res.snapshot,
   };
+}
+
+export interface DispatchStudioJobInput {
+  kind: StudioJobKind;
+  // Shared / thumbnail / obs_overlay
+  prompt?: string;
+  slug?: string;
+  attachedImages?: string[];
+  label?: string;
+  // Clip
+  vodUrl?: string;
+  videoId?: string;
+  title?: string;
+  maxClips?: number;
+  focusNotes?: string;
+  // Archive sync
+  channelUrl?: string;
+  includeShorts?: boolean;
+  limit?: number;
+}
+
+export async function dispatchStudioJob(input: DispatchStudioJobInput): Promise<Record<string, unknown>> {
+  if (input.kind === "clip") {
+    const vodUrl = String(input.vodUrl || "").trim();
+    if (!vodUrl) throw new Error("vodUrl is required for kind='clip'.");
+    const job = await startClipJob(
+      {
+        vodUrl,
+        videoId: input.videoId ? String(input.videoId) : undefined,
+        title: input.title ? String(input.title) : undefined,
+        maxClips: typeof input.maxClips === "number" ? input.maxClips : 0,
+        focusNotes: input.focusNotes ? String(input.focusNotes) : "",
+      },
+      rpc
+    );
+    return { ok: true, kind: "clip", jobId: job.id, job };
+  }
+
+  if (input.kind === "thumbnail") {
+    const prompt = String(input.prompt || "").trim();
+    if (!prompt) throw new Error("prompt is required for kind='thumbnail'.");
+    const { jobId } = dispatchThumbnailBackgroundJob({
+      prompt,
+      attachedImages: Array.isArray(input.attachedImages) ? input.attachedImages.map(String) : [],
+      slug: input.slug ? String(input.slug) : undefined,
+      label: input.label ? String(input.label) : undefined,
+    });
+    return { ok: true, kind: "thumbnail", jobId };
+  }
+
+  if (input.kind === "obs_overlay") {
+    const prompt = String(input.prompt || "").trim();
+    if (!prompt) throw new Error("prompt is required for kind='obs_overlay'.");
+    const { jobId } = dispatchObsOverlayBackgroundJob({
+      prompt,
+      attachedImages: Array.isArray(input.attachedImages) ? input.attachedImages.map(String) : [],
+      slug: input.slug ? String(input.slug) : undefined,
+      label: input.label ? String(input.label) : undefined,
+    });
+    return { ok: true, kind: "obs_overlay", jobId };
+  }
+
+  if (input.kind === "archive_sync") {
+    const result = await startBackgroundArchiveSync({
+      channelUrl: input.channelUrl ? String(input.channelUrl) : undefined,
+      includeShorts: input.includeShorts !== false,
+      limit: typeof input.limit === "number" ? input.limit : undefined,
+    });
+    return { ok: true, kind: "archive_sync", result };
+  }
+
+  throw new Error(`Unsupported job kind: ${String(input.kind)}`);
 }
 
 export async function resumeStudioJobById(id: string): Promise<Record<string, unknown>> {

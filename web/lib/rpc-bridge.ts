@@ -43,6 +43,7 @@ export function friendlyToolLabel(toolName: string): string {
   if (/buffer/i.test(toolName)) return "Checking social channels...";
   if (/wakeup|schedule|calendar/i.test(toolName)) return "Managing schedule...";
   if (/^todo/i.test(toolName)) return "Updating checklist...";
+  if (/studio_job_dispatch/i.test(toolName)) return "Dispatching background job...";
   if (/studio_job_nudge/i.test(toolName)) return "Steering background worker...";
   if (/studio_job/i.test(toolName)) return "Checking background jobs...";
   if (/^studio_/i.test(toolName)) return "Updating studio database...";

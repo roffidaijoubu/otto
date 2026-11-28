@@ -40,6 +40,70 @@ async function callInternalJobsApi<T = Record<string, unknown>>(
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
+    name: "studio_job_dispatch",
+    label: "Dispatch Background Studio Job",
+    description:
+      "Unified dispatcher for launching any isolated background job (clip, thumbnail, obs_overlay, or archive_sync) so main Otto Chat stays free while the worker runs in the background with live RPC telemetry and nudging support.",
+    parameters: Type.Object({
+      kind: Type.Union([
+        Type.Literal("clip"),
+        Type.Literal("thumbnail"),
+        Type.Literal("obs_overlay"),
+        Type.Literal("archive_sync"),
+      ]),
+      prompt: Type.Optional(
+        Type.String({
+          description: "Detailed creative/technical brief (required for kind='thumbnail' and kind='obs_overlay').",
+        })
+      ),
+      slug: Type.Optional(
+        Type.String({
+          description: "Optional existing slug to refine (for kind='thumbnail' or kind='obs_overlay').",
+        })
+      ),
+      attachedImages: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Optional workspace-relative image paths under /home/sprite/workspace/ (e.g. ['uploads/img.png']).",
+        })
+      ),
+      label: Type.Optional(
+        Type.String({ description: "Short human-friendly progress title shown in the Jobs UI." })
+      ),
+      vodUrl: Type.Optional(
+        Type.String({ description: "YouTube VOD URL or 11-char video ID (required for kind='clip')." })
+      ),
+      title: Type.Optional(
+        Type.String({ description: "Optional display title for a clip job." })
+      ),
+      maxClips: Type.Optional(
+        Type.Number({ description: "Clip count cap for kind='clip' (0 = full auto)." })
+      ),
+      focusNotes: Type.Optional(
+        Type.String({ description: "Optional focus notes for kind='clip' (topic, timestamp, energy)." })
+      ),
+      channelUrl: Type.Optional(
+        Type.String({ description: "Optional YouTube channel URL for kind='archive_sync'." })
+      ),
+      includeShorts: Type.Optional(
+        Type.Boolean({ description: "Include Shorts in kind='archive_sync' (default true)." })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Optional max video count for kind='archive_sync'." })
+      ),
+    }),
+    async execute(_id, params) {
+      const data = await callInternalJobsApi<{ jobId?: string }>("/api/internal/jobs/dispatch", {
+        method: "POST",
+        body: params as Record<string, unknown>,
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+        details: { kind: params.kind, jobId: data.jobId },
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "studio_jobs_list",
     label: "List Background Studio Jobs",
     description:

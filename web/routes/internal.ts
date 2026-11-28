@@ -4,10 +4,12 @@ import { startClipJob } from "../lib/clip-service.ts";
 import { startBackgroundArchiveSync } from "../lib/archive-worker.ts";
 import {
   cancelStudioJobById,
+  dispatchStudioJob,
   inspectStudioJobById,
   listEnrichedStudioJobs,
   nudgeStudioJobById,
   resumeStudioJobById,
+  type DispatchStudioJobInput,
 } from "../lib/job-control.ts";
 import { dispatchObsOverlayBackgroundJob } from "./obs-overlays.ts";
 import { dispatchThumbnailBackgroundJob } from "./thumbnails.ts";
@@ -175,7 +177,25 @@ export async function handleInternalRoutes(req: Request, url: URL): Promise<Resp
     }
   }
 
-  // Internal-only Studio Jobs visibility, live RPC nudging, resume, and cancel endpoints for Otto
+  // Internal-only Studio Jobs dispatch, visibility, live RPC nudging, resume, and cancel endpoints for Otto
+  if (req.method === "POST" && url.pathname === "/api/internal/jobs/dispatch") {
+    const denied = requireInternalSecret(req);
+    if (denied) return denied;
+    try {
+      const body = (await req.json().catch(() => ({}))) as DispatchStudioJobInput;
+      if (!body.kind) {
+        return Response.json({ ok: false, error: "kind is required" }, { status: 400 });
+      }
+      const result = await dispatchStudioJob(body);
+      return Response.json(result);
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : String(err) },
+        { status: 400 }
+      );
+    }
+  }
+
   if (req.method === "GET" && url.pathname === "/api/internal/jobs") {
     const denied = requireInternalSecret(req);
     if (denied) return denied;

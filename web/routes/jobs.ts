@@ -8,14 +8,29 @@ import {
 import { errorMessage } from "../lib/http.ts";
 import {
   cancelStudioJobById,
+  dispatchStudioJob,
   inspectStudioJobById,
   listEnrichedStudioJobs,
   nudgeStudioJobById,
   resumeStudioJobById,
+  type DispatchStudioJobInput,
 } from "../lib/job-control.ts";
 import { broadcast } from "../lib/sse.ts";
 
 export async function handleJobsRoutes(req: Request, url: URL): Promise<Response | null> {
+  if (req.method === "POST" && url.pathname === "/api/jobs/dispatch") {
+    try {
+      const body = (await req.json().catch(() => ({}))) as DispatchStudioJobInput;
+      if (!body.kind) {
+        return Response.json({ ok: false, error: "kind is required" }, { status: 400 });
+      }
+      const result = await dispatchStudioJob(body);
+      return Response.json(result);
+    } catch (err) {
+      return Response.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    }
+  }
+
   if (req.method === "GET" && url.pathname === "/api/jobs") {
     const kind = url.searchParams.get("kind") as StudioJobKind | null;
     const status = url.searchParams.get("status") as StudioJobStatus | null;
