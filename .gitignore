@@ -15,3 +15,5 @@ skills-lock.json
 # Local scratch / logo generation / demo video workspace
 .tmp/
 .demo/
+__pycache__/
+*.pyc
