@@ -1,4 +1,9 @@
-import { hasConfiguredAuth, verifyWebPassword, buildAuthCookieHeader } from "../lib/auth.ts";
+import {
+  hasConfiguredAuth,
+  verifyWebPassword,
+  buildAuthCookieHeader,
+  isAuthenticated,
+} from "../lib/auth.ts";
 import { getClientKey, isLoginRateLimited, recordLoginFailure } from "../lib/qstash.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 
@@ -7,14 +12,18 @@ export async function handlePublicRoutes(
   url: URL,
   server?: any
 ): Promise<Response | null> {
-  // Public health check
+  // Public health check: return minimal liveness unauthenticated; include hold/worker internals only when authenticated
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return Response.json({
-      ok: true,
-      busy: rpc.busy,
-      activeBackgroundJobs: rpc.activeBackgroundJobCount,
-      hold: rpc.getHoldHealth(),
-    });
+    if (isAuthenticated(req)) {
+      return Response.json({
+        ok: true,
+        status: "healthy",
+        busy: rpc.busy,
+        activeBackgroundJobs: rpc.activeBackgroundJobCount,
+        hold: rpc.getHoldHealth(),
+      });
+    }
+    return Response.json({ ok: true, status: "healthy" });
   }
 
   // Passcode login endpoint

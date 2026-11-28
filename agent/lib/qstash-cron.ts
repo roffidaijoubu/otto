@@ -12,8 +12,11 @@ const IANA_TZ_RE = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
  * `CRON_TZ=<IANA_Timezone> <5-field-cron>` (e.g. `CRON_TZ=Asia/Bangkok 0 0 * * *`).
  */
 export function normalizeQStashCron(raw: string): string {
+  if (!raw || /[\r\n\0]/.test(raw)) {
+    throw new Error("Cron expression must be a single line without control characters.");
+  }
   const cleaned = raw.trim().replace(/\s+/g, " ");
-  if (!cleaned || /[\r\n\0]/.test(cleaned)) {
+  if (!cleaned) {
     throw new Error("Cron expression must be a single line without control characters.");
   }
 
@@ -83,6 +86,10 @@ export function buildMidnightCronForTimezone(timezone: string): string {
 }
 
 let cachedQStashGateway: string | null = null;
+
+export function resetQStashGatewayCache(): void {
+  cachedQStashGateway = null;
+}
 
 export async function resolveQStashGatewayUrl(): Promise<string | null> {
   if (cachedQStashGateway) return cachedQStashGateway;

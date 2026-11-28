@@ -342,12 +342,16 @@ export async function runIsolatedQuickTask(opts: {
   tools: string;
   prompt: string;
   timeoutMs?: number;
+  noTools?: boolean;
 }): Promise<{ ok: boolean; reply: string; error?: string }> {
   const childEnv = buildAgentChildEnv();
   const releaseBg = rpc.beginBackgroundJob("isolated-quick-task");
   void rpc.holdSpriteActive();
   try {
     const args = [OMP_BIN, "--no-session"];
+    if (opts.noTools) {
+      args.push("--no-tools");
+    }
     if (opts.tools.trim()) {
       args.push("--tools", opts.tools.trim());
     }

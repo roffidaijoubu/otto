@@ -83,8 +83,8 @@ export async function handleChatRoutes(req: Request, url: URL): Promise<Response
       if (!message) {
         return Response.json({ error: "Message is required" }, { status: 400 });
       }
-      await rpc.prompt(message);
-      return Response.json({ ok: true });
+      const result = await rpc.prompt(message);
+      return Response.json({ ok: true, inFlight: Boolean(result.inFlight) });
     } catch (err: unknown) {
       return Response.json({ error: errorMessage(err) }, { status: 400 });
     }

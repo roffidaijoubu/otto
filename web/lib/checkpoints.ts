@@ -74,6 +74,46 @@ export async function listSpriteCheckpoints(): Promise<{
   }
 }
 
+export function parseCheckpointIdFromResponse(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // 1. Prefer structured JSON / NDJSON fields before falling back to prose regexes
+  for (const line of trimmed.split(/\r?\n/)) {
+    const candidateLine = line.trim();
+    if (!candidateLine.startsWith("{")) continue;
+    try {
+      const obj = JSON.parse(candidateLine) as {
+        id?: unknown;
+        checkpoint_id?: unknown;
+        checkpointId?: unknown;
+        data?: { id?: unknown; checkpoint_id?: unknown };
+      };
+      const candidates = [
+        obj.id,
+        obj.checkpoint_id,
+        obj.checkpointId,
+        obj.data?.id,
+        obj.data?.checkpoint_id,
+      ];
+      for (const c of candidates) {
+        if (typeof c === "string" && /^v\d+$/.test(c.trim())) {
+          return c.trim();
+        }
+      }
+    } catch {
+      // fall through to regex parser
+    }
+  }
+
+  // 2. Fallback to Fly Sprites human-readable stream / text responses
+  const idMatch =
+    trimmed.match(/Checkpoint\s+(v\d+)\s+created/i) ||
+    trimmed.match(/\bID:\s*(v\d+)\b/i) ||
+    trimmed.match(/"id"\s*:\s*"(v\d+)"/i);
+  return idMatch ? idMatch[1] : null;
+}
+
 export async function createSpriteCheckpoint(comment = ""): Promise<{
   ok: boolean;
   id: string | null;
@@ -98,10 +138,18 @@ export async function createSpriteCheckpoint(comment = ""): Promise<{
         error: text.trim().slice(0, 220) || `Checkpoint creation failed (HTTP ${res.status})`,
       };
     }
-    const idMatch = text.match(/Checkpoint\s+(v\d+)\s+created/i) || text.match(/\bID:\s*(v\d+)\b/i);
+    const parsedId = parseCheckpointIdFromResponse(text);
+    if (!parsedId) {
+      return {
+        ok: false,
+        id: null,
+        comment: cleanComment,
+        error: `Checkpoint API succeeded (HTTP ${res.status}) but returned no parseable checkpoint ID`,
+      };
+    }
     return {
       ok: true,
-      id: idMatch ? idMatch[1] : null,
+      id: parsedId,
       comment: cleanComment,
     };
   } catch (err) {

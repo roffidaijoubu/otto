@@ -79,15 +79,15 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
       return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
     }
 
-    // Claim busy synchronously before awaiting Tasks API hold so concurrent calls cannot race
+    // Claim busy synchronously before awaiting Tasks API hold and keep lock held into rpc.prompt() (no TOCTOU window)
     rpc.busy = true;
-    await rpc.holdSpriteActive();
     const wakeupMsg = `[SCHEDULED WAKE-UP: ${label}]\n${prompt}`;
     try {
-      rpc.busy = false;
-      await rpc.prompt(wakeupMsg);
+      await rpc.holdSpriteActive();
+      await rpc.prompt(wakeupMsg, { lockAlreadyHeld: true });
     } catch (err) {
       console.error("[lma-web] wakeup prompt error:", errorMessage(err));
+      rpc.busy = false;
       rpc.releaseSpriteHold();
       return Response.json(
         { error: "Failed to dispatch wake-up; retry shortly" },

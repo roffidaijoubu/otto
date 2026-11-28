@@ -7,7 +7,7 @@
  * and opens a pooled Bun.SQL Postgres client.
  */
 
-import { SQL } from "bun";
+import type { SQL } from "bun";
 
 export const NEON_PROJECT_NAME = process.env.LMA_NEON_PROJECT_NAME?.trim() || "lma-studio";
 export const NEON_REGION = process.env.LMA_NEON_REGION?.trim() || "aws-ap-southeast-1";
@@ -85,10 +85,20 @@ async function neonApi<T = Record<string, unknown>>(
 }
 
 async function initNeonConnection(): Promise<ResolvedNeonConnection | null> {
+  if (process.env.LMA_FORCE_SQLITE === "1") {
+    cachedInfo = { backend: "sqlite", reason: "Local SQLite forced via LMA_FORCE_SQLITE=1" };
+    return null;
+  }
+  if (typeof (globalThis as Record<string, unknown>).Bun === "undefined") {
+    cachedInfo = { backend: "sqlite", reason: "Non-Bun runtime; using local SQLite driver" };
+    return null;
+  }
+
   // Optional direct DATABASE_URL override for local scripts/testing (never committed)
   const directUri = process.env.LMA_NEON_DATABASE_URL?.trim();
   if (directUri) {
-    const sql = new SQL({ url: directUri, max: 5, idleTimeout: 30 });
+    const bunMod = (await import("bun")) as { SQL: new (opts: Record<string, unknown>) => SQL };
+    const sql = new bunMod.SQL({ url: directUri, max: 5, idleTimeout: 30 });
     cachedInfo = { backend: "neon", projectName: NEON_PROJECT_NAME, region: "direct-env" };
     return { sql, info: cachedInfo };
   }
@@ -161,7 +171,8 @@ async function initNeonConnection(): Promise<ResolvedNeonConnection | null> {
       throw new Error("Neon connection_uri response missing uri");
     }
 
-    const sql = new SQL({
+    const bunMod = (await import("bun")) as { SQL: new (opts: Record<string, unknown>) => SQL };
+    const sql = new bunMod.SQL({
       url: uriRes.uri,
       max: 5,
       idleTimeout: 30,

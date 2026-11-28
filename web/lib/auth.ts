@@ -105,6 +105,18 @@ export function updatePrivateWebPassword(newPassword: string): void {
   activeSessions.clear();
 }
 
+export function clearActiveSessions(): void {
+  activeSessions.clear();
+}
+
+export function getActiveSessionCount(): number {
+  const now = Date.now();
+  for (const [token, expiresAt] of activeSessions) {
+    if (expiresAt <= now) activeSessions.delete(token);
+  }
+  return activeSessions.size;
+}
+
 export function isAuthenticated(req: Request): boolean {
   // Fail-closed: never expose the agent without LMA_WEB_PASSWORD_HASH or LMA_WEB_PASSWORD configured
   if (!hasConfiguredAuth()) return false;
@@ -119,15 +131,23 @@ export function isAuthenticated(req: Request): boolean {
   }
   if (!candidate) return false;
   const now = Date.now();
-  let matched = false;
+  let matchedToken: string | null = null;
+  let matchedExpiry = 0;
   for (const [token, expiresAt] of activeSessions) {
     if (expiresAt <= now) {
       activeSessions.delete(token);
       continue;
     }
     if (timingSafeStrEqual(candidate, token)) {
-      matched = true;
+      matchedToken = token;
+      matchedExpiry = expiresAt;
     }
   }
-  return matched;
+  if (matchedToken !== null) {
+    // True LRU touch: refresh recency so an actively used owner session is never evicted by idle entries
+    activeSessions.delete(matchedToken);
+    activeSessions.set(matchedToken, matchedExpiry);
+    return true;
+  }
+  return false;
 }

@@ -9,10 +9,25 @@ export function base64UrlDecode(str: string): Buffer {
   return Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
 }
 
-export function verifyQStashJwtWithKey(token: string, rawBody: string, key: string): boolean {
+export function verifyQStashJwtWithKey(
+  token: string,
+  rawBody: string,
+  key: string,
+  opts: { expectedSub?: string | null } = {}
+): boolean {
   const parts = token.split(".");
   if (parts.length !== 3) return false;
   const [headerB64, payloadB64, sigB64] = parts;
+
+  // Validate JWT header algorithm explicitly before trusting HMAC verification
+  let header: Record<string, unknown>;
+  try {
+    header = JSON.parse(base64UrlDecode(headerB64).toString("utf8")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (header.alg !== "HS256") return false;
+
   const expectedSig = crypto
     .createHmac("sha256", key)
     .update(`${headerB64}.${payloadB64}`)
@@ -31,12 +46,31 @@ export function verifyQStashJwtWithKey(token: string, rawBody: string, key: stri
   if (typeof payload.exp === "number" && now > payload.exp + 30) return false;
   if (typeof payload.nbf === "number" && now < payload.nbf - 30) return false;
   if (typeof payload.body !== "string") return false;
-  const expectedSub = process.env.LMA_PUBLIC_URL
-    ? `${process.env.LMA_PUBLIC_URL.replace(/\/+$/, "")}/api/wakeup`
-    : null;
-  if (expectedSub && typeof payload.sub === "string" && payload.sub !== expectedSub) {
+
+  // Enforce destination binding (fail-closed on missing or mismatched `sub`)
+  const configuredPublicUrl = process.env.LMA_PUBLIC_URL?.trim();
+  const expectedSub =
+    opts.expectedSub !== undefined
+      ? opts.expectedSub
+      : configuredPublicUrl
+        ? `${configuredPublicUrl.replace(/\/+$/, "")}/api/wakeup`
+        : null;
+  if (expectedSub) {
+    if (typeof payload.sub !== "string" || payload.sub !== expectedSub) {
+      return false;
+    }
+  } else if (typeof payload.sub === "string") {
+    // Even without LMA_PUBLIC_URL configured, block tokens minted for non-wakeup endpoints
+    try {
+      const subUrl = new URL(payload.sub);
+      if (subUrl.pathname.replace(/\/+$/, "") !== "/api/wakeup") return false;
+    } catch {
+      return false;
+    }
+  } else {
     return false;
   }
+
   const actualHashB64Url = crypto.createHash("sha256").update(rawBody).digest("base64url");
   const actualHashB64 = crypto.createHash("sha256").update(rawBody).digest("base64");
   const claimed = payload.body.replace(/=+$/, "");
@@ -52,6 +86,10 @@ export function verifyQStashJwtWithKey(token: string, rawBody: string, key: stri
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
 const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_FAILURES = 5;
+
+export function resetLoginRateLimits(): void {
+  loginFailures.clear();
+}
 
 export function getClientKey(
   req: Request,
@@ -93,7 +131,13 @@ export function recordLoginFailure(key: string): void {
   }
 }
 
-export function computeGuardrailStatus(): { zeroLocalKeys: boolean; aiMediaDisabled: boolean } {
+export function computeGuardrailStatus(): {
+  zeroLocalKeys: boolean;
+  zeroOutboundApiKeys: boolean;
+  inboundSigningKeysConfigured: boolean;
+  inboundKeysIsolatedFromAgent: boolean;
+  aiMediaDisabled: boolean;
+} {
   const outboundKeyNames = [
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
@@ -113,7 +157,10 @@ export function computeGuardrailStatus(): { zeroLocalKeys: boolean; aiMediaDisab
     "FLY_API_TOKEN",
     "NEON_API_KEY",
   ];
-  const zeroLocalKeys = outboundKeyNames.every((k) => !process.env[k]);
+  const zeroOutboundApiKeys = outboundKeyNames.every((k) => !process.env[k]);
+  const inboundSigningKeysConfigured = Boolean(
+    process.env.QSTASH_CURRENT_SIGNING_KEY || process.env.QSTASH_NEXT_SIGNING_KEY
+  );
 
   let aiMediaDisabled = false;
   try {
@@ -125,7 +172,13 @@ export function computeGuardrailStatus(): { zeroLocalKeys: boolean; aiMediaDisab
   } catch {
     aiMediaDisabled = false;
   }
-  return { zeroLocalKeys, aiMediaDisabled };
+  return {
+    zeroLocalKeys: zeroOutboundApiKeys,
+    zeroOutboundApiKeys,
+    inboundSigningKeysConfigured,
+    inboundKeysIsolatedFromAgent: true,
+    aiMediaDisabled,
+  };
 }
 
 export function verifyUpstashSignature(req: Request, rawBody: string): boolean {

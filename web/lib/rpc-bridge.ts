@@ -27,6 +27,7 @@ export interface RpcEvent {
 export interface PendingRequest {
   resolve: (val: unknown) => void;
   reject: (err: Error) => void;
+  timer?: NodeJS.Timeout;
 }
 
 export interface SessionSummary {
@@ -189,8 +190,10 @@ export class OmpRpcBridge {
   private lastHoldError: string | null = null;
   private lastHoldAt: string | null = null;
 
-  constructor() {
-    this.spawn();
+  constructor(opts: { autoSpawn?: boolean } = {}) {
+    if (opts.autoSpawn !== false) {
+      this.spawn();
+    }
   }
 
   private enqueueHoldOp(fn: () => Promise<void>): Promise<void> {
@@ -340,6 +343,7 @@ export class OmpRpcBridge {
       this.busy = false;
       this.releaseSpriteHold();
       for (const [, p] of this.pending) {
+        if (p.timer) clearTimeout(p.timer);
         p.reject(new Error(`omp rpc exited (${code})`));
       }
       this.pending.clear();
@@ -404,6 +408,7 @@ export class OmpRpcBridge {
     if (ev.type === "response" && ev.id && this.pending.has(ev.id)) {
       const p = this.pending.get(ev.id)!;
       this.pending.delete(ev.id);
+      if (p.timer) clearTimeout(p.timer);
       if (ev.success === false) {
         p.reject(new Error(ev.error || `Command ${ev.command ?? "unknown"} failed`));
       } else {
@@ -500,20 +505,24 @@ export class OmpRpcBridge {
     await promise;
   }
 
-  async sendCommand(type: string, extra: Record<string, unknown> = {}): Promise<unknown> {
+  async sendCommand(
+    type: string,
+    extra: Record<string, unknown> = {},
+    timeoutMs = 30_000
+  ): Promise<unknown> {
     await this.waitReady();
     if (!this.proc?.stdin) throw new Error("RPC stdin unavailable");
     const id = `req-${++this.reqCounter}`;
     const line = JSON.stringify({ id, type, ...extra }) + "\n";
     const { promise, resolve, reject } = Promise.withResolvers<unknown>();
-    this.pending.set(id, { resolve, reject });
-    this.proc.stdin.write(line);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (this.pending.has(id)) {
         this.pending.delete(id);
         reject(new Error(`RPC command ${type} timed out`));
       }
-    }, 30000);
+    }, timeoutMs);
+    this.pending.set(id, { resolve, reject, timer });
+    this.proc.stdin.write(line);
     return promise;
   }
 
@@ -598,23 +607,34 @@ export class OmpRpcBridge {
     return out;
   }
 
-  async prompt(message: string) {
-    if (this.busy) {
-      throw new Error("Otto is still responding. Wait or click Stop.");
+  async prompt(
+    message: string,
+    opts: { lockAlreadyHeld?: boolean; ackTimeoutMs?: number } = {}
+  ): Promise<{ accepted: true; inFlight?: boolean }> {
+    if (!opts.lockAlreadyHeld) {
+      if (this.busy) {
+        throw new Error("Otto is still responding. Wait or click Stop.");
+      }
+      this.busy = true;
     }
-    this.busy = true;
     this.activity = "Thinking...";
-    this.holdSpriteActive();
+    void this.holdSpriteActive();
     broadcast({ type: "user_message", text: stripHiddenTags(message) });
     broadcast({ type: "activity", label: this.activity });
     try {
-      await this.sendCommand("prompt", { message });
+      await this.sendCommand("prompt", { message }, opts.ackTimeoutMs ?? 30_000);
+      return { accepted: true };
     } catch (err) {
       const isTimeout = err instanceof Error && /timed out/i.test(err.message);
-      if (!isTimeout) {
-        this.busy = false;
-        this.releaseSpriteHold();
+      const procAlive = this.proc ? this.proc.exitCode === null : false;
+      if (isTimeout && procAlive) {
+        // Long multi-tool turns (e.g. VOD clipping) can exceed the initial RPC ack window while
+        // still streaming normally over SSE; keep busy + Sprite hold active instead of returning HTTP 400.
+        console.warn("[lma-web] prompt RPC ack window elapsed while turn is still active; continuing via SSE");
+        return { accepted: true, inFlight: true };
       }
+      this.busy = false;
+      this.releaseSpriteHold();
       throw err;
     }
   }
@@ -636,4 +656,6 @@ export class OmpRpcBridge {
   }
 }
 
-export const rpc = new OmpRpcBridge();
+export const rpc = new OmpRpcBridge({
+  autoSpawn: process.env.LMA_DISABLE_AUTO_SPAWN !== "1",
+});

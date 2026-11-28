@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import type { SQL } from "bun";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -411,15 +410,48 @@ function createPgDriver(pg: SQL): DbDriver {
   };
 }
 
-let sqliteInstance: Database | null = null;
+interface SqliteStatementLike {
+  all(...params: unknown[]): unknown[];
+  get(...params: unknown[]): unknown;
+  run(...params: unknown[]): { changes?: number | bigint };
+}
+
+interface SqliteLike {
+  exec(sql: string): void;
+  prepare(sql: string): SqliteStatementLike;
+  close(): void;
+}
+
+let sqliteInstance: SqliteLike | null = null;
 let sqliteInstancePath: string | null = null;
 
 export function getStudioDbPath(): string {
+  const override = process.env.LMA_STUDIO_DB_PATH?.trim();
+  if (override) return override;
   const home = process.env.HOME || "/home/sprite";
   return path.join(home, ".omp", "agent", "studio.db");
 }
 
-function getSqliteFallback(): Database {
+function normalizeSqliteParams(params: SqlParam[]): Array<string | number | null> {
+  return params.map((p) => (typeof p === "boolean" ? (p ? 1 : 0) : p));
+}
+
+async function openSqliteDatabase(dbPath: string): Promise<SqliteLike> {
+  if (typeof (globalThis as Record<string, unknown>).Bun !== "undefined") {
+    const bunSqliteSpec = "bun:" + "sqlite";
+    const mod = (await import(bunSqliteSpec)) as {
+      Database: new (p: string, opts?: { create?: boolean }) => SqliteLike;
+    };
+    return new mod.Database(dbPath, { create: true });
+  }
+  const nodeSqliteSpec = "node:" + "sqlite";
+  const mod = (await import(nodeSqliteSpec)) as {
+    DatabaseSync: new (p: string) => SqliteLike;
+  };
+  return new mod.DatabaseSync(dbPath);
+}
+
+async function getSqliteFallback(): Promise<SqliteLike> {
   const dbPath = getStudioDbPath();
   if (sqliteInstance && sqliteInstancePath === dbPath && fs.existsSync(dbPath)) {
     return sqliteInstance;
@@ -433,7 +465,7 @@ function getSqliteFallback(): Database {
     sqliteInstance = null;
   }
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath, { create: true });
+  const db = await openSqliteDatabase(dbPath);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
   for (const stmt of SCHEMA_STATEMENTS) {
     db.exec(stmt.replace(/DOUBLE PRECISION/g, "REAL"));
@@ -443,23 +475,36 @@ function getSqliteFallback(): Database {
   return db;
 }
 
-function createSqliteDriver(db: Database): DbDriver {
+function createSqliteDriver(db: SqliteLike): DbDriver {
   return {
     backend: "sqlite",
     async all<T>(sql: string, ...params: SqlParam[]): Promise<T[]> {
-      return db.query(sql).all(...params) as T[];
+      return db.prepare(sql).all(...normalizeSqliteParams(params)) as T[];
     },
     async get<T>(sql: string, ...params: SqlParam[]): Promise<T | null> {
-      return (db.query(sql).get(...params) as T | null) ?? null;
+      return (db.prepare(sql).get(...normalizeSqliteParams(params)) as T | null) ?? null;
     },
     async run(sql: string, ...params: SqlParam[]): Promise<{ changes: number }> {
-      const res = db.prepare(sql).run(...params);
-      return { changes: res.changes };
+      const res = db.prepare(sql).run(...normalizeSqliteParams(params));
+      return { changes: Number(res.changes ?? 0) };
     },
   };
 }
 
 let driverPromise: Promise<DbDriver> | null = null;
+
+export function resetStudioDbForTests(): void {
+  driverPromise = null;
+  if (sqliteInstance) {
+    try {
+      sqliteInstance.close();
+    } catch {
+      // ignore
+    }
+    sqliteInstance = null;
+    sqliteInstancePath = null;
+  }
+}
 
 async function initDriver(): Promise<DbDriver> {
   const pg = await getNeonSql();
@@ -471,7 +516,7 @@ async function initDriver(): Promise<DbDriver> {
     await pg.unsafe("ALTER TABLE clip_jobs ADD COLUMN IF NOT EXISTS plan_json TEXT NOT NULL DEFAULT '[]'").catch(() => {});
     return createPgDriver(pg);
   }
-  const sq = getSqliteFallback();
+  const sq = await getSqliteFallback();
   try {
     sq.exec("ALTER TABLE clip_jobs ADD COLUMN plan_json TEXT NOT NULL DEFAULT '[]'");
   } catch {

@@ -18,6 +18,10 @@ export const BOX_ASSETS_ROOT_NAME = "Otto Assets";
 
 let cachedBoxBaseUrl: string | null = null;
 
+export function resetBoxGatewayCache(): void {
+  cachedBoxBaseUrl = null;
+}
+
 export interface BoxEntry {
   id: string;
   type: "file" | "folder";

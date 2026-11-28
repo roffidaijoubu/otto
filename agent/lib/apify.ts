@@ -19,6 +19,10 @@ const ALLOWED_ACTORS = new Set<string>(Object.values(CURATED_APIFY_ACTORS));
 
 let cachedBaseUrl: string | null = null;
 
+export function resetApifyGatewayCache(): void {
+  cachedBaseUrl = null;
+}
+
 export async function getApifyGatewayUrl(): Promise<string> {
   if (cachedBaseUrl) return cachedBaseUrl;
   if (process.env.SPRITES_APIFY_GATEWAY_URL) {

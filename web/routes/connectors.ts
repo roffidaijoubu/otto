@@ -39,6 +39,12 @@ export async function handleConnectorsRoutes(
       return Response.json({
         connectors,
         ...guardrails,
+        ...(connectors.length === 0
+          ? {
+              warning:
+                "No Sprites Connectors returned by /v1/gateway/list — authorize connectors in https://sprites.dev -> Connectors.",
+            }
+          : {}),
       });
     } catch (err: unknown) {
       return Response.json({

@@ -1,12 +1,16 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export const LMA_INTERNAL_SECRET = crypto.randomBytes(24).toString("hex");
 
 export const PORT = Number(process.env.PORT || 8080);
-export const DIST_DIR = path.join(import.meta.dir, "..", "dist");
-export const HOME_DIR = process.env.HOME || "/home/sprite";
+export const DIST_DIR = path.join(LIB_DIR, "..", "dist");
+export const HOME_DIR = process.env.HOME || process.env.USERPROFILE || os.homedir() || "/home/sprite";
 export const LOCAL_BIN = path.join(HOME_DIR, ".local", "bin");
 
 if (!String(process.env.PATH || "").includes(LOCAL_BIN)) {

@@ -47,6 +47,20 @@ const state: RouterState = {
   fallbackSuccesses: 0,
 };
 
+export function resetLlmRouterState(): void {
+  state.ollamaConnected = false;
+  state.ollamaBaseUrl = null;
+  state.geminiBaseUrl = null;
+  state.discoveredAt = 0;
+  state.circuitOpenUntil = 0;
+  state.lastFailureReason = null;
+  state.lastFailureStatus = null;
+  state.lastProviderUsed = null;
+  state.ollamaAttempts = 0;
+  state.ollamaSuccesses = 0;
+  state.fallbackSuccesses = 0;
+}
+
 async function ensureGateways(forceRefresh = false): Promise<void> {
   if (!forceRefresh && Date.now() - state.discoveredAt < 60_000 && (state.ollamaBaseUrl || state.geminiBaseUrl)) {
     return;

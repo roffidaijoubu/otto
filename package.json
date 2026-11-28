@@ -1,0 +1,12 @@
+{
+  "name": "otto-os",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "test:py": "python3 -m unittest discover -s tests -p \"test_*.py\" -v",
+    "test:all": "npm test && npm run test:py",
+    "typecheck": "npm --prefix web run typecheck",
+    "build": "npm --prefix web run build"
+  }
+}
