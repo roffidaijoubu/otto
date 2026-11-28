@@ -1,4 +1,4 @@
-import { LMA_INTERNAL_SECRET, PORT } from "./config.ts";
+import { getPort, LMA_INTERNAL_SECRET } from "./config.ts";
 
 const ALLOWED_ENV_KEYS = new Set([
   "PATH",
@@ -46,7 +46,7 @@ export function buildAgentChildEnv(
     }
   }
   childEnv.LMA_INTERNAL_SECRET = LMA_INTERNAL_SECRET;
-  childEnv.LMA_WEB_PORT = String(PORT);
+  childEnv.LMA_WEB_PORT = String(getPort());
   if (extra) {
     for (const [key, val] of Object.entries(extra)) {
       childEnv[key] = val;

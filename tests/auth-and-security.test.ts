@@ -19,6 +19,7 @@ const {
   getActiveSessionCount,
 } = await import("../web/lib/auth.ts");
 const { buildAgentChildEnv } = await import("../web/lib/child-env.ts");
+const { getPort } = await import("../web/lib/config.ts");
 const { resetLoginRateLimits } = await import("../web/lib/qstash.ts");
 const { handlePublicRoutes } = await import("../web/routes/public.ts");
 const { rpc } = await import("../web/lib/rpc-bridge.ts");
@@ -259,6 +260,17 @@ describe("buildAgentChildEnv secret isolation", () => {
       assert.equal(env.SPRITE_NAME, "otto");
       assert.equal(env.CUSTOM_SAFE, "yes");
       assert.ok(env.LMA_INTERNAL_SECRET && env.LMA_INTERNAL_SECRET.length >= 32);
+
+      // Post-loadPrivateEnv() dynamic PORT consistency between getPort() and child-env LMA_WEB_PORT
+      const prevPort = process.env.PORT;
+      try {
+        process.env.PORT = "9099";
+        assert.equal(getPort(), 9099);
+        assert.equal(buildAgentChildEnv().LMA_WEB_PORT, "9099");
+      } finally {
+        if (prevPort === undefined) delete process.env.PORT;
+        else process.env.PORT = prevPort;
+      }
     } finally {
       for (const [k, v] of Object.entries(prev)) {
         if (v === undefined) delete process.env[k];

@@ -173,6 +173,8 @@ export function summarizeSessionFile(filePath: string, activePath: string | null
 
 export class OmpRpcBridge {
   private proc: Bun.Subprocess<"pipe", "pipe", "pipe"> | null = null;
+  private autoSpawn = true;
+  private respawnTimer: NodeJS.Timeout | null = null;
   private ready = false;
   private readyResolvers: Array<() => void> = [];
   private pending = new Map<string, PendingRequest>();
@@ -181,11 +183,14 @@ export class OmpRpcBridge {
   private holdStartedAt = 0;
   private inFlightWatchdog: NodeJS.Timeout | null = null;
   private inFlightWatchdogMs = 0;
+  private inFlightAbortGraceMs = 1_500;
+  private turnState: "idle" | "running" | "aborting" = "idle";
   private turnGeneration = 0;
   private activeTurnGen: number | null = null;
-  private activeAgentRuns = 0;
-  private abortingTurn = false;
+  private abortSettledResolver: (() => void) | null = null;
+  private activeAbortPromise: Promise<void> | null = null;
   private static readonly MAX_HOLD_MS = 30 * 60 * 1000;
+  private static readonly DEFAULT_ABORT_GRACE_MS = 1_500;
   public busy = false;
   public activity = "Thinking...";
   public todos: TodoPhase[] = [];
@@ -197,7 +202,8 @@ export class OmpRpcBridge {
   private lastHoldAt: string | null = null;
 
   constructor(opts: { autoSpawn?: boolean } = {}) {
-    if (opts.autoSpawn !== false) {
+    this.autoSpawn = opts.autoSpawn !== false;
+    if (this.autoSpawn) {
       this.spawn();
     }
   }
@@ -273,7 +279,17 @@ export class OmpRpcBridge {
   }
 
   public isAnyBusy(): boolean {
-    return this.busy || this.abortingTurn || this.backgroundBusy || isClipWorkerBusy() || hasActiveManagedWorkers();
+    return (
+      this.busy ||
+      this.turnState !== "idle" ||
+      this.backgroundBusy ||
+      isClipWorkerBusy() ||
+      hasActiveManagedWorkers()
+    );
+  }
+
+  public hasActiveWatchdog(): boolean {
+    return this.inFlightWatchdog !== null;
   }
 
   public async holdSpriteActive(): Promise<void> {
@@ -338,91 +354,175 @@ export class OmpRpcBridge {
     this.inFlightWatchdogMs = 0;
   }
 
-  private armInFlightWatchdog(ms = OmpRpcBridge.MAX_HOLD_MS, expectedGen?: number) {
+  private armInFlightWatchdog(
+    ms = OmpRpcBridge.MAX_HOLD_MS,
+    expectedGen?: number,
+    abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS
+  ) {
     if (this.inFlightWatchdog) {
       clearTimeout(this.inFlightWatchdog);
       this.inFlightWatchdog = null;
     }
     const gen = expectedGen ?? this.activeTurnGen;
     this.inFlightWatchdogMs = ms;
+    this.inFlightAbortGraceMs = abortGraceMs;
     this.inFlightWatchdog = setTimeout(() => {
       this.inFlightWatchdog = null;
       this.inFlightWatchdogMs = 0;
-      if (!this.busy || this.abortingTurn) return;
+      if (this.turnState !== "running") return;
       if (gen !== null && this.activeTurnGen !== gen) return;
-      void this.abortStalledTurn(gen);
+      void this.abortStalledTurn(gen, abortGraceMs);
     }, ms);
     this.inFlightWatchdog.unref?.();
   }
 
-  private async abortStalledTurn(expectedGen: number | null): Promise<void> {
-    if (this.abortingTurn) return;
-    if (expectedGen !== null && this.activeTurnGen !== expectedGen) return;
-    this.abortingTurn = true;
-    this.activeTurnGen = null;
-    console.warn("[lma-web] Active RPC turn watchdog expired without agent_end; awaiting abort before releasing lock.");
-    try {
-      if (this.ready && this.proc && this.proc.exitCode === null) {
-        await this.sendCommand("abort", {}, 5_000).catch(() => {});
-      } else if (this.proc && this.proc.exitCode === null) {
-        // Subprocess never became ready or is wedged; force-terminate so exit handler restarts cleanly
-        try {
-          this.proc.kill();
-        } catch {
-          // ignore
-        }
+  private scheduleRespawn(delayMs = 1000) {
+    if (!this.autoSpawn || this.proc || this.respawnTimer) return;
+    this.respawnTimer = setTimeout(() => {
+      this.respawnTimer = null;
+      if (!this.proc && this.autoSpawn) {
+        this.spawn();
       }
-    } finally {
-      this.abortingTurn = false;
-      // Only clear busy/hold if a newer turn has not taken ownership in the meantime
-      if (this.activeTurnGen === null) {
+    }, delayMs);
+    this.respawnTimer.unref?.();
+  }
+
+  private terminateDetachedProc(reason: string) {
+    const doomed = this.proc;
+    if (!doomed || doomed.exitCode !== null) return;
+    this.proc = null;
+    this.ready = false;
+    for (const [, p] of this.pending) {
+      if (p.timer) clearTimeout(p.timer);
+      p.reject(new Error(reason));
+    }
+    this.pending.clear();
+    try {
+      doomed.kill();
+    } catch {
+      // ignore
+    }
+    this.scheduleRespawn(200);
+  }
+
+  private runAbortSequence(abortGraceMs: number, broadcastTimeoutMessage: boolean): Promise<void> {
+    if (this.activeAbortPromise) return this.activeAbortPromise;
+    this.turnState = "aborting";
+    this.activeTurnGen = null;
+    this.clearInFlightWatchdog();
+
+    let sawCleanEnd = false;
+    const settledPromise = new Promise<void>((resolve) => {
+      this.abortSettledResolver = () => {
+        sawCleanEnd = true;
+        resolve();
+      };
+    });
+
+    const p = (async () => {
+      try {
+        const procRef = this.proc;
+        if (this.ready && procRef && procRef.exitCode === null) {
+          await this.sendCommand("abort", {}, Math.min(5_000, Math.max(250, abortGraceMs))).catch(() => {});
+          if (!sawCleanEnd) {
+            let graceTimer: NodeJS.Timeout | null = null;
+            await Promise.race([
+              settledPromise,
+              new Promise<void>((resolve) => {
+                graceTimer = setTimeout(resolve, abortGraceMs);
+                graceTimer.unref?.();
+              }),
+            ]);
+            if (graceTimer) clearTimeout(graceTimer);
+          }
+        }
+        // Fail-closed pipe isolation: if omp did not emit agent_end within the abort grace window
+        // (or was never ready), terminate & detach the wedged subprocess so no stale agent_end/tool
+        // event from the aborted turn can ever arrive on the pipe and corrupt a successor turn.
+        if (!sawCleanEnd) {
+          this.terminateDetachedProc("RPC worker terminated after stalled turn");
+        }
+      } finally {
+        this.abortSettledResolver = null;
+        this.turnState = "idle";
         this.busy = false;
         this.activity = "Thinking...";
         this.releaseSpriteHold();
-        broadcast({
-          type: "error",
-          message: "Assistant turn timed out without completing; aborted and ready for next message.",
-        });
+        if (broadcastTimeoutMessage) {
+          broadcast({
+            type: "error",
+            message: "Assistant turn timed out without completing; aborted and ready for next message.",
+          });
+        }
         broadcast({ type: "done" });
       }
-    }
+    })().finally(() => {
+      this.activeAbortPromise = null;
+    });
+    this.activeAbortPromise = p;
+    return p;
+  }
+
+  private async abortStalledTurn(
+    expectedGen: number | null,
+    abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS
+  ): Promise<void> {
+    if (this.turnState !== "running") return;
+    if (expectedGen !== null && this.activeTurnGen !== expectedGen) return;
+    console.warn("[lma-web] Active RPC turn watchdog expired without agent_end; aborting turn and waiting for clean settle.");
+    await this.runAbortSequence(abortGraceMs, true);
   }
 
   private touchInFlightWatchdog() {
     if (this.inFlightWatchdog && this.inFlightWatchdogMs > 0) {
-      this.armInFlightWatchdog(this.inFlightWatchdogMs, this.activeTurnGen ?? undefined);
+      this.armInFlightWatchdog(
+        this.inFlightWatchdogMs,
+        this.activeTurnGen ?? undefined,
+        this.inFlightAbortGraceMs
+      );
     }
   }
 
   private spawn() {
+    if (this.respawnTimer) {
+      clearTimeout(this.respawnTimer);
+      this.respawnTimer = null;
+    }
     this.ready = false;
     const childEnv = buildAgentChildEnv();
-    this.proc = Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
+    const spawned = Bun.spawn([OMP_BIN, "--mode", "rpc", "--no-ui"], {
       cwd: WORK_DIR,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       env: childEnv,
     });
-    this.readStdout(this.proc.stdout);
-    this.readStderr(this.proc.stderr);
+    this.proc = spawned;
+    this.readStdout(spawned.stdout, spawned);
+    this.readStderr(spawned.stderr);
 
-    this.proc.exited.then((code) => {
+    spawned.exited.then((code) => {
+      // Ignore delayed exit notifications from an already-detached/replaced worker
+      if (this.proc !== null && this.proc !== spawned) return;
       console.error(`[lma-web] omp rpc exited with code ${code}; restarting in 1s...`);
-      this.ready = false;
-      this.busy = false;
-      this.abortingTurn = false;
-      this.activeTurnGen = null;
-      this.activeAgentRuns = 0;
-      this.clearInFlightWatchdog();
-      this.releaseSpriteHold();
-      for (const [, p] of this.pending) {
-        if (p.timer) clearTimeout(p.timer);
-        p.reject(new Error(`omp rpc exited (${code})`));
+      if (this.proc === spawned) {
+        this.proc = null;
+        this.ready = false;
+        this.busy = false;
+        this.turnState = "idle";
+        this.activeTurnGen = null;
+        this.abortSettledResolver?.();
+        this.abortSettledResolver = null;
+        this.clearInFlightWatchdog();
+        this.releaseSpriteHold();
+        for (const [, p] of this.pending) {
+          if (p.timer) clearTimeout(p.timer);
+          p.reject(new Error(`omp rpc exited (${code})`));
+        }
+        this.pending.clear();
+        broadcast({ type: "error", message: "Assistant reconnecting..." });
       }
-      this.pending.clear();
-      broadcast({ type: "error", message: "Assistant reconnecting..." });
-      setTimeout(() => this.spawn(), 1000);
+      this.scheduleRespawn(1000);
     });
   }
 
@@ -441,17 +541,21 @@ export class OmpRpcBridge {
     }
   }
 
-  private async readStdout(stream: ReadableStream<Uint8Array>) {
+  private async readStdout(
+    stream: ReadableStream<Uint8Array>,
+    owner: Bun.Subprocess<"pipe", "pipe", "pipe">
+  ) {
     const reader = stream.getReader();
     const dec = new TextDecoder();
     let buf = "";
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done || this.proc !== owner) break;
         buf += dec.decode(value, { stream: true });
         let nl: number;
         while ((nl = buf.indexOf("\n")) !== -1) {
+          if (this.proc !== owner) return;
           const line = buf.slice(0, nl).trim();
           buf = buf.slice(nl + 1);
           if (!line) continue;
@@ -492,7 +596,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "agent_start") {
-      this.activeAgentRuns += 1;
+      if (this.turnState !== "running") return;
       this.busy = true;
       this.activity = "Thinking...";
       this.holdSpriteActive();
@@ -501,6 +605,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "tool_execution_start") {
+      if (this.turnState !== "running") return;
       this.busy = true;
       this.touchInFlightWatchdog();
       this.activity = friendlyToolLabel(String(ev.toolName || ""));
@@ -509,6 +614,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "tool_execution_end") {
+      if (this.turnState !== "running") return;
       this.touchInFlightWatchdog();
       const tName = String(ev.toolName || "");
       if ((tName === "todo" || tName === "todo_write") && ev.result?.details) {
@@ -526,11 +632,13 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "message_start" && ev.message?.role === "assistant") {
+      if (this.turnState !== "running") return;
       broadcast({ type: "assistant_start" });
       return;
     }
 
     if (ev.type === "message_update") {
+      if (this.turnState !== "running") return;
       this.touchInFlightWatchdog();
       const ame = ev.assistantMessageEvent;
       if (ame?.type === "thinking_delta" && typeof ame.delta === "string") {
@@ -542,6 +650,7 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "message_end" && ev.message?.role === "assistant") {
+      if (this.turnState !== "running") return;
       const text = extractTextContent(ev.message.content);
       if (text.trim()) {
         broadcast({ type: "assistant_end", text });
@@ -550,13 +659,15 @@ export class OmpRpcBridge {
     }
 
     if (ev.type === "agent_end" || ev.type === "session_settled") {
-      if (this.activeAgentRuns > 0) {
-        this.activeAgentRuns -= 1;
-      }
-      // Absorb late agent_end from a previously aborted turn while an abort or newer turn is active
-      if (this.abortingTurn || this.activeAgentRuns > 0) {
+      if (this.turnState === "aborting") {
+        this.abortSettledResolver?.();
         return;
       }
+      // Strictly ignore duplicate session_settled or stray events when no turn is actively running
+      if (this.turnState !== "running") {
+        return;
+      }
+      this.turnState = "idle";
       this.activeTurnGen = null;
       this.busy = false;
       this.clearInFlightWatchdog();
@@ -696,28 +807,35 @@ export class OmpRpcBridge {
 
   async prompt(
     message: string,
-    opts: { lockAlreadyHeld?: boolean; ackTimeoutMs?: number; watchdogMs?: number } = {}
+    opts: {
+      lockAlreadyHeld?: boolean;
+      ackTimeoutMs?: number;
+      watchdogMs?: number;
+      abortGraceMs?: number;
+    } = {}
   ): Promise<{ accepted: true; inFlight?: boolean }> {
-    if (this.abortingTurn) {
+    if (this.turnState === "aborting") {
       throw new Error("Otto is aborting the previous turn. Wait a moment and retry.");
     }
     if (!opts.lockAlreadyHeld) {
-      if (this.busy) {
+      if (this.busy || this.turnState !== "idle") {
         throw new Error("Otto is still responding. Wait or click Stop.");
       }
       this.busy = true;
     }
     const myGen = ++this.turnGeneration;
+    this.turnState = "running";
     this.activeTurnGen = myGen;
     this.activity = "Thinking...";
     void this.holdSpriteActive();
     broadcast({ type: "user_message", text: stripHiddenTags(message) });
     broadcast({ type: "activity", label: this.activity });
+    const graceMs = opts.abortGraceMs ?? OmpRpcBridge.DEFAULT_ABORT_GRACE_MS;
     try {
       await this.sendCommand("prompt", { message }, opts.ackTimeoutMs ?? 30_000);
       // Arm silent-hang watchdog on the normal post-ack path too so provider stalls never wedge busy=true
-      if (this.busy && this.activeTurnGen === myGen) {
-        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen);
+      if (this.turnState === "running" && this.activeTurnGen === myGen) {
+        this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen, graceMs);
       }
       return { accepted: true };
     } catch (err) {
@@ -727,12 +845,13 @@ export class OmpRpcBridge {
         // Long multi-tool turns (e.g. VOD clipping) can exceed the initial RPC ack window while
         // still streaming normally over SSE; keep busy + Sprite hold active and arm the aborting watchdog.
         console.warn("[lma-web] prompt RPC ack window elapsed while turn is still active; continuing via SSE");
-        if (this.busy && this.activeTurnGen === myGen) {
-          this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen);
+        if (this.turnState === "running" && this.activeTurnGen === myGen) {
+          this.armInFlightWatchdog(opts.watchdogMs ?? OmpRpcBridge.MAX_HOLD_MS, myGen, graceMs);
         }
         return { accepted: true, inFlight: true };
       }
       if (this.activeTurnGen === myGen) {
+        this.turnState = "idle";
         this.activeTurnGen = null;
         this.busy = false;
         this.clearInFlightWatchdog();
@@ -742,18 +861,15 @@ export class OmpRpcBridge {
     }
   }
 
-  async abort() {
-    this.abortingTurn = true;
-    this.activeTurnGen = null;
-    this.clearInFlightWatchdog();
-    try {
-      await this.sendCommand("abort", {}, 5_000).catch(() => {});
-    } finally {
-      this.abortingTurn = false;
-      this.busy = false;
+  async abort(abortGraceMs = OmpRpcBridge.DEFAULT_ABORT_GRACE_MS) {
+    if (this.activeAbortPromise) return this.activeAbortPromise;
+    if (this.turnState === "idle" && !this.busy) {
+      this.clearInFlightWatchdog();
       this.releaseSpriteHold();
       broadcast({ type: "done" });
+      return;
     }
+    return this.runAbortSequence(abortGraceMs, false);
   }
 
   async newSession() {

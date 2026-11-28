@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { PORT, loadPrivateEnv } from "./lib/config.ts";
+import { getPort, loadPrivateEnv } from "./lib/config.ts";
 import { initWebPassword, isAuthenticated } from "./lib/auth.ts";
 import { LOGIN_HTML } from "./lib/login-html.ts";
 import { broadcast } from "./lib/sse.ts";
@@ -137,7 +137,7 @@ if (process.env.LMA_NO_LISTEN !== "1") {
     // Recursive fs.watch may be unsupported on some kernels; tool_execution_end + API mutations still broadcast live
   }
 
-  const listenPort = Number(process.env.PORT || PORT);
+  const listenPort = getPort();
   Bun.serve({
     port: listenPort,
     idleTimeout: 255,

@@ -6,7 +6,7 @@ import {
   resumeBackgroundClipJob,
   startBackgroundClipJob,
 } from "./clip-worker.ts";
-import { LMA_INTERNAL_SECRET, OMP_BIN, PORT, WORK_DIR } from "./config.ts";
+import { getPort, LMA_INTERNAL_SECRET, OMP_BIN, WORK_DIR } from "./config.ts";
 import { broadcast } from "./sse.ts";
 import { ensureWorkspaceScaffold, WORKSPACE_CLIPS_DIR } from "./workspace.ts";
 
@@ -39,7 +39,7 @@ export function startClipJob(
   return startBackgroundClipJob(input, {
     ompBin: OMP_BIN,
     workDir: WORK_DIR,
-    port: PORT,
+    port: getPort(),
     internalSecret: LMA_INTERNAL_SECRET,
     onBroadcast: broadcast,
     onBusyChange: (busy) => {
@@ -56,7 +56,7 @@ export function resumeClipJob(jobId: string, rpc: SpriteHoldController) {
   return resumeBackgroundClipJob(jobId, {
     ompBin: OMP_BIN,
     workDir: WORK_DIR,
-    port: PORT,
+    port: getPort(),
     internalSecret: LMA_INTERNAL_SECRET,
     onBroadcast: broadcast,
     onBusyChange: (busy) => {

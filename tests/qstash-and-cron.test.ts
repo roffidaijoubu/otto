@@ -143,6 +143,8 @@ describe("QStash JWT verification (HS256 + alg check + sub binding + SHA-256 bod
       headers: { "upstash-signature": tokWithNext },
       body: BODY,
     });
+    // verifyUpstashSignature is intentionally non-consuming (callers commit via commitQStashReplayToken after terminal acceptance)
+    assert.equal(verifyUpstashSignature(req, BODY), true);
     assert.equal(verifyUpstashSignature(req, BODY), true);
     assert.equal(verifyUpstashSignature(new Request("https://otto.sprites.app/api/wakeup"), BODY), false);
   });
