@@ -119,22 +119,108 @@ function extractGCalPayload(raw: Record<string, unknown>): Record<string, unknow
   return data;
 }
 
+export interface GoogleReminderOverride {
+  method: "popup" | "email";
+  minutes: number;
+}
+
+function resolveGoogleReminders(
+  type: CalendarEventType,
+  explicit?: Array<{ method?: string; minutes?: number }>
+): GoogleReminderOverride[] {
+  if (Array.isArray(explicit) && explicit.length > 0) {
+    const cleaned: GoogleReminderOverride[] = [];
+    for (const r of explicit.slice(0, 5)) {
+      if (typeof r?.minutes !== "number" || !Number.isFinite(r.minutes)) continue;
+      const mins = Math.min(40320, Math.max(0, Math.round(r.minutes)));
+      const method: "popup" | "email" = r.method === "email" ? "email" : "popup";
+      cleaned.push({ method, minutes: mins });
+    }
+    if (cleaned.length > 0) return cleaned;
+  }
+  if (type === "reminder") {
+    return [{ method: "popup", minutes: 0 }];
+  }
+  if (type === "stream" || type === "collab") {
+    return [
+      { method: "popup", minutes: 60 },
+      { method: "popup", minutes: 15 },
+    ];
+  }
+  return [
+    { method: "popup", minutes: 60 },
+    { method: "popup", minutes: 10 },
+  ];
+}
+
 async function createGoogleCalendarEvent(evt: {
   title: string;
   type: CalendarEventType;
   startMs: number;
   durationMinutes: number;
   notes: string;
-}): Promise<{ googleEventId: string | null; googleHtmlLink: string | null; error?: string }> {
+  reminders?: Array<{ method?: string; minutes?: number }>;
+}): Promise<{
+  googleEventId: string | null;
+  googleHtmlLink: string | null;
+  appliedReminders?: GoogleReminderOverride[];
+  error?: string;
+}> {
   const ctx = await getGoogleCalendarContext();
   if (!ctx) return { googleEventId: null, googleHtmlLink: null };
+  const reminderOverrides = resolveGoogleReminders(evt.type, evt.reminders);
+  const startIso = new Date(evt.startMs).toISOString();
+  const endIso = new Date(evt.startMs + evt.durationMinutes * 60 * 1000).toISOString();
+  const summary =
+    evt.type === "reminder"
+      ? `Reminder: ${evt.title}`
+      : `[${evt.type.toUpperCase()}] ${evt.title}`;
+  const description = evt.notes || `Scheduled via Otto (${evt.type})`;
+
+  // Primary path: Composio v3 Proxy -> native Google Calendar Events API (supports custom reminders.overrides!)
+  try {
+    const proxyRes = await fetch(`${ctx.baseUrl}/api/v3/tools/execute/proxy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connected_account_id: ctx.connectedAccountId,
+        user_id: ctx.userId,
+        endpoint: "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        method: "POST",
+        body: {
+          summary,
+          description,
+          start: { dateTime: startIso },
+          end: { dateTime: endIso },
+          reminders: {
+            useDefault: false,
+            overrides: reminderOverrides,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (proxyRes.ok) {
+      const proxyData = (await proxyRes.json().catch(() => ({}))) as Record<string, unknown>;
+      const payload = extractGCalPayload(proxyData);
+      const id = typeof payload.id === "string" ? payload.id : null;
+      const link = typeof payload.htmlLink === "string" ? payload.htmlLink : null;
+      if (id) {
+        return { googleEventId: id, googleHtmlLink: link, appliedReminders: reminderOverrides };
+      }
+    }
+  } catch {
+    // fall through to Composio wrapper fallback
+  }
+
+  // Fallback: Composio GOOGLECALENDAR_CREATE_EVENT wrapper (uses calendar default reminders)
   try {
     const hours = Math.min(24, Math.floor(evt.durationMinutes / 60));
     const mins = evt.durationMinutes % 60;
     const raw = await execGoogleCalendarTool(ctx, "GOOGLECALENDAR_CREATE_EVENT", {
       calendar_id: "primary",
-      summary: `[${evt.type.toUpperCase()}] ${evt.title}`,
-      description: evt.notes || `Scheduled via Otto (${evt.type})`,
+      summary,
+      description,
       start_datetime: toNaiveUtcDatetime(evt.startMs),
       timezone: "UTC",
       event_duration_hour: hours,
@@ -590,23 +676,23 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // 4. Calendar: Add Event with Proactive Lifecycle Hooks (Tier 2)
+  // 4. Calendar: Add Event with Google Calendar Reminders & Proactive Lifecycle Hooks (Tier 2)
   pi.registerTool({
     name: "calendar_add_event",
-    label: "Add Calendar Event",
+    label: "Add Calendar Event & Reminder",
     description:
-      "Add a stream, collab, upload, reminder, or deadline to the persistent Schedule calendar and automatically arm proactive QStash wake-up hooks (e.g. promo_24h, pre_stream_1h, post_stream_vod_30m, at_start) so the sleeping Sprite wakes up at the right moments.",
+      "Add a stream, collab, upload, reminder, or deadline to the persistent Schedule calendar and Google Calendar with custom push/email notifications (`reminders`), plus optional proactive QStash wake-up hooks for Otto's own background work. IMPORTANT: Whenever the creator asks 'remind me...' or 'ingetin aku...', ALWAYS use this tool with type='reminder' and Google Calendar `reminders` (defaults to 0-minute popup so their phone & desktop notify right on time).",
     parameters: {
       type: "object",
       properties: {
         title: {
           type: "string",
-          description: "Event title (e.g. 'Friday Night Collab: Horror Co-op').",
+          description: "Event or reminder title (e.g. 'Friday Night Collab: Horror Co-op' or 'Upload thumbnail before stream').",
         },
         type: {
           type: "string",
           enum: ["stream", "collab", "upload", "reminder", "deadline"],
-          description: "Category of calendar event.",
+          description: "Category of calendar event. Use 'reminder' whenever the creator asks to be reminded.",
         },
         startAt: {
           type: "string",
@@ -614,11 +700,31 @@ export default function (pi: ExtensionAPI) {
         },
         durationMinutes: {
           type: "number",
-          description: "Duration in minutes (defaults to 180 for stream/collab, 60 otherwise).",
+          description: "Duration in minutes (defaults to 180 for stream/collab, 15 for reminder, 60 otherwise).",
         },
         notes: {
           type: "string",
           description: "Optional context: collab partner, game/topic, or prep notes.",
+        },
+        reminders: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              method: {
+                type: "string",
+                enum: ["popup", "email"],
+                description: "Notification channel: 'popup' (phone/desktop push) or 'email'. Default: 'popup'.",
+              },
+              minutes: {
+                type: "number",
+                description: "Minutes before startAt to trigger notification (0 = exact time, 15 = 15m before, 60 = 1h before, 1440 = 24h before).",
+              },
+            },
+            required: ["minutes"],
+          },
+          description:
+            "Custom Google Calendar notifications. Defaults automatically: 0m popup for 'reminder', 60m + 15m popup for 'stream'/'collab', 60m + 10m popup for 'deadline'/'upload'.",
         },
         hooks: {
           type: "array",
@@ -627,7 +733,7 @@ export default function (pi: ExtensionAPI) {
             enum: ["promo_24h", "pre_stream_1h", "post_stream_vod_30m", "at_start"],
           },
           description:
-            "Proactive QStash wake-up presets to arm automatically. Past trigger times are skipped safely.",
+            "Optional proactive QStash wake-up presets for Otto's autonomous background work. Past trigger times are skipped safely.",
         },
       },
       required: ["title", "type", "startAt"],
@@ -640,6 +746,7 @@ export default function (pi: ExtensionAPI) {
         startAt: string;
         durationMinutes?: number;
         notes?: string;
+        reminders?: Array<{ method?: "popup" | "email"; minutes: number }>;
         hooks?: LifecycleHookPreset[];
       }
     ) {
@@ -647,7 +754,12 @@ export default function (pi: ExtensionAPI) {
       if (Number.isNaN(startMs)) {
         throw new Error(`Invalid startAt ISO timestamp: ${params.startAt}`);
       }
-      const defaultDur = params.type === "stream" || params.type === "collab" ? 180 : 60;
+      const defaultDur =
+        params.type === "stream" || params.type === "collab"
+          ? 180
+          : params.type === "reminder"
+            ? 15
+            : 60;
       const durationMinutes =
         typeof params.durationMinutes === "number" && params.durationMinutes > 0
           ? Math.round(params.durationMinutes)
@@ -707,6 +819,7 @@ export default function (pi: ExtensionAPI) {
         startMs,
         durationMinutes,
         notes,
+        reminders: params.reminders,
       });
 
       const nowIso = new Date().toISOString();
@@ -739,6 +852,7 @@ export default function (pi: ExtensionAPI) {
                 ok: true,
                 event: evt,
                 googleSynced: Boolean(gcal.googleEventId),
+                googleReminders: gcal.appliedReminders ?? null,
                 googleSyncError: gcal.error ?? null,
                 skippedHooks,
               },
