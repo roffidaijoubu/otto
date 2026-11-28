@@ -6,7 +6,7 @@ set -euo pipefail
 # so Otto already knows the creator before their very first chat message.
 #
 # Usage:
-#   bash scripts/bootstrap-dossier.sh           # Runs only if MEMORY.md still has "(not set — run onboarding)"
+#   bash scripts/bootstrap-dossier.sh           # Runs only if MEMORY.md still has "(not set"
 #   bash scripts/bootstrap-dossier.sh --force   # Re-runs discovery even if MEMORY.md is already populated
 
 FORCE=0
@@ -27,7 +27,7 @@ if [ -z "${OMP_BIN}" ] || [ ! -f "${MODELS_FILE}" ] || [ ! -f "${MEM_FILE}" ]; t
   exit 0
 fi
 
-if [ "${FORCE}" -ne 1 ] && ! grep -q "(not set — run onboarding)" "${MEM_FILE}"; then
+if [ "${FORCE}" -ne 1 ] && ! grep -qE '(\*\*Name / Persona:\*\*\s*\(not set|\(not set — run onboarding\))' "${MEM_FILE}"; then
   echo "==> Dossier already populated in ${MEM_FILE}; skipping auto-bootstrap (use --force to refresh)."
   exit 0
 fi

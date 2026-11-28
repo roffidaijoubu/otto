@@ -1,6 +1,5 @@
-import { getWebPassword, buildAuthCookieHeader } from "../lib/auth.ts";
+import { hasConfiguredAuth, verifyWebPassword, buildAuthCookieHeader } from "../lib/auth.ts";
 import { getClientKey, isLoginRateLimited, recordLoginFailure } from "../lib/qstash.ts";
-import { timingSafeStrEqual } from "../lib/secure-compare.ts";
 import { rpc } from "../lib/rpc-bridge.ts";
 
 export async function handlePublicRoutes(
@@ -10,13 +9,17 @@ export async function handlePublicRoutes(
 ): Promise<Response | null> {
   // Public health check
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return Response.json({ ok: true, busy: rpc.busy });
+    return Response.json({
+      ok: true,
+      busy: rpc.busy,
+      activeBackgroundJobs: rpc.activeBackgroundJobCount,
+      hold: rpc.getHoldHealth(),
+    });
   }
 
   // Passcode login endpoint
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
-    const webPassword = getWebPassword();
-    if (!webPassword) {
+    if (!hasConfiguredAuth()) {
       return Response.json(
         { error: "LMA_WEB_PASSWORD is not configured. Run bash ~/lma/setup.sh first." },
         { status: 503 }
@@ -34,14 +37,14 @@ export async function handlePublicRoutes(
       body && typeof body === "object" && "password" in body && typeof body.password === "string"
         ? body.password
         : "";
-    if (!timingSafeStrEqual(pw, webPassword)) {
+    if (!verifyWebPassword(pw)) {
       recordLoginFailure(clientKey);
       return Response.json({ error: "Invalid PIN" }, { status: 401 });
     }
     return new Response(JSON.stringify({ ok: true }), {
       headers: {
         "Content-Type": "application/json",
-        "Set-Cookie": buildAuthCookieHeader(req, url, webPassword),
+        "Set-Cookie": buildAuthCookieHeader(req, url),
       },
     });
   }

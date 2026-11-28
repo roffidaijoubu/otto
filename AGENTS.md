@@ -36,13 +36,13 @@ lma/
 │   ├── config.yml              # Gemini model roles, Mnemopi SQLite, generate_image: deny
 │   ├── models.yml.example      # Gemini Sprites Connector template
 │   ├── MEMORY.md.example       # Blank talent dossier starter template
-│   ├── extensions/             # 14 extensions: per-channel socials (tiktok, instagram, x-twitter) + youtube + box + exa + firecrawl + qstash + vod-clipper + media-reviewer + studio-db + new-session + studio-apps + obs-overlays (46 tools)
-│   ├── lib/                    # Shared SQLite (studio-db.ts), QStash cron helpers (qstash-cron.ts), apify.ts, buffer.ts, box.ts, youtube-metrics.ts, studio-apps.ts, obs-overlays.ts
-│   └── skills/                 # 8 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft + opt-in streaming-coaching)
-├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (8 apps + Desktop Widgets + Spotlight)
+│   ├── extensions/             # 22 extensions (85 tools): per-channel socials (tiktok, instagram, x-twitter, social-channels) + youtube + google-calendar + box + exa + firecrawl + qstash + vod-clipper + media-reviewer + studio-db + new-session + studio-apps + obs-overlays + etc.
+│   ├── lib/                    # Shared Neon/SQLite DB (studio-db.ts), QStash cron helpers (qstash-cron.ts), apify.ts, buffer.ts, box.ts, box-sync.ts, youtube-metrics.ts, studio-apps.ts, obs-overlays.ts, etc.
+│   └── skills/                 # 9 streamer skills (onboarding, youtube-audit, stream-planner, social-promo, raw-clip-finder, studio-app-craft, obs-overlay-craft, thumbnail-craft + opt-in streaming-coaching)
+├── web/                        # Bun RPC supervisor (server.ts) + Vue 3 / Vite / shadcn-vue / Reka UI Otto Studio OS multi-window desktop shell (10 apps + Desktop Widgets + Spotlight)
 └── scripts/
     ├── sync-initialized-checkpoint.sh  # Auto-syncs repo & refreshes clean `initialized:` Sprite checkpoint
-    ├── verify-all.sh                   # Deterministic 24-check verification suite (25 with --live)
+    ├── verify-all.sh                   # Deterministic 28-check verification suite (+ live probes with --live)
     └── e2e/                            # Agentic multi-turn E2E test playbooks (INDEX.md, README.md, 01..05-*.md, expected-memory.md)
 ```
 
@@ -54,7 +54,7 @@ lma/
    ```bash
    tar --exclude=web/node_modules --exclude=web/dist --exclude=agent/MEMORY.md --exclude=agent/models.yml -czf - agent web docs setup.sh README.md scripts | sprite exec --stdin -- bash -c "tar xzf - -C /home/sprite/lma && bash /home/sprite/lma/setup.sh"
    ```
-3. **Auto-Checkpoint on Commit:** `.git/hooks/post-commit` calls `scripts/sync-initialized-checkpoint.sh` to sync the commit to Sprite, reset runtime state (`sessions/`, `memories/`, `mnemopi.db`, `studio.db`, `studio-apps/`, `workspace/`, `MEMORY.md`), rebuild `web/`, restart `lma-web`, create a fresh `initialized: <sha>` checkpoint, and prune only older `initialized:` checkpoints (never touching live/prod checkpoints). Bypass for docs-only commits with `LMA_SKIP_CHECKPOINT=1 git commit ...`.
+3. **Auto-Checkpoint on Commit:** `setup.sh` runs `scripts/install-hooks.sh` automatically in git checkouts to install `.git/hooks/post-commit` (run `bash scripts/install-hooks.sh` manually if needed). The hook calls `scripts/sync-initialized-checkpoint.sh` to sync the commit to Sprite, reset runtime state (`sessions/`, `memories/`, `mnemopi.db`, `studio.db`, `studio-apps/`, `workspace/`, `MEMORY.md`), rebuild `web/`, restart `lma-web`, create a fresh `initialized: <sha>` checkpoint, and prune only older `initialized:` checkpoints (never touching live/prod checkpoints). Bypass for docs-only commits with `LMA_SKIP_CHECKPOINT=1 git commit ...`.
 4. **Org-level `sprite api` calls** (e.g. provisioning Custom API connectors) MUST run from a directory without `.sprite` (e.g. `/tmp`) so paths resolve under `/v1/` instead of `/v1/sprites/<name>/`.
 
 ---
@@ -62,7 +62,7 @@ lma/
 ## Testing & Verification Workflow
 
 ### 1. Fast Deterministic Suite (`scripts/verify-all.sh`)
-Runs in ~10 seconds — 24 deterministic checks (25 with `--live`) verifying `web/` TypeScript + Vite build, all 8 skill & 12 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, and authenticated Mission Control APIs:
+Runs in ~10 seconds — 28 deterministic checks (+ live probes with `--live`) verifying `web/` TypeScript + Vite build, all 9 skill & 22 extension symlinks, Python clipper syntax, `/.sprite/api.sock` Tasks API keep-alive hold, passcode & QStash signature `401` gates, path-traversal rejections, `CRON_TZ` validation, and authenticated Mission Control APIs:
 ```bash
 bash scripts/verify-all.sh          # Fast deterministic suite
 bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip

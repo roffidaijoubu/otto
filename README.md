@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/runtime-Fly.io_Sprites-7B3FE4?style=flat-square" alt="Fly.io Sprites">
   <img src="https://img.shields.io/badge/connectors-14_(Zero_Keys)-0F766E?style=flat-square" alt="14 Zero-Key Sprites Connectors">
   <img src="https://img.shields.io/badge/local_api_keys-0-16A34A?style=flat-square" alt="Zero Local API Keys">
-  <img src="https://img.shields.io/badge/checks-26%2F26_passing-2563EB?style=flat-square" alt="26 of 26 Deterministic Checks Passing">
+  <img src="https://img.shields.io/badge/checks-28%2F28_passing-2563EB?style=flat-square" alt="28 of 28 Deterministic Checks Passing">
   <img src="https://img.shields.io/badge/AI_art_%26_video-disabled-DC2626?style=flat-square" alt="AI Art and Video Disabled">
 </p>
 
@@ -83,7 +83,7 @@ A live OBS Browser Source cannot sleep when the agent does. `obs_overlay_deploy`
 
 ### 3. Deterministic VOD Clipper + Live SRT Viewer
 
-Instead of feeding 4-hour VODs blindly into an LLM, a 12-thread InnerTube chat pull computes 4 rolling Z-scores with a 35-second lag pre-roll, cuts full-arc 45–210s clips, normalizes them to `-14 LUFS` CFR 30fps, transcribes word-level `.srt` captions via **ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite polish**, and runs a 480p/2fps FFmpeg multimodal hook review. Browse clips in a 3-page `VOD → Clips → Clip Viewer` UI with live SRT overlay, Redo SRT, and 1-click **Box** handoff for human editors ([`web/lib/clip-worker.ts`](web/lib/clip-worker.ts)).
+Instead of feeding 4-hour VODs blindly into an LLM, a 12-thread InnerTube chat pull computes 4 rolling Z-scores with a 60-second pre-roll and 45-second post-roll, cuts full-arc clips, normalizes them to `-14 LUFS` CFR 30fps, transcribes word-level `.srt` captions via **ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite polish**, and runs a 480p/2fps FFmpeg multimodal hook review. Browse clips in a 3-page `VOD → Clips → Clip Viewer` UI with live SRT overlay, Redo SRT, and 1-click **Box** handoff for human editors ([`web/lib/clip-worker.ts`](web/lib/clip-worker.ts)).
 
 <p align="center">
   <img src="docs/assets/demo-vod-clipper.png" alt="Clips App — Clip Viewer with Live SRT Overlay & Editor Handoff" width="100%">
@@ -137,13 +137,13 @@ Every number below is backed directly by source files in this repository:
 
 | Rubric Axis | Exact Code-Backed Proof | Source |
 | :--- | :--- | :--- |
-| **Fly.io Primitive Depth (5/5)** | **`sprite-env services` runtime** (idempotent `lma-web` on `:8080`, auto-restart) + **14 zero-key Sprites Connectors** (`/v1/gateway/list` runtime discovery) + `/.sprite/api.sock` Tasks API hold (5m heartbeat, 30m cap) + `<1s` QStash wake-up from `$0` sleep + CoW **Time-Travel Checkpoints** (UI + daily QStash + `post-commit` hook) + zero-Docker **Fly Machine + 1 GB Fly Volume** auto-stop OBS overlay host | [`agent/extensions/`](agent/extensions), [`agent/lib/obs-overlays.ts`](agent/lib/obs-overlays.ts), [`web/lib/checkpoints.ts`](web/lib/checkpoints.ts), [`scripts/sync-initialized-checkpoint.sh`](scripts/sync-initialized-checkpoint.sh) |
+| **Fly.io Primitive Depth (5/5)** | **`sprite-env services` runtime** (idempotent `lma-web` on `:8080`, auto-restart) + **14 zero-key Sprites Connectors** (`/v1/gateway/list` runtime discovery) + `/.sprite/api.sock` Tasks API hold (5m heartbeat, 30m cap) + `<1s` QStash wake-up from `$0` sleep + CoW **Time-Travel Checkpoints** (UI + daily QStash + optional `scripts/install-hooks.sh` post-commit hook installed by `setup.sh` in git checkouts) + zero-Docker **Fly Machine + 1 GB Fly Volume** auto-stop OBS overlay host | [`agent/extensions/`](agent/extensions), [`agent/lib/obs-overlays.ts`](agent/lib/obs-overlays.ts), [`web/lib/checkpoints.ts`](web/lib/checkpoints.ts), [`scripts/sync-initialized-checkpoint.sh`](scripts/sync-initialized-checkpoint.sh) |
 | **Concrete System Scope** | **22 extensions**, **85 registered tools** (full UI↔Otto parity + live RPC worker nudging), **9 skills**, **10 Neon Postgres / SQLite tables**, **10 wired Desktop OS apps** + Desktop Widgets + dynamic Custom Studio Apps, **17 modular route files (157 route branches)** — **144 vendored `shadcn-vue` primitives vs 50 hand-written `web/src` files** | [`agent/extensions/`](agent/extensions), [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts), [`web/routes/`](web/routes), [`web/src/components/`](web/src/components) |
-| **Security &amp; Isolation** | Live `zeroLocalKeys` + `aiMediaDisabled` telemetry; 6-digit PIN sign-in with `timingSafeStrEqual` + `HttpOnly` HMAC cookie + `fly-client-ip` 5/min limiter; zero API keys or browser cookies in the VM; secrets stripped from `omp` env; ephemeral `LMA_INTERNAL_SECRET`; dual-key QStash JWT + SHA-256 body hash; `realpathSync` symlink-denying jail + 48 MiB Box guard; HTTPS SSRF guard; read-only SQL allowlist; opaque-origin Custom Studio App sandbox with 128-bit capability token | [`web/lib/auth.ts`](web/lib/auth.ts), [`web/lib/workspace.ts`](web/lib/workspace.ts), [`web/src/lib/studio-app-sandbox.ts`](web/src/lib/studio-app-sandbox.ts), [`agent/lib/box-sync.ts`](agent/lib/box-sync.ts) |
-| **Deterministic Systems Craft** | 12-thread InnerTube parallel chat pull (~30s/4h VOD); 4-signal rolling Z-score + 35s lag pre-roll; ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite SRT polish; `-14 LUFS` CFR 30fps prep; headless Chrome `thumbnail_render` + visual self-inspection loop; Ollama→Gemini circuit-breaker failover; 2-way Google Calendar + native reminders + RFC 5545 `.ics` `VALARM`s | [`agent/skills/raw-clip-finder/scripts/`](agent/skills/raw-clip-finder/scripts), [`agent/lib/elevenlabs-stt.ts`](agent/lib/elevenlabs-stt.ts), [`web/lib/llm-router.ts`](web/lib/llm-router.ts), [`agent/extensions/calendar.ts`](agent/extensions/calendar.ts) |
-| **Reproducible Verification** | **26 deterministic fast checks** (~10s against live `:8080` Sprite service) + `--live` (**27 checks**, live zero-key connector round-trip) + **5 multi-turn E2E playbooks** graded against golden [`expected-memory.md`](scripts/e2e/expected-memory.md) via Sprite Checkpoint time-travel | [`scripts/verify-all.sh`](scripts/verify-all.sh), [`scripts/e2e/`](scripts/e2e) |
+| **Security &amp; Isolation** | Live `zeroLocalKeys` + `aiMediaDisabled` telemetry; salted `scrypt` PIN hash (`LMA_WEB_PASSWORD_HASH`) in `chmod 600 ~/.config/lma/web.env` + random 256-bit server-side session cookies (`HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS) + `fly-client-ip` 5/min limiter; explicit `child-env` allowlist stripping auth/webhook/DB secrets from `omp` (note: `omp` runs as the same `sprite` UID in `yolo` mode, so hashed PIN + random session IDs prevent direct credential theft; multi-user deployments should isolate the agent under a separate OS user); dual-key QStash JWT + SHA-256 body hash; `realpathSync` symlink-denying jail + 48 MiB Box guard + pull-only boot Box sync (`Otto Assets/`; pushes to `Otto Handoffs/` only on explicit action); DNS-resolving IPv4/IPv6 HTTPS SSRF guard with redirect re-validation; read-only SQL allowlist; 128-bit CSPRNG capability token + `event.source` validation + opaque `sandbox="allow-scripts"` iframe for Custom Studio Apps; strict `script-src 'none'` CSP on Thumbnail previews &amp; sandboxed SVG/OBS overlay iframes | [`web/lib/auth.ts`](web/lib/auth.ts), [`web/lib/workspace.ts`](web/lib/workspace.ts), [`web/src/lib/studio-app-sandbox.ts`](web/src/lib/studio-app-sandbox.ts), [`agent/lib/box-sync.ts`](agent/lib/box-sync.ts) |
+| **Deterministic Systems Craft** | 12-thread InnerTube parallel chat pull (~30s/4h VOD); 4-signal rolling Z-score + 60s pre-roll / 45s post-roll; ElevenLabs Scribe v3 + Gemini 3.5 Flash-Lite SRT polish; `-14 LUFS` CFR 30fps prep; headless Chrome `thumbnail_render` + visual self-inspection loop; Ollama→Gemini circuit-breaker failover; 2-way Google Calendar + native reminders + RFC 5545 `.ics` `VALARM`s | [`agent/skills/raw-clip-finder/scripts/`](agent/skills/raw-clip-finder/scripts), [`agent/lib/elevenlabs-stt.ts`](agent/lib/elevenlabs-stt.ts), [`web/lib/llm-router.ts`](web/lib/llm-router.ts), [`agent/extensions/calendar.ts`](agent/extensions/calendar.ts) |
+| **Reproducible Verification** | **28 deterministic fast checks** (~10s against live `:8080` Sprite service) + `--live` (live zero-key connector round-trip) + **5 multi-turn E2E playbooks** graded against golden [`expected-memory.md`](scripts/e2e/expected-memory.md) via Sprite Checkpoint time-travel | [`scripts/verify-all.sh`](scripts/verify-all.sh), [`scripts/e2e/`](scripts/e2e) |
 
-**Recompute every number above** — no trust required: `ls agent/extensions/*.ts | wc -l` → 22 · `grep -h "pi.registerTool" agent/extensions/*.ts | wc -l` → 85 · `ls -d agent/skills/*/ | wc -l` → 9 · `grep -c "CREATE TABLE" agent/lib/studio-db.ts` → 10 · `grep -cE '^    id: "' web/src/composables/useWindowManager.ts` → 10 · `grep -hE 'url\.pathname' web/routes/*.ts | wc -l` → 157 · `expr $(grep -c '^check_grep ' scripts/verify-all.sh) + 1` → 26 · `ls scripts/e2e/0*.md | wc -l` → 5 · `git ls-files 'web/src/components/ui/*' | wc -l` → 144.
+**Recompute every number above** — no trust required: `ls agent/extensions/*.ts | wc -l` → 22 · `grep -h "pi.registerTool" agent/extensions/*.ts | wc -l` → 85 · `ls -d agent/skills/*/ | wc -l` → 9 · `grep -c "CREATE TABLE" agent/lib/studio-db.ts` → 10 · `grep -cE '^    id: "' web/src/composables/useWindowManager.ts` → 10 · `grep -hE 'url\.pathname' web/routes/*.ts | wc -l` → 157 · `expr $(grep -c 'check_grep "' scripts/verify-all.sh) + 1` → 28 · `ls scripts/e2e/0*.md | wc -l` → 5 · `git ls-files 'web/src/components/ui/*' | wc -l` → 144.
 
 <br>
 
@@ -194,7 +194,7 @@ Every external API routes through the organization-level [Fly.io Sprites Connect
 | Connector | Role in Otto OS | Source |
 | :--- | :--- | :--- |
 | **Google Gemini** | Primary reasoning (`gemini-4-hydrogen:auto`), multimodal review, &amp; SRT typo polish | [`agent/config.yml`](agent/config.yml) |
-| **Ollama** | Primary low-latency endpoint for smol/memory/widget roles via Hybrid LLM Router circuit-breaker | [`web/lib/llm-router.ts`](web/lib/llm-router.ts) |
+| **Ollama Cloud** | Primary low-latency endpoint for smol/memory/widget roles via Hybrid LLM Router circuit-breaker | [`web/lib/llm-router.ts`](web/lib/llm-router.ts) |
 | **Neon Postgres** | Cloud-persistent 10-table Studio DB + `MEMORY.md` sync (SQLite fallback) | [`agent/lib/studio-db.ts`](agent/lib/studio-db.ts) |
 | **Pinecone** | `otto-creator-archive` (`multilingual-e5-large` + `bge-reranker-v2-m3`) &amp; `otto-memory` | [`agent/lib/pinecone-archive.ts`](agent/lib/pinecone-archive.ts) |
 | **Fly Machines** | Zero-Docker provisioning of dedicated `256 MB` auto-stop OBS Overlay host + `1 GB` Volume | [`agent/lib/obs-overlays.ts`](agent/lib/obs-overlays.ts) |
@@ -205,7 +205,8 @@ Every external API routes through the organization-level [Fly.io Sprites Connect
 | **Apify** | Credit-capped TikTok, Instagram &amp; X research + multi-platform analytics sync | [`agent/lib/apify.ts`](agent/lib/apify.ts) |
 | **Pixabay** | Royalty-free, strictly non-AI human photography backgrounds for Thumbnail Studio | [`agent/extensions/pixabay.ts`](agent/extensions/pixabay.ts) |
 | **Upstash QStash** | Proactive `CRON_TZ` wake-ups, daily metrics sync &amp; daily Sprite auto-snapshots | [`agent/extensions/qstash-scheduler.ts`](agent/extensions/qstash-scheduler.ts) |
-| **Exa &amp; Firecrawl** | Web research (`exa_search`, `exa_get_contents`) &amp; clean Markdown scraping (`firecrawl_scrape`) | [`agent/extensions/exa-gateway.ts`](agent/extensions/exa-gateway.ts) |
+| **Exa** | Semantic web research (`exa_search`, `exa_get_contents`) | [`agent/extensions/exa-gateway.ts`](agent/extensions/exa-gateway.ts) |
+| **Firecrawl** | Clean Markdown web scraping (`firecrawl_scrape`) | [`agent/extensions/firecrawl-gateway.ts`](agent/extensions/firecrawl-gateway.ts) |
 
 <br>
 
@@ -214,9 +215,9 @@ Every external API routes through the organization-level [Fly.io Sprites Connect
 ## Architecture &amp; Deep Dives
 
 - **Architecture Deep Dive:** [`docs/architecture.md`](docs/architecture.md) — `omp` RPC supervisor, Two-Machine OBS architecture, 12-thread InnerTube chat-pull math, and defense-in-depth security model.
-- **Agent-First Setup Guides:** [`docs/setup/README.md`](docs/setup/README.md) — CLI provisioning playbooks for every Custom API connector.
+- **Agent-First Setup Guides:** [`docs/setup/README.md`](docs/setup/README.md) — provisioning playbooks for all 14 Sprites Connectors + `verify-all.sh` prerequisites, plus deep-dive guides in `docs/setup/`.
 - **Design System:** [`DESIGN.md`](DESIGN.md) — Otto Studio Bento OS tokens &amp; `shadcn-vue` / Reka UI desktop window rules.
-- **Verification &amp; E2E Playbooks:** [`scripts/verify-all.sh`](scripts/verify-all.sh) (26 deterministic checks) &amp; [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md) (5 Checkpoint Time-Travel behavioral playbooks).
+- **Verification &amp; E2E Playbooks:** [`scripts/verify-all.sh`](scripts/verify-all.sh) (28 deterministic checks) &amp; [`scripts/e2e/INDEX.md`](scripts/e2e/INDEX.md) (5 Checkpoint Time-Travel behavioral playbooks).
 
 <br>
 

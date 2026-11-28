@@ -45,13 +45,22 @@ const kind = ref<CustomStudioAppKind>("react");
 const code = ref("");
 const originalCode = ref("");
 const appState = ref<Record<string, unknown>>({});
+const initialIframeState = ref<Record<string, unknown>>({});
 const viewMode = ref<"app" | "code">("app");
 const loading = ref(true);
 const saving = ref(false);
 const errorMsg = ref("");
 const renderKey = ref(0);
 const confirmUninstall = ref(false);
-const bridgeToken = `${props.slug}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+function createBridgeToken(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return crypto.randomUUID().replace(/-/g, "");
+}
+const bridgeToken = createBridgeToken();
 
 const isDirty = computed(() => code.value !== originalCode.value);
 
@@ -62,7 +71,7 @@ const srcdoc = computed(() => {
     title: title.value,
     kind: kind.value,
     code: code.value,
-    initialState: appState.value,
+    initialState: initialIframeState.value,
     bridgeToken,
   });
 });
@@ -86,7 +95,9 @@ async function loadApp() {
     kind.value = data.meta.kind || "react";
     code.value = data.code || "";
     originalCode.value = code.value;
-    appState.value = data.state && typeof data.state === "object" ? data.state : {};
+    const loadedState = data.state && typeof data.state === "object" ? data.state : {};
+    appState.value = loadedState;
+    initialIframeState.value = loadedState;
     renderKey.value += 1;
     emit("metaLoaded", {
       slug: props.slug,
@@ -133,6 +144,7 @@ async function resetAppState() {
     });
     if (!res.ok) throw new Error("Failed to reset app data");
     appState.value = {};
+    initialIframeState.value = {};
     renderKey.value += 1;
     toast.success("App data reset");
   } catch (err) {

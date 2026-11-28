@@ -14,7 +14,7 @@ sprite api /oauth/connections/custom_api -- -sS -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "name": "ElevenLabs",
-    "description": "ElevenLabs Scribe v2 Speech-to-Text for accurate Indonesian/English clip SRT subtitles",
+    "description": "ElevenLabs Scribe v3 Speech-to-Text for accurate Indonesian/English clip SRT subtitles",
     "base_api_url": "https://api.elevenlabs.io",
     "access_token": "'"$ELEVENLABS_API_KEY"'",
     "auth_method": "custom_header",

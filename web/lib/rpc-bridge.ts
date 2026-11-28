@@ -182,22 +182,86 @@ export class OmpRpcBridge {
   public busy = false;
   public activity = "Thinking...";
   public todos: TodoPhase[] = [];
+  private activeBackgroundJobs = new Set<string>();
+  private bgJobSeq = 0;
+  private holdOpChain: Promise<void> = Promise.resolve();
+  private lastHoldOk: boolean | null = null;
+  private lastHoldError: string | null = null;
+  private lastHoldAt: string | null = null;
 
   constructor() {
     this.spawn();
   }
 
-  private async putSpriteHold(): Promise<void> {
-    if (!fs.existsSync("/.sprite/api.sock")) return;
-    await fetch("http://sprite/v1/tasks/lma-agent-turn", {
-      unix: "/.sprite/api.sock",
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expire: "10m" }),
-    }).catch(() => {});
+  private enqueueHoldOp(fn: () => Promise<void>): Promise<void> {
+    const next = this.holdOpChain.then(fn, fn);
+    this.holdOpChain = next.catch(() => {});
+    return next;
   }
 
-  public backgroundBusy = false;
+  private async putSpriteHold(): Promise<void> {
+    if (!fs.existsSync("/.sprite/api.sock")) return;
+    await this.enqueueHoldOp(async () => {
+      try {
+        const res = await fetch("http://sprite/v1/tasks/lma-agent-turn", {
+          unix: "/.sprite/api.sock",
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expire: "10m" }),
+        });
+        this.lastHoldAt = new Date().toISOString();
+        if (!res.ok) {
+          const msg = `PUT /v1/tasks/lma-agent-turn returned ${res.status}`;
+          this.lastHoldOk = false;
+          this.lastHoldError = msg;
+          console.warn(`[lma-web] Sprite hold failed: ${msg}`);
+        } else {
+          this.lastHoldOk = true;
+          this.lastHoldError = null;
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastHoldAt = new Date().toISOString();
+        this.lastHoldOk = false;
+        this.lastHoldError = msg;
+        console.warn(`[lma-web] Sprite hold error: ${msg}`);
+      }
+    });
+  }
+
+  public beginBackgroundJob(label = "bg"): () => void {
+    const token = `${label}:${++this.bgJobSeq}`;
+    this.activeBackgroundJobs.add(token);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeBackgroundJobs.delete(token);
+      this.releaseSpriteHold();
+    };
+  }
+
+  public get backgroundBusy(): boolean {
+    return this.activeBackgroundJobs.size > 0;
+  }
+
+  public get activeBackgroundJobCount(): number {
+    return this.activeBackgroundJobs.size;
+  }
+
+  public getHoldHealth(): {
+    active: boolean;
+    lastOk: boolean | null;
+    lastError: string | null;
+    lastAt: string | null;
+  } {
+    return {
+      active: this.holdStartedAt > 0,
+      lastOk: this.lastHoldOk,
+      lastError: this.lastHoldError,
+      lastAt: this.lastHoldAt,
+    };
+  }
 
   public isAnyBusy(): boolean {
     return this.busy || this.backgroundBusy || isClipWorkerBusy() || hasActiveManagedWorkers();
@@ -232,12 +296,31 @@ export class OmpRpcBridge {
       this.holdHeartbeat = null;
     }
     if (!fs.existsSync("/.sprite/api.sock")) return;
-    fetch("http://sprite/v1/tasks/lma-agent-turn", {
-      unix: "/.sprite/api.sock",
-      method: "DELETE",
-    }).catch(() => {});
+    void this.enqueueHoldOp(async () => {
+      try {
+        const res = await fetch("http://sprite/v1/tasks/lma-agent-turn", {
+          unix: "/.sprite/api.sock",
+          method: "DELETE",
+        });
+        this.lastHoldAt = new Date().toISOString();
+        if (!res.ok && res.status !== 404) {
+          const msg = `DELETE /v1/tasks/lma-agent-turn returned ${res.status}`;
+          this.lastHoldOk = false;
+          this.lastHoldError = msg;
+          console.warn(`[lma-web] Sprite hold release failed: ${msg}`);
+        } else {
+          this.lastHoldOk = true;
+          this.lastHoldError = null;
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastHoldAt = new Date().toISOString();
+        this.lastHoldOk = false;
+        this.lastHoldError = msg;
+        console.warn(`[lma-web] Sprite hold release error: ${msg}`);
+      }
+    });
   }
-
   private spawn() {
     this.ready = false;
     const childEnv = buildAgentChildEnv();
@@ -394,8 +477,26 @@ export class OmpRpcBridge {
 
   private async waitReady() {
     if (this.ready) return;
-    const { promise, resolve } = Promise.withResolvers<void>();
-    this.readyResolvers.push(resolve);
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    let settled = false;
+    const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const resolver = () => done(resolve);
+    this.readyResolvers.push(resolver);
+    const timer = setTimeout(() => {
+      const idx = this.readyResolvers.indexOf(resolver);
+      if (idx !== -1) this.readyResolvers.splice(idx, 1);
+      if (this.ready || (this.proc && this.proc.exitCode === null)) {
+        this.ready = true;
+        done(resolve);
+      } else {
+        done(() => reject(new Error("Main RPC worker failed to become ready in time")));
+      }
+    }, 10_000);
     await promise;
   }
 

@@ -42,7 +42,8 @@ void reconcileOrphanedStudioJobs().catch((err) => {
 
 // Initialize Unified Workspace scaffold & debounced live watcher for SSE auto-refresh
 ensureWorkspaceScaffold();
-void syncWorkspaceWithBox()
+// Boot only pulls `Otto Assets/` from Box; never silently upload private workspace folders at startup.
+void syncWorkspaceWithBox({ push: false })
   .then((summary) => {
     if (summary.connected && (summary.pulledCount > 0 || summary.pushedCount > 0)) {
       broadcast({ type: "workspace_changed" });

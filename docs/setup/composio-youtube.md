@@ -22,7 +22,7 @@ sprite exec -- bash -c 'curl -s https://api.sprites.dev/v1/gateway/list | jq ".c
 ## 2. Collect Prerequisites From the Human (Only if Missing)
 
 Ask the human to do **only** these two things if they haven't already:
-1. In [dashboard.composio.dev](https://dashboard.composio.dev), select their **Project** (not Organization settings) → **Auth Configs** → create a **YouTube** Managed OAuth2 Auth Config → click **+ Connect Account** and authorize their YouTube channel (status must be **Active**).
+1. In [dashboard.composio.dev](https://dashboard.composio.dev), select their **Project** (not Organization settings) → **Auth Configs** → create a **YouTube** Managed OAuth2 Auth Config → click **+ Connect Account** and authorize their YouTube channel (status must be **Active**). Also authorize **Google Calendar** in Composio (in the same Project) so `calendar_sync_google` / two-way calendar sync works out of the box.
 2. In the same Project → **API Keys** → create a **Project API Key** (`ak_...`, **not** an org/user key `uak_...`) and **export it in your shell** for the provisioning command: `export COMPOSIO_API_KEY=ak_...` (or `set -a; . ./.env; set +a` — the repo `.env` is not auto-loaded at runtime).
 
 ---

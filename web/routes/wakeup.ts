@@ -67,10 +67,15 @@ export async function handleWakeupRoutes(req: Request, url: URL): Promise<Respon
     }
 
     if (isSilent) {
-      // Claim backgroundBusy synchronously before awaiting Tasks API hold so concurrent calls cannot race
-      rpc.backgroundBusy = true;
-      await rpc.holdSpriteActive();
-      startSilentBackgroundJob({ label, prompt, jobType });
+      // Claim background job slot synchronously before awaiting Tasks API hold so concurrent calls cannot race
+      const releaseBg = rpc.beginBackgroundJob("wakeup-silent");
+      try {
+        await rpc.holdSpriteActive();
+      } catch (err) {
+        releaseBg();
+        throw err;
+      }
+      startSilentBackgroundJob({ label, prompt, jobType, releaseBg });
       return Response.json({ ok: true, mode: "background", silent: true, label, jobType });
     }
 

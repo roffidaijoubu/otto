@@ -5,6 +5,7 @@ providers:
     apiKey: sprite-gateway
   otto-hybrid:
     baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    # omp resolves bare exact-case env var names in models.yml at runtime (injected per-boot by web/lib/child-env.ts — keep bare LMA_INTERNAL_SECRET, not ${...})
     apiKey: LMA_INTERNAL_SECRET
     api: openai-completions
     models:

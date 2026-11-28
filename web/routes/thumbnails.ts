@@ -280,11 +280,27 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
       const name = decodeURIComponent(assetMatch[2]);
       const found = getThumbnailAssetPath(slug, name);
       if (!found) return new Response("Asset not found", { status: 404 });
+      const isSvg = found.mimeType === "image/svg+xml";
+      const isSvgDownload =
+        isSvg &&
+        (req.headers.get("sec-fetch-dest") === "document" ||
+          url.searchParams.get("download") === "1");
       return new Response(Bun.file(found.absPath), {
         headers: {
           "Content-Type": found.mimeType,
           "Cache-Control": "public, max-age=86400",
           "X-Content-Type-Options": "nosniff",
+          ...(isSvg
+            ? {
+                "Content-Security-Policy":
+                  "sandbox; default-src 'none'; script-src 'none'; style-src 'unsafe-inline'",
+              }
+            : {}),
+          ...(isSvgDownload
+            ? {
+                "Content-Disposition": `attachment; filename="${path.basename(found.absPath)}"`,
+              }
+            : {}),
         },
       });
     } catch (err: unknown) {
@@ -336,6 +352,9 @@ export async function handleThumbnailsRoutes(req: Request, url: URL): Promise<Re
           headers: {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "no-store",
+            "Content-Security-Policy":
+              "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'none'; frame-ancestors 'self'",
+            "X-Content-Type-Options": "nosniff",
           },
         });
       }

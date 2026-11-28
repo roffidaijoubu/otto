@@ -12,9 +12,9 @@ sprite exec -- bash -c 'mkdir -p /home/sprite/e2e-promo && cd /home/sprite/e2e-p
 ```
 
 ### 2. Semantic Pass Criteria
-- [ ] Calls `buffer_list_channels` and discovers all 3 connected channels (X/Twitter, TikTok, Instagram).
+- [ ] Calls `social_list_channels` and discovers all 3 connected channels (X/Twitter, TikTok, Instagram).
 - [ ] Produces distinct, platform-appropriate copy (concise <260 chars for X, curiosity hook for TikTok, warmer caption for Instagram) with zero OPSEC violations.
-- [ ] Calls `buffer_create_post` with **`saveToDraft: true`** (verify in the session JSONL if needed — NEVER `saveToDraft: false` or `shareNow`).
+- [ ] Calls `x_post`, `tiktok_post`, and `instagram_post` with **`saveToDraft: true`** (verify in the session JSONL if needed — NEVER `saveToDraft: false` or `shareNow`).
 - [ ] Confirms to the talent that the drafts are waiting in Buffer for 1-click human review.
 
 *(Optional cleanup: delete the test drafts from Buffer UI after verification.)*

@@ -100,6 +100,7 @@ export async function handleJobsRoutes(req: Request, url: URL): Promise<Response
   if (req.method === "DELETE" && url.pathname.startsWith("/api/jobs/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/jobs/".length)).trim();
     const job = await getStudioJob(id);
+    await cancelStudioJobById(id, "creator").catch(() => {});
     const ok = await deleteStudioJob(id);
     if (job?.kind === "clip") {
       await deleteClipJob(id).catch(() => {});

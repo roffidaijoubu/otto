@@ -7,9 +7,8 @@
 - **Platforms:** YouTube `@roffi_daijoubu` · X `@Roffi_Daijoubu` · TikTok (~22.6k)
 - **Mission:** Openly represent Twelver Shia Islam in Indonesia, spread education & awareness, counter years of anti-Shia propaganda, promote Ahlulbait-centered devotion and Muslim unity, and support Palestinian causes—while staying approachable ("just a normal dude, ga *holier than thou*").
 - **Languages:** Indonesian & English.
-- **Birthday:** August 8, 1993 (Leo).
 - **Website:** https://roffi.kenalisyiah.com/ (KenaliSyiah).
-- **Background:** Real-life Shia ustadz teaching at a majelis in Bandung (Majelis Kautsar); entered VTubing via the Hololive EN rabbit hole. Model reveal Sep 2022, official debut Nov 18, 2022; ran a Comifuro 2023 booth distributing Imam Ali Zainal Abidin's *Doa Tobat* booklets.
+- **Background:** Indonesian indie VTuber & community educator from the Twelver Shia tradition; entered VTubing via the Hololive EN rabbit hole. Model reveal Sep 2022, official debut Nov 18, 2022; ran a Comifuro 2023 booth distributing Imam Ali Zainal Abidin's *Doa Tobat* booklets.
 - **OPSEC / Safety Rule:** Strictly anonymous — NEVER expose real-world legal identity or doxable personal details on stream, in clips, or in public copy.
 
 ## Platforms & Baseline Metrics (Late 2026)

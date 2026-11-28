@@ -61,7 +61,7 @@ export async function handleSetupRoutes(req: Request, url: URL): Promise<Respons
             );
           }
           updatePrivateWebPassword(newPw);
-          headers["Set-Cookie"] = buildAuthCookieHeader(req, url, newPw);
+          headers["Set-Cookie"] = buildAuthCookieHeader(req, url);
           passwordChanged = true;
         }
       }

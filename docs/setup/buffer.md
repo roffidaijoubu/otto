@@ -61,8 +61,8 @@ If the command above fails, tell the human to add it manually in the [Fly.io Spr
 
 ## 4. Verify End-to-End Inside the Sprite
 
-`agent/extensions/buffer-gateway.ts` auto-discovers the `Buffer` connector and all connected channels at runtime. `buffer_list_channels` returns each channel's `id` (plus `name`/`displayName`/`service`); pass that `id` as `channelId` to `buffer_create_post`. (`buffer_create_post` defaults to `saveToDraft: true` so nothing publishes publicly without human approval.) Verify with a read-only call:
+`agent/lib/buffer.ts` (used by `agent/extensions/social-channels.ts`, `x-twitter.ts`, `tiktok.ts`, and `instagram.ts`) auto-discovers the `Buffer` connector and all connected channels at runtime. `social_list_channels` returns each channel's `id` (plus `name`/`displayName`/`service`), and `x_post`, `tiktok_post`, and `instagram_post` default to `saveToDraft: true` so nothing publishes publicly without human approval. Verify with a read-only call:
 
 ```bash
-sprite exec -- omp -e /home/sprite/.omp/agent/extensions/buffer-gateway.ts --tools buffer_list_channels -p "Use buffer_list_channels and list my connected channels." --no-session
+sprite exec -- omp -e /home/sprite/.omp/agent/extensions/social-channels.ts --tools social_list_channels -p "Use social_list_channels and list my connected channels." --no-session
 ```

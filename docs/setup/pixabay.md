@@ -41,5 +41,5 @@ sprite api /oauth/connections/custom_api -- -sS -X POST \
 `agent/lib/pixabay.ts` auto-discovers the Pixabay connector from `GET https://api.sprites.dev/v1/gateway/list` at runtime and always sends `Accept-Encoding: identity` (required for Sprites query-parameter auth). Verify with:
 
 ```bash
-sprite exec -- bun -e 'import { searchPixabayBackgrounds } from "/home/sprite/lma/agent/lib/pixabay.ts"; console.log(await searchPixabayBackgrounds({ query: "dark studio", limit: 3 }));'
+sprite exec -- /.sprite/bin/bun -e 'import { searchPixabayBackgrounds } from "/home/sprite/lma/agent/lib/pixabay.ts"; console.log(await searchPixabayBackgrounds({ query: "dark studio", limit: 3 }));'
 ```

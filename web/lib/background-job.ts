@@ -9,7 +9,15 @@ export function startSilentBackgroundJob(opts: {
   label: string;
   prompt: string;
   jobType: string;
+  releaseBg?: () => void;
 }): void {
+  const releaseBg =
+    opts.releaseBg ??
+    (() => {
+      const r = rpc.beginBackgroundJob(opts.label);
+      void rpc.holdSpriteActive();
+      return r;
+    })();
   // Fire-and-forget isolated `omp --no-session -p` turn while Tasks API hold stays active.
   void (async () => {
     try {
@@ -48,8 +56,7 @@ export function startSilentBackgroundJob(opts: {
     } catch (err: unknown) {
       console.error(`[lma-web] background job "${opts.label}" threw:`, err);
     } finally {
-      rpc.backgroundBusy = false;
-      rpc.releaseSpriteHold();
+      releaseBg();
       broadcast({ type: "db_changed" });
     }
   })();
@@ -74,12 +81,13 @@ export function runStreamingWorker(opts: {
         }
       };
 
-      rpc.backgroundBusy = true;
+      const releaseBg = rpc.beginBackgroundJob("streaming-worker");
       void rpc.holdSpriteActive();
 
       let finalReply = "";
       let stderrTail = "";
       let buf = "";
+      let killTimer: ReturnType<typeof setTimeout> | undefined;
 
       try {
         const proc = Bun.spawn(
@@ -101,7 +109,13 @@ export function runStreamingWorker(opts: {
             env: childEnv,
           }
         );
-
+        killTimer = setTimeout(() => {
+          try {
+            proc.kill();
+          } catch {
+            // ignore
+          }
+        }, 5 * 60 * 1000);
         const stderrPromise = (async () => {
           if (!proc.stderr) return;
           const reader = proc.stderr.getReader();
@@ -176,8 +190,8 @@ export function runStreamingWorker(opts: {
           error: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        rpc.backgroundBusy = false;
-        rpc.releaseSpriteHold();
+        clearTimeout(killTimer);
+        releaseBg();
         try {
           controller.close();
         } catch {
@@ -209,8 +223,9 @@ export async function runOverlayRefine(slug: string, prompt: string, stream = fa
   }
   const childEnv = buildAgentChildEnv();
 
-  rpc.backgroundBusy = true;
+  const releaseBg = rpc.beginBackgroundJob(`overlay-refine:${slug}`);
   void rpc.holdSpriteActive();
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     const proc = Bun.spawn(
       [
@@ -229,6 +244,13 @@ export async function runOverlayRefine(slug: string, prompt: string, stream = fa
         env: childEnv,
       }
     );
+    killTimer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        // ignore
+      }
+    }, 5 * 60 * 1000);
     const [stdoutText, stderrText, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -247,8 +269,8 @@ export async function runOverlayRefine(slug: string, prompt: string, stream = fa
       reply: stdoutText.trim() || `Updated overlay "${slug}".`,
     });
   } finally {
-    rpc.backgroundBusy = false;
-    rpc.releaseSpriteHold();
+    clearTimeout(killTimer);
+    releaseBg();
   }
 }
 
@@ -265,8 +287,9 @@ export async function runThumbnailWorker(slug: string, prompt: string, stream = 
   }
   const childEnv = buildAgentChildEnv();
 
-  rpc.backgroundBusy = true;
+  const releaseBg = rpc.beginBackgroundJob(`thumbnail-worker:${slug}`);
   void rpc.holdSpriteActive();
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     const proc = Bun.spawn(
       [
@@ -285,6 +308,13 @@ export async function runThumbnailWorker(slug: string, prompt: string, stream = 
         env: childEnv,
       }
     );
+    killTimer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        // ignore
+      }
+    }, 5 * 60 * 1000);
     const [stdoutText, stderrText, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -303,8 +333,8 @@ export async function runThumbnailWorker(slug: string, prompt: string, stream = 
       reply: stdoutText.trim() || `Updated thumbnail "${slug}".`,
     });
   } finally {
-    rpc.backgroundBusy = false;
-    rpc.releaseSpriteHold();
+    clearTimeout(killTimer);
+    releaseBg();
   }
 }
 
@@ -314,7 +344,7 @@ export async function runIsolatedQuickTask(opts: {
   timeoutMs?: number;
 }): Promise<{ ok: boolean; reply: string; error?: string }> {
   const childEnv = buildAgentChildEnv();
-  rpc.backgroundBusy = true;
+  const releaseBg = rpc.beginBackgroundJob("isolated-quick-task");
   void rpc.holdSpriteActive();
   try {
     const args = [OMP_BIN, "--no-session"];
@@ -351,7 +381,6 @@ export async function runIsolatedQuickTask(opts: {
     }
     return { ok: true, reply: stdoutText.trim() };
   } finally {
-    rpc.backgroundBusy = false;
-    rpc.releaseSpriteHold();
+    releaseBg();
   }
 }

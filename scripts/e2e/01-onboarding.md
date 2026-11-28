@@ -21,12 +21,12 @@ sprite exec -- bash -c 'mkdir -p /home/sprite/e2e-onboarding && cd /home/sprite/
 **Semantic Pass Criteria (Turn 1):**
 - [ ] Otto proactively pulls real public data (e.g. YouTube subscriber/view/video counts, X/TikTok/IG handles from Buffer, and background via Exa) — does **not** ask the user to fill out a boring blank form first.
 - [ ] Presents a structured **Draft Profile** and explicitly asks for **Fact-Check**, **Timezone**, **OPSEC / anonymity boundaries**, and **Human Team / Credits** without dumping a long questionnaire.
-- [ ] **Zero fourth-wall breaks:** Does NOT mention `omp`, `MEMORY.md`, `Mnemopi`, `youtube_tool`, `buffer_list_channels`, or `/skill:onboarding`.
+- [ ] **Zero fourth-wall breaks:** Does NOT mention `omp`, `MEMORY.md`, `Mnemopi`, `youtube_tool`, `social_list_channels`, or `/skill:onboarding`.
 
 ### 3. Turn 2 — Confirm Fact-Check, OPSEC & Human Credits
 Run in the same directory (`/home/sprite/e2e-onboarding`):
 ```bash
-sprite exec -- bash -c 'cd /home/sprite/e2e-onboarding && omp -p "Good homework Otto! Here are my answers: 1. Fact-check: I am from the Syiah Ithna Ashari Imamiyah (Twelver Shia / 12 Imam) school — real-life ustadz teaching at Majelis Kautsar in Bandung. 2. OPSEC: Strictly anonymous — never leak my real legal identity or doxable details, and never do sectarian rage-bait. 3. Human Crew: Live2D model by kyuto_hans (Hans) and logo by Himeko Design. Strictly zero AI art/thumbnails!"'
+sprite exec -- bash -c 'cd /home/sprite/e2e-onboarding && omp -p "Good homework Otto! Here are my answers: 1. Fact-check: I am from the Syiah Ithna Ashari Imamiyah (Twelver Shia / 12 Imam) school — an indie VTuber and community educator. 2. OPSEC: Strictly anonymous — never leak my real legal identity or doxable details, and never do sectarian rage-bait. 3. Human Crew: Live2D model by kyuto_hans (Hans) and logo by Himeko Design. Strictly zero AI art/thumbnails!"'
 ```
 
 **Semantic Pass Criteria (Turn 2):**
@@ -40,7 +40,7 @@ sprite exec -- cat /home/sprite/.omp/agent/MEMORY.md
 ```
 
 **Accuracy Rubric (Semantic Match — exact wording not required):**
-- [ ] **Identity:** Roffi Daijoubu (`@Roffi_Daijoubu`), Indonesian VTuber Ustadz, Twelver Shia / Syiah 12 Imam, Majelis Kautsar Bandung.
+- [ ] **Identity:** Roffi Daijoubu (`@Roffi_Daijoubu`), Indonesian VTuber Ustadz, Twelver Shia / Syiah 12 Imam.
 - [ ] **Platforms:** YouTube (`UCxNQuQpAR08DxRZytUJmNGg` or `@roffi_daijoubu` with real stats), X/Twitter, TikTok, Instagram.
 - [ ] **Timezone:** `Asia/Jakarta` (WIB, UTC+7) recorded under `- **Timezone:**`.
 - [ ] **OPSEC Rule:** Strict anonymity / no real-world legal identity / no sectarian rage-bait.

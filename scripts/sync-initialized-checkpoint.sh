@@ -55,17 +55,38 @@ echo "[lma-checkpoint] Syncing repo (${SHA}) to Sprite (${SEED_LABEL})..."
 
 # 0. Protect live prod data: if MEMORY.md on Sprite differs from both the blank template and current seed, snapshot it first!
 HAS_LIVE_DATA="$(sprite exec -- bash -c '
+STATUS="clean"
 if [ -f /home/sprite/.omp/agent/MEMORY.md ]; then
   if [ -f /home/sprite/lma/agent/MEMORY.md.example ] && cmp -s /home/sprite/.omp/agent/MEMORY.md /home/sprite/lma/agent/MEMORY.md.example; then
-    echo "clean"
+    :
   elif [ -f /home/sprite/lma/scripts/e2e/expected-memory.md ] && cmp -s /home/sprite/.omp/agent/MEMORY.md /home/sprite/lma/scripts/e2e/expected-memory.md; then
-    echo "clean"
+    :
   else
-    echo "modified"
+    STATUS="modified"
   fi
-else
-  echo "clean"
 fi
+if [ "${STATUS}" = "clean" ] && [ -f /home/sprite/.omp/agent/studio.db ]; then
+  DB_HAS_ROWS=$(python3 -c '\''
+import sqlite3
+conn = sqlite3.connect("file:/home/sprite/.omp/agent/studio.db?mode=ro", uri=True)
+total = 0
+for tbl in ("calendar_events", "content_pipeline", "contacts", "studio_jobs"):
+    try:
+        total += conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+    except Exception:
+        pass
+print("1" if total > 0 else "0")
+'\'' 2>/dev/null || echo "0")
+  if [ "${DB_HAS_ROWS}" = "1" ]; then
+    STATUS="modified"
+  fi
+fi
+if [ "${STATUS}" = "clean" ] && [ -d /home/sprite/.omp/agent/studio-apps ]; then
+  if find /home/sprite/.omp/agent/studio-apps -mindepth 1 -maxdepth 1 -type d ! -name ".*" | grep -q .; then
+    STATUS="modified"
+  fi
+fi
+echo "${STATUS}"
 ' 2>/dev/null | tr -d "\r\n" || echo "clean")"
 if [ "${HAS_LIVE_DATA}" = "modified" ]; then
   echo "[lma-checkpoint] Live MEMORY.md detected — creating safety backup checkpoint first..."

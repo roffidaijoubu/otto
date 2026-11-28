@@ -1,6 +1,6 @@
 # Architecture Deep Dive — How Otto OS (`lma`) Combines `omp` RPC, Multi-Window Studio OS &amp; Native Fly.io Sprites Primitives
 
-This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 7 live-synced desktop apps and right-side Desktop Widgets over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
+This document explains the core engineering decisions behind **Otto OS (`lma` — Livestreamer Manager Agent)** — specifically why we run **`omp` (`@oh-my-pi/pi-coding-agent`)** as a persistent RPC daemon, how **Otto Studio OS** coordinates 10 live-synced desktop apps and right-side Desktop Widgets over one SSE channel, how **proactive self-scheduling survives $0-idle auto-sleep**, and how every external API runs with **zero outbound API keys or session cookies inside the VM**.
 
 ---
 
@@ -26,7 +26,7 @@ flowchart LR
 | **First-class streaming events** | `thinking_delta`, `text_delta`, `tool_execution_start`, and `tool_execution_end` stream straight to the Vue 3 `<ThoughtTrace>` and `TodoChecklistCard` components over SSE. |
 | **Native session management** | `get_messages`, `new_session`, `switch_session`, and `abort` power multi-chat history and instant stop controls without a custom chat database. |
 | **Dual-layer persistent memory** | Structured `MEMORY.md` talent dossier (handles, timezone, team credits, OPSEC rules, schedule notes) paired with built-in **Mnemopi** SQLite memory (`noEmbeddings: true` for fast CPU-only FTS recall). |
-| **Modular extensions &amp; skills** | **12 extensions** registering **41 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **8 Markdown skills** (7 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
+| **Modular extensions &amp; skills** | **22 extensions** registering **85 tools** (+ `--new` CLI flag) in `agent/extensions/*.ts`, paired with **9 Markdown skills** (8 ops/craft + 1 opt-in `streaming-coaching` skill) in `agent/skills/`. |
 | **Runtime-enforced guardrails** | `generate_image: deny` and `generate_image.enabled: false` enforce the **strictly no AI-generated art/video** rule at the tool-permission layer, not just in prose. |
 
 ---
@@ -118,17 +118,17 @@ Every key-bearing external API routes through `https://api.sprites.dev/v1/gatewa
 - **Built-in Connectors:** Google Gemini (`models.yml`), **Box** (OAuth human-team clip &amp; brief handoff via `box-gateway.ts` &amp; `agent/lib/box.ts`), Exa (`exa-gateway.ts`), Firecrawl (`firecrawl-gateway.ts`).
 - **Custom API Connectors (provisioned via `sprite api /oauth/connections/custom_api`):**
   - **Composio v3 (`https://backend.composio.dev`, `x-api-key`)** — handles YouTube channel stats, video metadata, captions, human-approved packaging updates, and 2-way Google Calendar sync (`composio-youtube.ts`).
-  - **Buffer (`https://api.buffer.com`, `Bearer`)** — single GraphQL API covering **X (Twitter), TikTok, and Instagram**, defaulting to `saveToDraft: true` so nothing publishes publicly without human sign-off (`buffer-gateway.ts`).
+  - **Buffer (`https://api.buffer.com`, `Bearer`)** — single GraphQL API covering **X (Twitter), TikTok, and Instagram**, defaulting to `saveToDraft: true` so nothing publishes publicly without human sign-off (`agent/lib/buffer.ts` + `social-channels.ts` / `x-twitter.ts` / `tiktok.ts` / `instagram.ts`).
   - **Upstash QStash (`Bearer`)** — agent self-scheduled one-shot, lifecycle, and `CRON_TZ` recurring wake-ups (`qstash-scheduler.ts`).
   - **Fly Machines (`https://api.machines.dev`)** — zero-Docker provisioning of a dedicated `256 MB` auto-stop Machine + `1 GB` Volume for public, transparent OBS Browser Sources and SSE Remote Control Decks (`agent/lib/obs-overlays.ts`, `obs-overlays.ts`).
 
-Across the **12 extensions** (**41 registered tools** + `--new`), all **8 connector extensions** (`box-gateway`, `buffer-gateway`, `composio-youtube`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. The **4 local-only extensions** (`studio-apps`, `studio-db`, `vod-clipper`, `new-session`) never require gateway secrets.
+Across the **22 extensions** (**85 registered tools** + `--new`), all **14 zero-key Sprites Connectors** (used by `box-gateway`, `social-channels`, `x-twitter`, `tiktok`, `instagram`, `composio-youtube`, `google-calendar`, `exa-gateway`, `firecrawl-gateway`, `media-reviewer`, `qstash-scheduler`, `obs-overlays`, `pixabay`, etc.) query `GET https://api.sprites.dev/v1/gateway/list` at runtime and cache their authorized `gateway_base_url` — leaving **zero hardcoded connector IDs** in the repo. Local-only extensions (`studio-apps`, `studio-db`, `vod-clipper`, `new-session`, etc.) never require outbound connector credentials.
 
 ---
 
-## 6. Unified 2-Way Studio Workspace &amp; 5-Table SQLite WAL DB
+## 6. Unified 2-Way Studio Workspace &amp; 10-Table Neon Postgres / SQLite WAL DB
 
-Because Otto OS runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and a **5-table native SQLite WAL database** with zero external database servers:
+Because Otto OS runs on a single persistent NVMe Sprite powered by Bun, the Web UI (`web/server.ts`) and the `omp` agent share **both** a two-way filesystem workspace and a **10-table Neon Serverless Postgres database (with local SQLite WAL fallback)**:
 
 ```mermaid
 flowchart LR
@@ -175,3 +175,13 @@ flowchart LR
 - **Headless RPC containment &amp; tool guardrails:** Because `omp` runs headlessly inside a single-tenant Sprite VM, `agent/config.yml` pairs `approvalMode: yolo` (autonomy for research, clipping, and scheduling) with hard tool-layer bans (`generate_image: deny`), strict `realpathSync` confinement under `/home/sprite/workspace/` on `vod-clipper.ts` &amp; `media-reviewer.ts`, HTTPS-only SSRF guards on `critique_thumbnail`, read-only SQL allowlist (`SELECT`/`WITH`/`PRAGMA table_info` only, single statement, mutation-keyword denylist, 100-row cap) on `studio_db_query`, and prompt-injection rules for untrusted web/chat data.
 - **Workspace root jail &amp; anti-stored-XSS (`web/lib/workspace.ts`):** Enforces `path.resolve` + `fs.realpathSync` confinement inside `/home/sprite/workspace/`, rejects symlinks, dotfiles, and `..` traversal, caps uploads at 100 MB and pre-flight ZIP exports at 500 MB (`followlinks=False`), and serves downloads/HTML/SVG/binaries with `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`.
 - **Database separation &amp; parameterized queries:** `~/.omp/agent/studio.db` lives outside `/home/sprite/workspace/` so file-manager operations cannot delete or corrupt it, and every API and tool mutation uses parameterized SQLite queries.
+
+---
+
+## Security, Gateway & Sync Technical Notes
+
+- **Sprites Platform Caller-Binding (Zero-Key Connectors):** Calls to `https://api.sprites.dev/v1/gateway/...` intentionally omit an `Authorization` header because the Fly.io Sprites platform authenticates the caller at the VM/network boundary and injects the organization-level connector credential upstream.
+- **`omp` Exact-Case Env-Var Resolution (`models.yml`):** `omp` resolves `apiKey: LMA_INTERNAL_SECRET` by bare exact-case environment variable name (rather than `${VAR}` interpolation), keeping the ephemeral internal secret out of `models.yml` on disk.
+- **Salted `scrypt` PIN Storage & `child-env` Isolation:** `~/.config/lma/web.env` (`chmod 600`) stores `LMA_WEB_PASSWORD_HASH=scrypt$<salt>$<key>` (never plaintext PINs) alongside random 256-bit server-side session tokens (`HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS). `web/lib/child-env.ts` applies an explicit allowlist when spawning `omp` so auth, webhook, and DB secrets are stripped from the agent environment. *(Single-UID Sprite threat boundary: `omp` runs as the same `sprite` UID in `yolo` mode, so hashed PINs and random session IDs prevent direct credential theft; multi-user deployments should isolate the agent under a separate OS user.)*
+- **Pull-Only Boot Box Sync:** At `web/server.ts` boot, `syncWorkspaceWithBox({ push: false })` only pulls from `Otto Assets/`; pushes to `Otto Handoffs/` happen only on explicit creator or agent action.
+- **Deterministic Hype Defaults & Verification:** `detect_hype_candidates.py` uses a **60-second pre-roll / 45-second post-roll** window, and `scripts/verify-all.sh` runs **28 deterministic checks** (`+ live probes` with `--live`).

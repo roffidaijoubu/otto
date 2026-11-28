@@ -1,7 +1,7 @@
 /**
  * Incremental Workspace <-> Box Sync Engine.
  * - Pulls Box `Otto Assets/` -> `/home/sprite/workspace/assets/` (incremental via size + modifiedAt)
- * - Pushes `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/`
+ * - Pushes `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/` (explicit creator/agent sync only; boot uses `{ push: false }` pull-only)
  * - Tracks skipped >48 MiB files so Studio Files can flag them as "Local only (>48 MB)"
  */
 
@@ -51,6 +51,7 @@ export interface BoxSyncSummary {
 }
 
 let activeSyncPromise: Promise<BoxSyncSummary> | null = null;
+let activeSyncIncludesPush = false;
 let lastSummary: BoxSyncSummary = {
   connected: false,
   syncing: false,
@@ -96,9 +97,19 @@ export async function getBoxSyncStatus(): Promise<BoxSyncSummary> {
   };
 }
 
-export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
-  if (activeSyncPromise) return activeSyncPromise;
+export async function syncWorkspaceWithBox(opts?: { pull?: boolean; push?: boolean }): Promise<BoxSyncSummary> {
+  const pull = opts?.pull ?? true;
+  const push = opts?.push ?? true;
 
+  if (activeSyncPromise) {
+    if (push && !activeSyncIncludesPush) {
+      await activeSyncPromise.catch(() => {});
+      return syncWorkspaceWithBox({ pull: false, push: true });
+    }
+    return activeSyncPromise;
+  }
+
+  activeSyncIncludesPush = push;
   activeSyncPromise = (async () => {
     const gw = await resolveBoxGatewayUrl();
     if (!gw) {
@@ -119,7 +130,8 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
     const skippedOversize: Array<{ relPath: string; sizeBytes: number }> = [];
 
     try {
-      // 1. PULL: Box `Otto Assets/` -> `/home/sprite/workspace/assets/`
+      if (pull) {
+        // 1. PULL: Box `Otto Assets/` -> `/home/sprite/workspace/assets/`
       const assetsRoot = await ensureBoxAssetsFolder();
       const localAssetsRoot = path.join(WORKSPACE_ROOT, "assets");
       fs.mkdirSync(localAssetsRoot, { recursive: true });
@@ -178,10 +190,12 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
         }
       }
 
-      await pullFolder(assetsRoot.id, "", localAssetsRoot);
+        await pullFolder(assetsRoot.id, "", localAssetsRoot);
+      }
 
-      // 2. PUSH: `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/`
-      const handoffRoot = await ensureBoxPath([BOX_HANDOFF_ROOT_NAME]);
+      if (push) {
+        // 2. PUSH: `/home/sprite/workspace/{briefs,scripts,thumbnails,clips}/` (<= 48 MiB) -> Box `Otto Handoffs/`
+        const handoffRoot = await ensureBoxPath([BOX_HANDOFF_ROOT_NAME]);
 
       async function pushDir(localDir: string, boxParentId: string, relPrefix: string): Promise<void> {
         if (!fs.existsSync(localDir)) return;
@@ -223,7 +237,8 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
         const nonHidden = fs.readdirSync(localDir).filter((n) => !n.startsWith("."));
         if (nonHidden.length === 0) continue;
         const boxSub = await ensureBoxFolder(handoffRoot.id, dirName);
-        await pushDir(localDir, boxSub.id, dirName);
+          await pushDir(localDir, boxSub.id, dirName);
+        }
       }
 
       const now = new Date().toISOString();
@@ -256,6 +271,7 @@ export async function syncWorkspaceWithBox(): Promise<BoxSyncSummary> {
       return lastSummary;
     } finally {
       activeSyncPromise = null;
+      activeSyncIncludesPush = false;
     }
   })();
 

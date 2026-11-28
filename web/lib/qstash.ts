@@ -102,6 +102,16 @@ export function computeGuardrailStatus(): { zeroLocalKeys: boolean; aiMediaDisab
     "COMPOSIO_API_KEY",
     "BUFFER_API_KEY",
     "QSTASH_TOKEN",
+    "LMA_NEON_DATABASE_URL",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "PINECONE_API_KEY",
+    "APIFY_TOKEN",
+    "BOX_DEVELOPER_TOKEN",
+    "PIXABAY_API_KEY",
+    "FLY_API_TOKEN",
+    "NEON_API_KEY",
   ];
   const zeroLocalKeys = outboundKeyNames.every((k) => !process.env[k]);
 

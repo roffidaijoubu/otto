@@ -304,11 +304,28 @@ export function renderThumbnailHeadless(
 
   try {
     fs.writeFileSync(tmpHtml, standaloneHtml, "utf8");
-    const chromeBin = fs.existsSync("/usr/bin/google-chrome")
-      ? "/usr/bin/google-chrome"
-      : fs.existsSync("/usr/bin/chromium")
-        ? "/usr/bin/chromium"
-        : "google-chrome";
+    const candidates: string[] = [
+      ...(process.env.CHROME_BIN ? [process.env.CHROME_BIN] : []),
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+    ];
+    const pathEntries = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+    for (const dirEntry of pathEntries) {
+      for (const binName of ["google-chrome", "chromium", "chromium-browser"]) {
+        candidates.push(path.join(dirEntry, binName));
+      }
+    }
+    const chromeBin = candidates.find((p) => {
+      try {
+        return fs.existsSync(p) && fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
+    if (!chromeBin) {
+      throw new Error("Headless Chromium/Chrome not found. Install chromium or re-run setup.sh.");
+    }
 
     execFileSync(
       chromeBin,

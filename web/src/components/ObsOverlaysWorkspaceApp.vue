@@ -695,6 +695,7 @@ defineExpose({
                 style="width: 1920px; height: 1080px; transform: scale(0.18); transform-origin: top left;"
                 tabindex="-1"
                 :title="ov.title"
+                sandbox="allow-scripts allow-same-origin"
               />
               <span class="absolute bottom-2 right-2 rounded-md bg-black/75 px-2 py-0.5 font-mono text-[10px] text-white opacity-90 transition-opacity group-hover:opacity-100">
                 Open 1920×1080 →
@@ -898,6 +899,7 @@ defineExpose({
                   class="block border-0 bg-transparent"
                   :style="scaledIframeStyle"
                   allow="autoplay"
+                  sandbox="allow-scripts allow-same-origin"
                   :title="selectedOverlay.title"
                 />
               </div>
@@ -927,6 +929,7 @@ defineExpose({
                 :key="`ctl-${selectedOverlay.slug}-${frameKey}`"
                 :src="selectedOverlay.controlUrl"
                 class="min-h-0 w-full flex-1 border-0 bg-[#FAFAFA]"
+                sandbox="allow-scripts allow-same-origin"
                 :title="`${selectedOverlay.title} Remote Control`"
               />
               <CanvasRefiningOverlay :active="refining" label="Refining..." />

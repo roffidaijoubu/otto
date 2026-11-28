@@ -158,8 +158,8 @@ async function saveIdentity() {
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
 const connectors = ref<ConnectorInfo[]>([]);
-const zeroLocalKeys = ref(true);
-const aiMediaDisabled = ref(true);
+const zeroLocalKeys = ref<boolean | null>(null);
+const aiMediaDisabled = ref<boolean | null>(null);
 const loading = ref(false);
 const probingOllama = ref(false);
 
@@ -898,22 +898,42 @@ watch(
                 <span
                   class="rounded-lg border px-2.5 py-1"
                   :class="
-                    zeroLocalKeys
+                    zeroLocalKeys === true
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-red-200 bg-red-50 text-red-700'
+                      : zeroLocalKeys === false
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-800'
                   "
                 >
-                  {{ zeroLocalKeys ? "Zero local API keys verified" : "Local keys detected" }}
+                  {{
+                    zeroLocalKeys === true
+                      ? "Zero local API keys verified"
+                      : zeroLocalKeys === false
+                        ? "Local keys detected"
+                        : loading
+                          ? "Checking key guardrails..."
+                          : "Guardrail status unverified"
+                  }}
                 </span>
                 <span
                   class="rounded-lg border px-2.5 py-1"
                   :class="
-                    aiMediaDisabled
+                    aiMediaDisabled === true
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-red-200 bg-red-50 text-red-700'
+                      : aiMediaDisabled === false
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-800'
                   "
                 >
-                  {{ aiMediaDisabled ? "AI art & video generation disabled" : "AI media enabled" }}
+                  {{
+                    aiMediaDisabled === true
+                      ? "AI art & video generation disabled"
+                      : aiMediaDisabled === false
+                        ? "AI media enabled"
+                        : loading
+                          ? "Checking key guardrails..."
+                          : "Guardrail status unverified"
+                  }}
                 </span>
                 <span class="rounded-lg border border-black/10 bg-white px-2.5 py-1 text-neutral-700">
                   Fly.io Sprite · $0 idle

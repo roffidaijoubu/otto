@@ -31,7 +31,7 @@ sprite exec -- bash -c 'cd /home/sprite/e2e-run1 && omp -p "Turn 3 confirmation 
   ```
 - **Restrict to specific tools for isolated extension testing:**
   ```bash
-  sprite exec -- omp --tools buffer_list_channels,youtube_tool -p "..." --no-session
+  sprite exec -- omp --tools social_list_channels,youtube_tool -p "..." --no-session
   ```
 - **Inspect exact tool calls & JSONL session transcript after a run:**
   ```bash

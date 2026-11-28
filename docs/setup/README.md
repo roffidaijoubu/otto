@@ -20,6 +20,11 @@ Open **[Fly.io Sprites Dashboard](https://sprites.dev) → Connectors → Add Co
 | Connector | Required? | Purpose in `lma` | Setup Location |
 | :--- | :--- | :--- | :--- |
 | **Google Gemini** | **Required** | LLM brain (`omp` RPC) + multimodal `watch_clip` & `critique_thumbnail` | Sprites Dashboard → **Google Gemini** (BYOK) |
+| **Ollama Cloud** | Recommended | Primary low-latency endpoint for smol/memory/widget roles via Hybrid LLM Router | Sprites Dashboard → **Custom API** (`ollama.com`) |
+| **Neon Postgres** | Recommended | Cloud-persistent 10-table Studio DB + `MEMORY.md` sync (SQLite fallback) | Sprites Dashboard → **Custom API** (Neon Data API / SQL-over-HTTP) |
+| **Pinecone** | Recommended | `otto-creator-archive` (`multilingual-e5-large`) & `otto-memory` semantic RAG | Sprites Dashboard → **Custom API** (`api.pinecone.io` + index host) |
+| **Box** | Recommended | Incremental `Otto Assets/` pull + `Otto Handoffs/` push (48 MiB guard) | Sprites Dashboard → **Box** (OAuth) or **Custom API** |
+| **Fly Machines** | Recommended | Zero-Docker provisioning of dedicated `256 MB` auto-stop OBS Overlay host + `1 GB` Volume | Sprites Dashboard → **Custom API** (`api.machines.dev`, `Authorization: Bearer`) |
 | **Exa** | Recommended | Semantic web research (`exa_search`, `exa_get_contents`) | Sprites Dashboard → **Exa** (BYOK) |
 | **Firecrawl** | Recommended | Clean Markdown scraping (`firecrawl_scrape`) | Sprites Dashboard → **Firecrawl** (BYOK) |
 
@@ -32,9 +37,12 @@ Run `sprite api /oauth/connections/custom_api` from a directory **without** `.sp
 
 | Connector | Required? | Purpose in `lma` | Detailed Playbook |
 | :--- | :--- | :--- | :--- |
-| **Composio v3 (YouTube)** | Recommended | Live channel stats, recent videos, captions, human-approved packaging updates | [`docs/setup/composio-youtube.md`](composio-youtube.md) |
+| **Composio v3 (YouTube & Google Calendar)** | Recommended | Live channel stats, recent videos, captions, human-approved packaging updates, 2-way GCal sync | [`docs/setup/composio-youtube.md`](composio-youtube.md) |
 | **Buffer (X / TikTok / IG)** | Recommended | Cross-platform social promos saved safely as drafts (`saveToDraft: true`) | [`docs/setup/buffer.md`](buffer.md) |
 | **Upstash QStash** | Recommended | Proactive self-scheduling wake-ups on a $0-idle sleeping Sprite | [`docs/setup/qstash-scheduler.md`](qstash-scheduler.md) |
+| **ElevenLabs** | Recommended | Scribe v3 word-level `.srt` transcription for VOD clips | [`docs/setup/elevenlabs.md`](elevenlabs.md) |
+| **Pixabay** | Recommended | Royalty-free, strictly non-AI human photography backgrounds for Thumbnail Studio | [`docs/setup/pixabay.md`](pixabay.md) |
+| **Apify** | Optional | Credit-capped TikTok, Instagram & X research + multi-platform analytics sync | `sprite api /oauth/connections/custom_api` (`api.apify.com`, `Bearer`) |
 
 ---
 
@@ -57,8 +65,13 @@ bash /home/sprite/lma/setup.sh
 ---
 
 ## 5. Verify Everything End-to-End
-Run the deterministic 27-check suite (28 with `--live`) from your local workstation — covering the web build, all 8 skills and 13 extensions symlinked by `setup.sh`, Python clipper syntax, Tasks API hold, security gates, workspace/DB/playbook APIs, and calendar export:
+### Prerequisites
+- Local `web/` dependencies installed (`cd web && bun install` or `npm install`) for TypeScript & Vite build checks.
+- Authenticated `sprite` CLI (`sprite login`) and active `.sprite` binding (`sprite use <name>`).
+- `LMA_VERIFY_PIN=<6-digit-pin>` exported in your shell when `~/.config/lma/web.env` uses hashed `LMA_WEB_PASSWORD_HASH`.
+
+Run the deterministic **28-check** suite (`+ live probes` with `--live`) from your local workstation — covering the `web/` build, all **9 skills** and **22 extensions** symlinked by `setup.sh`, Python clipper syntax, Tasks API hold, security gates, Hybrid LLM Router checks, workspace/DB/playbook APIs, and calendar export:
 ```bash
-bash scripts/verify-all.sh          # Fast deterministic suite (~10s, 27 checks)
-bash scripts/verify-all.sh --live   # Adds live zero-key Gemini + Buffer round-trip (28 checks)
+bash scripts/verify-all.sh          # Fast deterministic suite (~10s, 28 checks)
+bash scripts/verify-all.sh --live   # Adds live zero-key connector probes
 ```

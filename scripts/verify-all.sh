@@ -21,6 +21,10 @@ echo "=== lma Feature Verification Suite (mode: ${MODE}) ==="
 
 echo ""
 echo "1. Local Web Typecheck & Build"
+if [ ! -d web/node_modules ]; then
+  echo "ERROR: web/node_modules not found. Run 'cd web && bun install' (or 'npm install') first." >&2
+  exit 1
+fi
 if (cd web && npm run typecheck >/dev/null 2>&1 && npm run build >/dev/null 2>&1); then
   ok "web/ tsc --noEmit + vite build"
 else
@@ -29,7 +33,11 @@ fi
 
 echo ""
 echo "2. Sprite Runtime, Symlinks, Python Clipper, Tasks API & Security Gates"
-REMOTE_OUT=$(sprite exec -- bash -c '
+if ! command -v sprite >/dev/null 2>&1 || [ ! -f .sprite ]; then
+  echo "ERROR: Sprite CLI or .sprite missing. Install Fly.io sprite CLI and run 'sprite use <name>' to create .sprite first." >&2
+  exit 1
+fi
+REMOTE_OUT=$(sprite exec -- env LMA_VERIFY_PIN="${LMA_VERIFY_PIN:-}" bash -c '
 echo "CHECK_SKILLS:$(ls /home/sprite/.omp/agent/skills/ | tr "\n" ",")"
 echo "CHECK_EXTS:$(ls /home/sprite/.omp/agent/extensions/ | tr "\n" ",")"
 python3 -m py_compile /home/sprite/.omp/agent/skills/raw-clip-finder/scripts/*.py && echo "CHECK_PY:OK"
@@ -58,7 +66,15 @@ SPOOF_WAKEUP=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8
 echo "CHECK_SPOOF_WAKEUP:${SPOOF_WAKEUP}"
 
 # Authenticated Mission Control & path-traversal checks
-PASS=$(grep ^LMA_WEB_PASSWORD= /home/sprite/.config/lma/web.env | cut -d= -f2- | tr -d "\r\n")
+PASS="${LMA_VERIFY_PIN:-}"
+if [ -z "${PASS}" ] && [ -f /home/sprite/.config/lma/web.env ]; then
+  PASS=$(grep ^LMA_WEB_PASSWORD= /home/sprite/.config/lma/web.env | cut -d= -f2- | tr -d "\r\n" || true)
+fi
+if [ -z "${PASS}" ]; then
+  echo "ERROR: No plaintext LMA_WEB_PASSWORD in web.env and LMA_VERIFY_PIN is unset." >&2
+  echo "Run: LMA_VERIFY_PIN=<6-digit-pin> bash scripts/verify-all.sh" >&2
+  exit 1
+fi
 curl -s -c /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/auth/login -H "Content-Type: application/json" -d "{\"password\":\"${PASS}\"}" >/dev/null
 
 DOSSIER_EXISTS=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/dossier | jq -r ".exists")
@@ -129,6 +145,12 @@ console.log("CHECK_CRON_TZ:" + (ok1 === "CRON_TZ=Asia/Bangkok 0 0 * * *") + ":" 
 # Silent /api/wakeup unsigned spoof check (401)
 SPOOF_SILENT=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8080/api/wakeup -H "Content-Type: application/json" -d "{\"silent\":true,\"mode\":\"background\",\"label\":\"Nightly\",\"prompt\":\"test\"}")
 echo "CHECK_SILENT_SPOOF:${SPOOF_SILENT}"
+# Hybrid LLM Router checks (unauthenticated 403 + authenticated status)
+HYBRID_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8080/api/internal/llm/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"ollama-auto\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")
+echo "CHECK_HYBRID_AUTH:${HYBRID_AUTH}"
+
+HYBRID_STATUS=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/llm/router-status | jq -r ".ok")
+echo "CHECK_HYBRID_STATUS:${HYBRID_STATUS}"
 
 rm -f /tmp/lma_v_cookie.txt
 ' 2>&1 || true)
@@ -168,19 +190,36 @@ check_grep "Unified Studio DB content pipeline CRUD roundtrip" "CHECK_DB_PIPELIN
 check_grep "Setup wizard status protected (401 unauth / boolean auth)" "CHECK_SETUP_GATE:401:boolean"
 check_grep "QStash CRON_TZ validator accepts IANA & blocks invalid zones" "CHECK_CRON_TZ:true:true:true"
 check_grep "Unsigned silent /api/wakeup blocked (401)" "CHECK_SILENT_SPOOF:401"
+check_grep "Unauthenticated Hybrid LLM Router blocked (403)" "CHECK_HYBRID_AUTH:403"
+check_grep "Authenticated Hybrid LLM Router status live" "CHECK_HYBRID_STATUS:true"
 
 if [ "$MODE" = "live" ]; then
   echo ""
   echo "3. Live Zero-Key Agent & Connector Smoke Tests (--live)"
-  LIVE_OUT=$(sprite exec -- bash -c '
+  LIVE_OUT=$(sprite exec -- env LMA_VERIFY_PIN="${LMA_VERIFY_PIN:-}" bash -c '
+  PASS="${LMA_VERIFY_PIN:-}"
+  if [ -z "${PASS}" ] && [ -f /home/sprite/.config/lma/web.env ]; then
+    PASS=$(grep ^LMA_WEB_PASSWORD= /home/sprite/.config/lma/web.env | cut -d= -f2- | tr -d "\r\n" || true)
+  fi
+  if [ -n "${PASS}" ]; then
+    curl -s -c /tmp/lma_v_live_cookie.txt -X POST http://127.0.0.1:8080/api/auth/login -H "Content-Type: application/json" -d "{\"password\":\"${PASS}\"}" >/dev/null
+    PROBE_OUT=$(curl -s -b /tmp/lma_v_live_cookie.txt -X POST http://127.0.0.1:8080/api/llm/probe-ollama || true)
+    echo "HYBRID_PROBE:${PROBE_OUT}"
+    rm -f /tmp/lma_v_live_cookie.txt
+  fi
   omp --tools youtube_tool,social_list_channels,schedule_wakeup,vod_scan_hype,vod_cut_clip,vod_prep_clip,watch_clip,critique_thumbnail \
     -p "Call social_list_channels once, then reply with: LIVE_OK followed by the number of connected social channels." --no-session 2>&1 || true
   ')
   if echo "$LIVE_OUT" | grep -q "LIVE_OK"; then
     ok "Live zero-key Gemini + Buffer connector tool round-trip"
   else
-    fail "Live zero-key Gemini + Buffer connector round-trip"
+    fail "Live zero-key Gemini + Buffer connector tool round-trip"
     echo "$LIVE_OUT" | tail -n 10
+  fi
+  if echo "$LIVE_OUT" | grep -q "HYBRID_PROBE:.*\"ok\":true"; then
+    ok "Live Hybrid LLM Router Ollama probe"
+  else
+    echo "  [INFO] Live Hybrid LLM Router probe: $(echo "$LIVE_OUT" | grep "HYBRID_PROBE:" | head -n 1 || echo "skipped/unavailable")"
   fi
 fi
 

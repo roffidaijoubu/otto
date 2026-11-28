@@ -21,6 +21,7 @@ import {
   type ClipRecord,
 } from "../../agent/lib/studio-db.ts";
 import { cancelManagedWorker, runManagedRpcWorker } from "./rpc-worker.ts";
+import { buildAgentChildEnv } from "./child-env.ts";
 
 export interface ClipWorkerHooks {
   ompBin: string;
@@ -382,14 +383,10 @@ function launchClipWorkerLoop(
     hooks.onBroadcast({ type: "clips_changed", jobId: job.id });
     hooks.onBroadcast({ type: "jobs_changed", jobId: job.id });
 
-    const childEnv: Record<string, string | undefined> = {
-      ...process.env,
+    const childEnv = buildAgentChildEnv({
       LMA_INTERNAL_SECRET: hooks.internalSecret,
       LMA_WEB_PORT: String(hooks.port),
-    };
-    delete childEnv.LMA_WEB_PASSWORD;
-    delete childEnv.QSTASH_CURRENT_SIGNING_KEY;
-    delete childEnv.QSTASH_NEXT_SIGNING_KEY;
+    });
 
     const workerTools = [
       "vod_scan_hype",

@@ -179,9 +179,10 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
         `4. Reply concisely in one line confirming the clip was finished and saved.`,
       ].join("\n");
 
-      rpc.backgroundBusy = true;
+      const releaseBg = rpc.beginBackgroundJob("clip-finish");
       void rpc.holdSpriteActive();
       void (async () => {
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           const proc = Bun.spawn(
             [
@@ -200,10 +201,17 @@ export async function handleClipsRoutes(req: Request, url: URL): Promise<Respons
               env: buildAgentChildEnv(),
             }
           );
+          killTimer = setTimeout(() => {
+            try {
+              proc.kill();
+            } catch {
+              // ignore
+            }
+          }, 5 * 60 * 1000);
           await proc.exited;
         } finally {
-          rpc.backgroundBusy = false;
-          rpc.releaseSpriteHold();
+          clearTimeout(killTimer);
+          releaseBg();
           broadcast({ type: "clips_changed" });
           broadcast({ type: "workspace_changed" });
         }

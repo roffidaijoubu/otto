@@ -51,6 +51,9 @@ if ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/nul
     ${SUDO} apt-get update -qq && (${SUDO} apt-get install -y -qq --no-install-recommends chromium || ${SUDO} apt-get install -y -qq --no-install-recommends chromium-browser) || true
   fi
 fi
+if ! command -v google-chrome >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
+  echo "[WARN] Headless Chromium not installed — Thumbnail Studio PNG/JPG export will be unavailable until Chromium is installed."
+fi
 
 # 2. Symlink agent persona, config, extensions, and skills
 mkdir -p "${OMP_AGENT_DIR}/extensions"
@@ -70,6 +73,9 @@ if [ -d "${REPO_DIR}/agent/skills" ]; then
   for skill in "${REPO_DIR}"/agent/skills/*; do
     [ -e "$skill" ] && ln -sf "$skill" "${OMP_AGENT_DIR}/skills/$(basename "$skill")"
   done
+fi
+if [ -d "${REPO_DIR}/.git" ] && [ -f "${REPO_DIR}/scripts/install-hooks.sh" ]; then
+  bash "${REPO_DIR}/scripts/install-hooks.sh" || true
 fi
 
 # 2b. Ensure Unified Studio Workspace folders exist (and migrate legacy ~/clips once)
@@ -97,6 +103,7 @@ providers:
     apiKey: sprite-gateway
   otto-hybrid:
     baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    # omp resolves bare exact-case env var names (LMA_INTERNAL_SECRET) from the web server child env
     apiKey: LMA_INTERNAL_SECRET
     api: openai-completions
     models:
@@ -116,6 +123,7 @@ elif ! grep -q '^  otto-hybrid:' "${OMP_AGENT_DIR}/models.yml"; then
   cat >> "${OMP_AGENT_DIR}/models.yml" <<EOF
   otto-hybrid:
     baseUrl: http://127.0.0.1:8080/api/internal/llm/v1
+    # omp resolves bare exact-case env var names (LMA_INTERNAL_SECRET) from the web server child env
     apiKey: LMA_INTERNAL_SECRET
     api: openai-completions
     models:
@@ -134,17 +142,30 @@ fi
 WEB_ENV_DIR="${HOME}/.config/lma"
 WEB_ENV_FILE="${WEB_ENV_DIR}/web.env"
 mkdir -p "${WEB_ENV_DIR}"
-if [ ! -f "${WEB_ENV_FILE}" ] || ! grep -q '^LMA_WEB_PASSWORD=' "${WEB_ENV_FILE}"; then
-  GEN_PASS=$(python3 -c 'import secrets; print(f"{secrets.randbelow(1000000):06d}")')
-  echo "LMA_WEB_PASSWORD=${GEN_PASS}" >> "${WEB_ENV_FILE}"
+if [ ! -f "${WEB_ENV_FILE}" ] || ! grep -qE '^LMA_WEB_PASSWORD(_HASH)?=' "${WEB_ENV_FILE}"; then
+  read -r GEN_PASS GEN_HASH < <(python3 -c '
+import hashlib, os, secrets
+pin = f"{secrets.randbelow(1000000):06d}"
+salt = os.urandom(16)
+key = hashlib.scrypt(pin.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=32)
+print(pin, f"scrypt${salt.hex()}${key.hex()}")
+')
+  echo "LMA_WEB_PASSWORD_HASH=${GEN_HASH}" >> "${WEB_ENV_FILE}"
   chmod 600 "${WEB_ENV_FILE}"
-  echo "==> Generated 6-digit Web UI PIN in ${WEB_ENV_FILE} (chmod 600). View it with: cat ${WEB_ENV_FILE}"
+  echo "==> Generated 6-digit Web UI PIN (stored as scrypt hash in ${WEB_ENV_FILE}, chmod 600)."
+  echo "    One-time PIN (save this now): ${GEN_PASS}"
 fi
 
 # 6. Build Vue 3 + Vite frontend & register durable Sprite HTTP service (port 8080)
 if [ -f "${REPO_DIR}/web/package.json" ]; then
   echo "==> Building lma-web frontend..."
-  (cd "${REPO_DIR}/web" && /.sprite/bin/bun install --frozen-lockfile 2>/dev/null || /.sprite/bin/bun install)
+  if [ -f "${REPO_DIR}/web/bun.lock" ]; then
+    (cd "${REPO_DIR}/web" && /.sprite/bin/bun install --frozen-lockfile)
+  elif [ -f "${REPO_DIR}/web/package-lock.json" ] && command -v npm >/dev/null 2>&1; then
+    (cd "${REPO_DIR}/web" && npm ci --no-audit --no-fund)
+  else
+    (cd "${REPO_DIR}/web" && /.sprite/bin/bun install)
+  fi
   (cd "${REPO_DIR}/web" && /.sprite/bin/bun run build)
 fi
 if command -v sprite-env >/dev/null 2>&1 && [ -f "${REPO_DIR}/web/server.ts" ]; then
@@ -155,6 +176,20 @@ if command -v sprite-env >/dev/null 2>&1 && [ -f "${REPO_DIR}/web/server.ts" ]; 
     --args "run,${REPO_DIR}/web/server.ts" \
     --http-port 8080 \
     --dir "${HOME}"
+  HEALTH_OK="false"
+  for _ in $(seq 1 15); do
+    if curl -sf http://127.0.0.1:8080/api/health | grep -q '"ok":true'; then
+      HEALTH_OK="true"
+      break
+    fi
+    sleep 1
+  done
+  if [ "${HEALTH_OK}" != "true" ]; then
+    echo "ERROR: lma-web failed to pass /api/health within 15s on port 8080." >&2
+    exit 1
+  fi
+else
+  echo "[WARN] sprite-env not found — lma-web service not registered. Start manually with: bun run ${REPO_DIR}/web/server.ts"
 fi
 
 # 7. One-time auto-bootstrap Draft Talent Dossier from connected OAuth accounts (if MEMORY.md is still blank)

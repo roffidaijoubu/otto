@@ -37,8 +37,8 @@ Because **Otto** is a conversational AI agent, his responses are non-determinist
 
 | Playbook | Feature / Tools Tested | Estimated Time |
 | :--- | :--- | :--- |
-| [`01-onboarding.md`](01-onboarding.md) | 2-phase `onboarding` skill, `buffer_list_channels`, `youtube_tool`, `exa_search`, `MEMORY.md` persistence vs `expected-memory.md` | ~60s |
+| [`01-onboarding.md`](01-onboarding.md) | 2-phase `onboarding` skill, `social_list_channels`, `youtube_tool`, `exa_search`, `MEMORY.md` persistence vs `expected-memory.md` | ~60s |
 | [`02-youtube-audit-and-squint-test.md`](02-youtube-audit-and-squint-test.md) | `youtube-audit` skill, `youtube_tool` live stats/uploads, `critique_thumbnail` multimodal Squint Test, no-AI-art guardrail | ~45s |
-| [`03-social-promo-buffer-drafts.md`](03-social-promo-buffer-drafts.md) | `social-promo` skill, `buffer_list_channels`, `buffer_create_post` draft-first guardrail (`saveToDraft: true`) | ~30s |
+| [`03-social-promo-buffer-drafts.md`](03-social-promo-buffer-drafts.md) | `social-promo` skill, `social_list_channels`, `x_post`/`tiktok_post`/`instagram_post` draft-first guardrail (`saveToDraft: true`) | ~30s |
 | [`04-vod-hype-clipper-and-review.md`](04-vod-hype-clipper-and-review.md) | `raw-clip-finder` skill, `vod_scan_hype`, `vod_cut_clip`, `vod_prep_clip` (`-14 LUFS` CFR), `watch_clip`, Mission Control `/api/clips` | ~90s |
 | [`05-qstash-proactive-wakeup.md`](05-qstash-proactive-wakeup.md) | `schedule_wakeup` via QStash Connector, signed `POST /api/wakeup`, `/.sprite/api.sock` Tasks API hold, proactive reply in `/api/messages` | ~40s |
