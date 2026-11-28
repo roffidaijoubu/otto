@@ -180,18 +180,28 @@ describe("getClientKey & computeGuardrailStatus", () => {
       "NEON_API_KEY",
     ];
     const saved: Record<string, string | undefined> = {};
-    for (const k of [...outboundKeys, "QSTASH_CURRENT_SIGNING_KEY"]) {
+    for (const k of [...outboundKeys, "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY"]) {
       saved[k] = process.env[k];
       delete process.env[k];
     }
     try {
-      process.env.QSTASH_CURRENT_SIGNING_KEY = "sig_local_webhook_key";
-      const clean = computeGuardrailStatus();
-      assert.equal(clean.zeroOutboundApiKeys, true);
-      assert.equal(clean.zeroLocalKeys, true);
-      assert.equal(clean.inboundSigningKeysConfigured, true);
-      assert.equal(clean.inboundKeysIsolatedFromAgent, true);
+      // Case 1: Zero outbound API keys AND zero inbound signing keys
+      const totallyClean = computeGuardrailStatus();
+      assert.equal(totallyClean.zeroOutboundApiKeys, true);
+      assert.equal(totallyClean.inboundSigningKeysConfigured, false);
+      assert.equal(totallyClean.zeroLocalKeys, true);
+      assert.equal(totallyClean.inboundKeysIsolatedFromAgent, true);
 
+      // Case 2: Deployed Sprite with inbound QStash signing key — zeroOutboundApiKeys stays true,
+      // but zeroLocalKeys honestly flips false while inboundKeysIsolatedFromAgent dynamically verifies child-env stripping
+      process.env.QSTASH_CURRENT_SIGNING_KEY = "sig_local_webhook_key";
+      const withInboundKey = computeGuardrailStatus();
+      assert.equal(withInboundKey.zeroOutboundApiKeys, true);
+      assert.equal(withInboundKey.inboundSigningKeysConfigured, true);
+      assert.equal(withInboundKey.zeroLocalKeys, false);
+      assert.equal(withInboundKey.inboundKeysIsolatedFromAgent, true);
+
+      // Case 3: Outbound vendor key present -> both zeroOutboundApiKeys and zeroLocalKeys flip false
       process.env.ANTHROPIC_API_KEY = "sk-ant-leak";
       const dirty = computeGuardrailStatus();
       assert.equal(dirty.zeroOutboundApiKeys, false);

@@ -79,7 +79,7 @@ curl -s -c /tmp/lma_v_cookie.txt -X POST http://127.0.0.1:8080/api/auth/login -H
 
 DOSSIER_EXISTS=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/dossier | jq -r ".exists")
 echo "CHECK_DOSSIER:${DOSSIER_EXISTS}"
-CONN_INFO=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/connectors | jq -r "[(.connectors|length), .zeroLocalKeys, .aiMediaDisabled] | map(tostring) | join(\":\")")
+CONN_INFO=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/connectors | jq -r "[(.connectors|length), .zeroOutboundApiKeys, .aiMediaDisabled] | map(tostring) | join(\":\")")
 echo "CHECK_CONNECTORS:${CONN_INFO}"
 
 CLIPS_TYPE=$(curl -s -b /tmp/lma_v_cookie.txt http://127.0.0.1:8080/api/clips | jq -r ".clips | type")
@@ -173,7 +173,7 @@ check_grep "GET /api/health returns ok:true" "CHECK_HEALTH:true"
 check_grep "Unauthenticated /api/dossier blocked (401)" "CHECK_UNAUTH_DOSSIER:401"
 check_grep "Unsigned spoofed /api/wakeup blocked (401)" "CHECK_SPOOF_WAKEUP:401"
 check_grep "Authenticated /api/dossier readable" "CHECK_DOSSIER:true"
-check_grep "Authenticated /api/connectors live (zeroLocalKeys=true, aiMediaDisabled=true)" "CHECK_CONNECTORS:[1-9][0-9]*:true:true"
+check_grep "Authenticated /api/connectors live (zeroOutboundApiKeys=true, aiMediaDisabled=true)" "CHECK_CONNECTORS:[1-9][0-9]*:true:true"
 check_grep "Authenticated /api/clips returns array" "CHECK_CLIPS:array"
 check_grep "Authenticated /api/archive/status returns ok:true" "CHECK_ARCHIVE:true"
 check_grep "Authenticated /api/thumbnails returns array" "CHECK_THUMBS:array"

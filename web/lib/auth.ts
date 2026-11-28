@@ -75,9 +75,13 @@ export function buildAuthCookieHeader(req: Request, url: URL): string {
   return `${AUTH_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secureAttr}`;
 }
 
-export function updatePrivateWebPassword(newPassword: string): void {
+export function updatePrivateWebPassword(
+  newPassword: string,
+  opts: { homeDir?: string } = {}
+): void {
   const hash = hashWebPassword(newPassword);
-  const envDir = path.join(HOME_DIR, ".config", "lma");
+  const targetHome = opts.homeDir || HOME_DIR;
+  const envDir = path.join(targetHome, ".config", "lma");
   const envFile = path.join(envDir, "web.env");
   fs.mkdirSync(envDir, { recursive: true, mode: 0o700 });
   const lines = fs.existsSync(envFile)

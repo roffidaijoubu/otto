@@ -4,8 +4,11 @@ A chronological build log of **Otto OS** (`lma` — Livestreamer Manager Agent) 
 
 ---
 
-## 2026-11-28 — Cloud Brain, Unified RPC Jobs, Polish & Audit Hardening
+## 2026-11-28 — Offline Test Suite, CI, Cloud Brain, Unified RPC Jobs & Audit Hardening
 
+- **Zero-Dependency Offline Test Suite, GitHub Actions CI & Security Hardening** (`48d020b`, `a5b11b9`, v3 polish):
+  - Added an offline Node `>=22.18` + Python `unittest` regression suite (`tests/`) plus gated GitHub Actions CI (`.github/workflows/ci.yml`) running tests, Python compile checks, strict TypeScript typechecking (frontend + server + tests), and Vite production build on every push.
+  - Hardened `/api/wakeup` TOCTOU busy-flag locking, long-turn `prompt()` RPC acknowledgement handling, QStash HS256 JWT `alg` + fail-closed `sub` enforcement, true LRU session retention, atomic `updatePrivateWebPassword()` testing, minimal unauthenticated `/api/health`, zero-tool (`--no-tools`) isolated contact outreach drafting, fail-closed checkpoint ID parsing, honest `zeroOutboundApiKeys` / `inboundKeysIsolatedFromAgent` guardrail telemetry, Fly Machine #2 provisioning tests, SSRF guard tests, Thumbnail Studio & Custom Apps tests, and `web/server.ts` auth-gate ordering tests.
 - **Demo Walkthrough & Visual Showcase** (`21f695e`, `96c53dc`, `ac075f4`): Published the 3-minute YouTube walkthrough with English captions, clickable hero play thumbnail, live Otto Studio OS screenshots, and showcase GIFs in `README.md`.
 - **Security Audit Hardening & Reproducibility** (`54ecf82`): Resolved all P1 findings from pre-submission adversarial review, reconciled documentation metrics across `README.md`, `docs/architecture.md`, `AGENTS.md`, and `DESIGN.md`, and hardened reproducibility.
 - **Full UI ↔ Otto Parity & Managed Live RPC Workers** (`6131753`, `e85446e`, `fcac039`, `fabfb9a`, `7eb5145`):

@@ -1,9 +1,12 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-const HOME_DIR = process.env.HOME || "/home/sprite";
-const CONFIG_DIR = path.join(HOME_DIR, ".config", "lma");
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || os.homedir() || "/home/sprite";
+const CONFIG_DIR = process.env.LMA_CONFIG_DIR
+  ? path.resolve(process.env.LMA_CONFIG_DIR)
+  : path.join(HOME_DIR, ".config", "lma");
 const MACHINE_CONFIG_PATH = path.join(CONFIG_DIR, "obs-overlay-machine.json");
 const GATEWAY_LIST_URL = "https://api.sprites.dev/v1/gateway/list";
 
@@ -52,6 +55,10 @@ export interface FlyConnectorInfo {
 }
 
 let cachedConnector: { info: FlyConnectorInfo; fetchedAt: number } | null = null;
+
+export function resetFlyConnectorCacheForTests(): void {
+  cachedConnector = null;
+}
 
 export async function discoverFlyMachinesConnector(forceRefresh = false): Promise<FlyConnectorInfo | null> {
   if (!forceRefresh && cachedConnector && Date.now() - cachedConnector.fetchedAt < 60_000) {

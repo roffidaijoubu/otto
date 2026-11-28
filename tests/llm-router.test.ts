@@ -36,7 +36,7 @@ describe("Hybrid LLM Router (Ollama-first + 10m circuit breaker -> Gemini v1beta
   });
 
   it("routes to Ollama primary with zero Authorization headers when healthy", async () => {
-    const calls: Array<{ url: string; headers?: HeadersInit }> = [];
+    const calls: Array<{ url: string; headers?: RequestInit["headers"] }> = [];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       calls.push({ url, headers: init?.headers });
@@ -125,10 +125,11 @@ describe("Hybrid LLM Router (Ollama-first + 10m circuit breaker -> Gemini v1beta
     assert.equal(ollamaHits, 1);
 
     // Verify OpenAI -> Gemini v1beta systemInstruction & role translation
-    assert.ok(capturedGeminiBody);
-    assert.deepEqual(capturedGeminiBody.systemInstruction, { parts: [{ text: "You are concise." }] });
-    assert.deepEqual(capturedGeminiBody.generationConfig, { temperature: 0.2, maxOutputTokens: 128 });
-    const contents = capturedGeminiBody.contents as Array<{ role: string }>;
+    const gemBody = capturedGeminiBody as Record<string, unknown> | null;
+    assert.ok(gemBody);
+    assert.deepEqual(gemBody.systemInstruction, { parts: [{ text: "You are concise." }] });
+    assert.deepEqual(gemBody.generationConfig, { temperature: 0.2, maxOutputTokens: 128 });
+    const contents = gemBody.contents as Array<{ role: string }>;
     assert.deepEqual(
       contents.map((c) => c.role),
       ["user", "model", "user"]
@@ -179,7 +180,7 @@ describe("Hybrid LLM Router (Ollama-first + 10m circuit breaker -> Gemini v1beta
 
     // Empty connector list -> HTTP 503
     resetLlmRouterState();
-    globalThis.fetch = (async () => Response.json({ connections: [] })) as typeof fetch;
+    globalThis.fetch = (async () => Response.json({ connections: [] })) as unknown as typeof fetch;
     const res503 = await handleHybridChatCompletions(
       new Request("http://127.0.0.1:8080/api/internal/llm/v1/chat/completions", {
         method: "POST",

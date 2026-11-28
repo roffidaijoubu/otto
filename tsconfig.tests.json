@@ -1,0 +1,9 @@
+{
+  "extends": "./web/tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "typeRoots": ["./web/node_modules/@types"],
+    "types": ["bun"]
+  },
+  "include": ["tests/**/*.ts"]
+}

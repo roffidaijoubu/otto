@@ -158,7 +158,9 @@ async function saveIdentity() {
 const dossierContent = ref("");
 const dossierUpdatedAt = ref<string | null>(null);
 const connectors = ref<ConnectorInfo[]>([]);
-const zeroLocalKeys = ref<boolean | null>(null);
+const zeroOutboundApiKeys = ref<boolean | null>(null);
+const inboundSigningKeysConfigured = ref<boolean | null>(null);
+const inboundKeysIsolatedFromAgent = ref<boolean | null>(null);
 const aiMediaDisabled = ref<boolean | null>(null);
 const loading = ref(false);
 const probingOllama = ref(false);
@@ -349,7 +351,17 @@ async function fetchData() {
     }
     if (cRes && typeof cRes === "object") {
       connectors.value = Array.isArray(cRes.connectors) ? cRes.connectors : [];
-      if (typeof cRes.zeroLocalKeys === "boolean") zeroLocalKeys.value = cRes.zeroLocalKeys;
+      if (typeof cRes.zeroOutboundApiKeys === "boolean") {
+        zeroOutboundApiKeys.value = cRes.zeroOutboundApiKeys;
+      } else if (typeof cRes.zeroLocalKeys === "boolean") {
+        zeroOutboundApiKeys.value = cRes.zeroLocalKeys;
+      }
+      if (typeof cRes.inboundSigningKeysConfigured === "boolean") {
+        inboundSigningKeysConfigured.value = cRes.inboundSigningKeysConfigured;
+      }
+      if (typeof cRes.inboundKeysIsolatedFromAgent === "boolean") {
+        inboundKeysIsolatedFromAgent.value = cRes.inboundKeysIsolatedFromAgent;
+      }
       if (typeof cRes.aiMediaDisabled === "boolean") aiMediaDisabled.value = cRes.aiMediaDisabled;
     }
     if (rRes && typeof rRes === "object" && rRes.router) {
@@ -898,21 +910,36 @@ watch(
                 <span
                   class="rounded-lg border px-2.5 py-1"
                   :class="
-                    zeroLocalKeys === true
+                    zeroOutboundApiKeys === true
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : zeroLocalKeys === false
+                      : zeroOutboundApiKeys === false
                         ? 'border-red-200 bg-red-50 text-red-700'
                         : 'border-amber-200 bg-amber-50 text-amber-800'
                   "
                 >
                   {{
-                    zeroLocalKeys === true
-                      ? "Zero local API keys verified"
-                      : zeroLocalKeys === false
-                        ? "Local keys detected"
+                    zeroOutboundApiKeys === true
+                      ? "Zero outbound API keys verified"
+                      : zeroOutboundApiKeys === false
+                        ? "Outbound API keys detected"
                         : loading
                           ? "Checking key guardrails..."
                           : "Guardrail status unverified"
+                  }}
+                </span>
+                <span
+                  v-if="inboundSigningKeysConfigured === true"
+                  class="rounded-lg border px-2.5 py-1"
+                  :class="
+                    inboundKeysIsolatedFromAgent
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-red-200 bg-red-50 text-red-700'
+                  "
+                >
+                  {{
+                    inboundKeysIsolatedFromAgent
+                      ? "Inbound webhook keys isolated from agent"
+                      : "Inbound webhook keys exposed"
                   }}
                 </span>
                 <span

@@ -14,6 +14,7 @@ const {
   hasConfiguredAuth,
   buildAuthCookieHeader,
   isAuthenticated,
+  updatePrivateWebPassword,
   clearActiveSessions,
   getActiveSessionCount,
 } = await import("../web/lib/auth.ts");
@@ -249,21 +250,54 @@ describe("buildAgentChildEnv secret isolation", () => {
 });
 
 describe("atomic private web.env password rotation", () => {
-  it("writes salted scrypt hash and removes plaintext password with isolated HOME", async () => {
-    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "otto-auth-test-"));
-    const prevHome = process.env.HOME;
+  const savedHash = process.env.LMA_WEB_PASSWORD_HASH;
+  const savedPw = process.env.LMA_WEB_PASSWORD;
+
+  afterEach(() => {
+    clearActiveSessions();
+    if (savedHash === undefined) delete process.env.LMA_WEB_PASSWORD_HASH;
+    else process.env.LMA_WEB_PASSWORD_HASH = savedHash;
+    if (savedPw === undefined) delete process.env.LMA_WEB_PASSWORD;
+    else process.env.LMA_WEB_PASSWORD = savedPw;
+    initWebPassword();
+  });
+
+  it("calls updatePrivateWebPassword() to atomically replace plaintext PIN with scrypt hash and revoke prior sessions", () => {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "otto-auth-rot-"));
     try {
-      // Test atomic rewrite helper behavior via dynamic fresh HOME config simulation
       const envDir = path.join(tmpHome, ".config", "lma");
       fs.mkdirSync(envDir, { recursive: true });
       const envFile = path.join(envDir, "web.env");
       fs.writeFileSync(envFile, "LMA_WEB_PASSWORD=oldpin\nLMA_PUBLIC_URL=https://otto.sprites.app\n");
-      assert.equal(fs.existsSync(envFile), true);
-      const hash = hashWebPassword("987654");
-      assert.match(hash, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+
+      // Establish an active session under the old PIN first
+      process.env.LMA_WEB_PASSWORD = "oldpin";
+      delete process.env.LMA_WEB_PASSWORD_HASH;
+      initWebPassword();
+      const loginReq = new Request("https://otto.sprites.app/api/auth/login");
+      const oldCookie = buildAuthCookieHeader(loginReq, new URL(loginReq.url)).split(";")[0];
+      assert.equal(
+        isAuthenticated(new Request("https://otto.sprites.app/api/dossier", { headers: { cookie: oldCookie } })),
+        true
+      );
+
+      // Rotate password via production updatePrivateWebPassword()
+      updatePrivateWebPassword("987654", { homeDir: tmpHome });
+
+      const written = fs.readFileSync(envFile, "utf8");
+      assert.equal(written.includes("LMA_WEB_PASSWORD="), false);
+      assert.match(written, /^LMA_PUBLIC_URL=https:\/\/otto\.sprites\.app$/m);
+      assert.match(written, /^LMA_WEB_PASSWORD_HASH=scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/m);
+      assert.equal(process.env.LMA_WEB_PASSWORD, undefined);
+      assert.equal(verifyWebPassword("987654"), true);
+      assert.equal(verifyWebPassword("oldpin"), false);
+      // Prior active sessions must be invalidated on rotation
+      assert.equal(getActiveSessionCount(), 0);
+      assert.equal(
+        isAuthenticated(new Request("https://otto.sprites.app/api/dossier", { headers: { cookie: oldCookie } })),
+        false
+      );
     } finally {
-      if (prevHome === undefined) delete process.env.HOME;
-      else process.env.HOME = prevHome;
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }
   });

@@ -63,7 +63,7 @@ describe("Sprites Gateway discovery & /api/connectors diagnostics", () => {
         connections: [
           { provider: "box", gateway_base_url: "https://api.sprites.dev/v1/gateway/box/conn_1/" },
         ],
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     const url = await resolveGatewayBaseUrl((c) => c.provider === "box");
     assert.equal(url, "https://api.sprites.dev/v1/gateway/box/conn_1");
@@ -89,13 +89,13 @@ describe("Fly.io Sprites Checkpoints parsing & fail-closed validation", () => {
   });
 
   it("fails closed if checkpoint HTTP 200 response contains no parseable ID and blocks invalid restore IDs", async () => {
-    globalThis.fetch = (async () => new Response("OK but format changed", { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response("OK but format changed", { status: 200 })) as unknown as typeof fetch;
     const bad = await createSpriteCheckpoint("pre-deploy");
     assert.equal(bad.ok, false);
     assert.equal(bad.id, null);
     assert.match(bad.error || "", /no parseable checkpoint ID/i);
 
-    globalThis.fetch = (async () => new Response('{"id":"v25"}', { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('{"id":"v25"}', { status: 200 })) as unknown as typeof fetch;
     const good = await createSpriteCheckpoint("pre-deploy");
     assert.equal(good.ok, true);
     assert.equal(good.id, "v25");
@@ -104,7 +104,7 @@ describe("Fly.io Sprites Checkpoints parsing & fail-closed validation", () => {
     await assert.rejects(() => restoreSpriteCheckpoint("Current"), /Invalid checkpoint ID/i);
     await assert.rejects(() => restoreSpriteCheckpoint("v1; rm -rf /"), /Invalid checkpoint ID/i);
 
-    globalThis.fetch = (async () => new Response("restored", { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response("restored", { status: 200 })) as unknown as typeof fetch;
     const restored = await restoreSpriteCheckpoint("v25");
     assert.deepEqual(restored, { ok: true, id: "v25" });
   });
@@ -254,7 +254,7 @@ describe("Box, Fly Machines & Buffer zero-key connector adapters", () => {
             },
           },
         ],
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     const info = await discoverFlyMachinesConnector(true);
     assert.ok(info);
@@ -265,7 +265,7 @@ describe("Box, Fly Machines & Buffer zero-key connector adapters", () => {
   it("surfaces Buffer GraphQL errors cleanly via zero-key gateway", async () => {
     process.env.SPRITES_BUFFER_GATEWAY_URL = "https://api.sprites.dev/v1/gateway/custom_api/buf_1";
     globalThis.fetch = (async () =>
-      Response.json({ errors: [{ message: "Channel disconnected" }] })) as typeof fetch;
+      Response.json({ errors: [{ message: "Channel disconnected" }] })) as unknown as typeof fetch;
     try {
       await assert.rejects(() => bufferGraphQL("query { account { id } }"), /Channel disconnected/);
     } finally {

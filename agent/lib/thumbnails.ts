@@ -9,10 +9,13 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-const HOME_DIR = process.env.HOME || "/home/sprite";
-export const WORKSPACE_ROOT = path.resolve(HOME_DIR, "workspace");
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || os.homedir() || "/home/sprite";
+export const WORKSPACE_ROOT = path.resolve(
+  process.env.LMA_WORKSPACE_DIR || path.join(HOME_DIR, "workspace")
+);
 export const THUMBNAILS_ROOT = path.join(WORKSPACE_ROOT, "thumbnails");
 
 export interface ThumbnailProjectSummary {

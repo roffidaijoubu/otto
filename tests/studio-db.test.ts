@@ -27,7 +27,7 @@ describe("Unified Studio DB (10-table SQLite schema, CRUD, orphan reconciliation
     const tablesRes = await db.runReadOnlySql(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     );
-    const tableNames = tablesRes.rows.map((r) => String(r.name));
+    const tableNames = (tablesRes.rows as Array<Record<string, unknown>>).map((r) => String(r.name));
     for (const expected of [
       "archive_videos",
       "calendar_events",
@@ -133,10 +133,10 @@ describe("Unified Studio DB (10-table SQLite schema, CRUD, orphan reconciliation
     const job = await db.createStudioJob({
       kind: "thumbnail",
       title: "Build Friday Thumbnail",
-      slug: "friday-stream",
+      targetSlug: "friday-stream",
       status: "running",
       stage: "rendering",
-      prompt: "Render 1280x720 thumbnail",
+      payload: { prompt: "Render 1280x720 thumbnail" },
     });
     assert.equal(job.status, "running");
     const reconciled = await db.reconcileOrphanedStudioJobs();
@@ -148,10 +148,10 @@ describe("Unified Studio DB (10-table SQLite schema, CRUD, orphan reconciliation
 
   it("enforces strict read-only SQL allowlist on runReadOnlySql (blocks all mutations & multi-statements)", async () => {
     const okSelect = await db.runReadOnlySql("SELECT COUNT(*) AS cnt FROM calendar_events");
-    assert.equal(Number(okSelect.rows[0].cnt), 1);
+    assert.equal(Number((okSelect.rows as Array<Record<string, unknown>>)[0].cnt), 1);
 
     const okWith = await db.runReadOnlySql("WITH x AS (SELECT 1 AS n) SELECT n FROM x");
-    assert.equal(Number(okWith.rows[0].n), 1);
+    assert.equal(Number((okWith.rows as Array<Record<string, unknown>>)[0].n), 1);
 
     const okPragma = await db.runReadOnlySql("PRAGMA table_info(contacts)");
     assert.ok(okPragma.rows.length > 0);

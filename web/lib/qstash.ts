@@ -2,6 +2,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { HOME_DIR } from "./config.ts";
+import { buildAgentChildEnv } from "./child-env.ts";
 import { timingSafeStrEqual } from "./secure-compare.ts";
 
 export function base64UrlDecode(str: string): Buffer {
@@ -161,6 +162,18 @@ export function computeGuardrailStatus(): {
   const inboundSigningKeysConfigured = Boolean(
     process.env.QSTASH_CURRENT_SIGNING_KEY || process.env.QSTASH_NEXT_SIGNING_KEY
   );
+  // Honestly reflects BOTH outbound API keys AND inbound webhook signing keys on disk
+  const zeroLocalKeys = zeroOutboundApiKeys && !inboundSigningKeysConfigured;
+
+  // Dynamically verify child-env allowlist strips inbound/auth/DB secrets from the omp subprocess
+  const sanitizedChildEnv = buildAgentChildEnv();
+  const inboundKeysIsolatedFromAgent = [
+    "LMA_WEB_PASSWORD",
+    "LMA_WEB_PASSWORD_HASH",
+    "QSTASH_CURRENT_SIGNING_KEY",
+    "QSTASH_NEXT_SIGNING_KEY",
+    "LMA_NEON_DATABASE_URL",
+  ].every((k) => sanitizedChildEnv[k] === undefined);
 
   let aiMediaDisabled = false;
   try {
@@ -173,10 +186,10 @@ export function computeGuardrailStatus(): {
     aiMediaDisabled = false;
   }
   return {
-    zeroLocalKeys: zeroOutboundApiKeys,
+    zeroLocalKeys,
     zeroOutboundApiKeys,
     inboundSigningKeysConfigured,
-    inboundKeysIsolatedFromAgent: true,
+    inboundKeysIsolatedFromAgent,
     aiMediaDisabled,
   };
 }
